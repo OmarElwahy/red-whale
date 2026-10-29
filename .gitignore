@@ -6,3 +6,4 @@ output/
 *.db-journal
 .env
 __pycache__/
+coverage/

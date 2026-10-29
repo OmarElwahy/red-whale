@@ -34,6 +34,16 @@ strip trailing dots; canonicalize IPs (compress IPv6); drop default ports from U
 `:80` for http); remove URL fragments. The validator rejects most bad values; normalization is the
 second safety net.
 
+Additional rules (see decisions log, 2026-10-29):
+- IPv4-mapped IPv6 (`::ffff:1.2.3.4`) becomes plain IPv4 (`1.2.3.4`), so it merges with the IPv4 node.
+- Ports on IPv6 are bracketed: `[2001:db8::1]:443/tcp`. Unbracketed input (`2001:db8::1:443/tcp`) is
+  accepted by the validator and converted. Protocol is lowercased; leading zeros in the port number are dropped.
+- URLs are serialized with WHATWG `URL` (so `https://a.com` → `https://a.com/`); path and query keep their case.
+- `technology` is lowercased for the ID (`Nginx/1.18.0` = `nginx/1.18.0`); the node label keeps the original text.
+- `vulnerability` CVE IDs are uppercased (`cve-2021-41773` → `CVE-2021-41773`); other IDs are left as-is.
+- `certificate` fingerprints are lowercased and colons removed.
+- Values that can't be canonicalized (e.g. an unparseable IP or URL) throw `NormalizeError`; they are never guessed.
+
 ## 4. Database schema (SQLite, Drizzle)
 
 **scans** — one row per ingested tool-output file
@@ -164,3 +174,7 @@ diffing between scans · reports · CVE monitoring · local LLM scoring · JS an
 | 2026-10-29 | Stack: TS, React, Cytoscape.js, SQLite (Drizzle + better-sqlite3), Fastify, Zod |
 | 2026-10-29 | Teammates' Python scripts output contract v1 JSON; server owns IDs and confidence |
 | 2026-10-29 | Aggregation is server-side; browser cap ~2,000 elements |
+| 2026-10-29 | Extra normalization rules in §3: IPv4-mapped → IPv4, bracketed IPv6 ports, lowercase technology, uppercase CVE IDs |
+| 2026-10-29 | Zod errors use the validator's rules and wording, prefixed with a path (`findings[3].value: …`), not identical text |
+| 2026-10-29 | TypeScript pinned to 6.0.x: typescript-eslint 8.72 does not support TS 7 yet |
+| 2026-10-29 | Known validator gaps, accepted: (1) Python rejects `"contract_version": 1.0` but JS can't tell `1.0` from `1`; (2) Python's `fromisoformat` accepts more timestamp shapes than the documented `YYYY-MM-DDTHH:MM:SS[.frac]Z`, which is all Zod accepts; (3) a URL host the regex allows but WHATWG `URL` can't parse (e.g. containing a space) passes validation but fails normalization at ingest |
