@@ -1,0 +1,35 @@
+{
+  "contract_version": 1,
+  "tool": "nmap",
+  "tool_version": "7.95",
+  "target": "api.example.com",
+  "command": "nmap -sV -T3 --top-ports 1000 -oX - api.example.com",
+  "started_at": "2026-10-29T10:05:00Z",
+  "finished_at": "2026-10-29T10:07:41Z",
+  "status": "success",
+  "errors": [],
+  "findings": [
+    {
+      "type": "ip", "value": "93.184.216.34",
+      "parent": { "type": "subdomain", "value": "api.example.com" },
+      "relation": "resolves_to"
+    },
+    {
+      "type": "port", "value": "93.184.216.34:22/tcp",
+      "parent": { "type": "ip", "value": "93.184.216.34" },
+      "relation": "has_port",
+      "data": { "state": "open", "service": "ssh", "product": "OpenSSH", "version": "8.2p1" }
+    },
+    {
+      "type": "port", "value": "93.184.216.34:443/tcp",
+      "parent": { "type": "ip", "value": "93.184.216.34" },
+      "relation": "has_port",
+      "data": { "state": "open", "service": "https", "product": "nginx", "version": "1.18.0" }
+    },
+    {
+      "type": "technology", "value": "nginx/1.18.0",
+      "parent": { "type": "port", "value": "93.184.216.34:443/tcp" },
+      "relation": "uses_technology"
+    }
+  ]
+}
