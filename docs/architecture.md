@@ -48,7 +48,8 @@ Additional rules (see decisions log, 2026-10-29):
 
 **scans** — one row per ingested tool-output file
 `id` (uuid) · `tool` · `tool_version` · `target` · `command` · `status` · `errors` (json) ·
-`started_at` · `finished_at` · `ingested_at` · `file_hash` (unique; makes re-ingesting a file a no-op)
+`started_at` · `finished_at` · `ingested_at` · `file_hash` (unique; sha256 of the file's canonical JSON —
+keys sorted, no whitespace — so re-ingesting a file, even reformatted, is a no-op) · `raw` (json, the whole file)
 
 **nodes**
 `id` (pk, deterministic) · `type` · `value` (normalized) · `label` (display text) ·
@@ -61,9 +62,14 @@ Indexes: `type`, `severity`, `confidence`, `tag`.
 `id` (pk, deterministic) · `source_id` → nodes · `target_id` → nodes · `relation` · `first_seen` · `last_seen`
 Unique: (`source_id`, `relation`, `target_id`). Indexes on `source_id`, `target_id`.
 
-**observations** — provenance: every time any tool reported a node
-`id` · `node_id` → nodes · `scan_id` → scans · `tool` · `data` (json, this tool's details) · `observed_at`
-Unique: (`node_id`, `scan_id`).
+**observations** — provenance: every time any tool reported a node, as a finding **or as a parent**
+`id` · `node_id` → nodes · `scan_id` → scans · `tool` · `severity` (nullable) · `data` (json, this tool's details;
+`{}` for a parent-only reference) · `observed_at` (= the scan's `finished_at`)
+Unique: (`node_id`, `scan_id`). A node reported several times in one file gets one row: `data` shallow-merged
+in file order, highest `severity`.
+
+All timestamps are stored as TEXT in `Date#toISOString()` form (`YYYY-MM-DDTHH:MM:SS.sssZ`) so they sort as text.
+Enum columns have CHECK constraints.
 
 Confidence rule: after each ingest, recompute `source_count = COUNT(DISTINCT tool)` for touched nodes;
 `1 → discovered`, `≥2 → corroborated`; `verified` is only set by the analyst and never downgraded automatically.
@@ -78,6 +84,10 @@ Confidence rule: after each ingest, recompute `source_count = COUNT(DISTINCT too
 
 Merging `data`: keep per-tool details in `observations.data`; `nodes.data` holds a shallow merge where
 newer values win. Severity = max severity across observations.
+
+All derived node fields (`source_count`, `confidence`, `severity`, `data`, `first_seen`, `last_seen`) are recomputed
+from the node's full observation set, ordered by (`observed_at`, `tool`, `scan_id`), so the result doesn't depend on
+ingest order. "Newer" means a later `observed_at`, not a later ingest. Only `label` is set once, at first insert.
 
 ## 6. API (all under `/api`, JSON, validated with Zod)
 
@@ -178,3 +188,7 @@ diffing between scans · reports · CVE monitoring · local LLM scoring · JS an
 | 2026-10-29 | Zod errors use the validator's rules and wording, prefixed with a path (`findings[3].value: …`), not identical text |
 | 2026-10-29 | TypeScript pinned to 6.0.x: typescript-eslint 8.72 does not support TS 7 yet |
 | 2026-10-29 | Known validator gaps, accepted: (1) Python rejects `"contract_version": 1.0` but JS can't tell `1.0` from `1`; (2) Python's `fromisoformat` accepts more timestamp shapes than the documented `YYYY-MM-DDTHH:MM:SS[.frac]Z`, which is all Zod accepts; (3) a URL host the regex allows but WHATWG `URL` can't parse (e.g. containing a space) passes validation but fails normalization at ingest |
+| 2026-10-29 | Phase 2 schema: added `observations.severity` (needed to compute max severity) and `scans.raw` (full provenance) |
+| 2026-10-29 | A parent reference counts as an observation by that tool, so it can corroborate the node |
+| 2026-10-29 | `file_hash` is over canonical JSON, not raw bytes, so CRLF/reindented copies are duplicates |
+| 2026-10-29 | pnpm 12 native builds are allowed via `allowBuilds` in `pnpm-workspace.yaml` (better-sqlite3, esbuild) |
