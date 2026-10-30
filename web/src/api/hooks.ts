@@ -2,6 +2,7 @@
 import {
   expandResponseSchema,
   graphResponseSchema,
+  highlightsResponseSchema,
   layoutResponseSchema,
   neighborsResponseSchema,
   nodeDetailResponseSchema,
@@ -9,6 +10,7 @@ import {
   statsResponseSchema,
   type GraphFilters,
   type GraphResponse,
+  type Highlight,
   type NodePatch,
   type StatsResponse,
 } from '@redwhale/shared';
@@ -50,6 +52,14 @@ export function useStats(): UseQueryResult<StatsResponse> {
   return useQuery({
     queryKey: queryKeys.stats,
     queryFn: ({ signal }) => getJson('/api/stats', statsResponseSchema, { signal }),
+  });
+}
+
+/** Every node tagged `interesting`, with its notes, riskiest first. Ignores the graph filters. */
+export function useHighlights(): UseQueryResult<Highlight[]> {
+  return useQuery({
+    queryKey: queryKeys.highlights,
+    queryFn: async ({ signal }) => (await getJson('/api/highlights', highlightsResponseSchema, { signal })).items,
   });
 }
 

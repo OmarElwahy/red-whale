@@ -110,7 +110,8 @@ ingest order. "Newer" means a later `observed_at`, not a later ingest. Only `lab
 | `GET /nodes/:id` | Node detail + edges + all observations (provenance) |
 | `PATCH /nodes/:id` | Update `tag`, `notes`, `confidence: "verified"`, `pos_x/pos_y` |
 | `PUT /layout` | Bulk-save node positions |
-| `GET /nodes?…&page=&sort=` | Paged flat list for the table view |
+| `GET /nodes?…&page=&sort=&at=` | Paged flat list for the table view |
+| `GET /highlights` | Every `interesting` node with its notes, riskiest first (not filtered, not paged) |
 | `GET /stats` | Workspace counts by type, severity, confidence, tag, tool (dashboard / filter badges); not filtered |
 | `GET /scans` | Ingested scans |
 | `POST /ingest` | Upload one tool-output JSON |
@@ -128,7 +129,10 @@ Request and response shapes are the Zod schemas in `shared/src/api.ts`. Details:
   UI can tell a match from a path node without a response field.
 - Hiding a node is done with the `ignored` tag (+ `excludeTag=ignored`). Nothing is ever deleted (rule 4).
 - `GET /nodes` sorts with `sort=-effectiveSeverity,label` (the default); `-` means descending; nodes without a
-  severity sort last in both directions. `pageSize` ≤ 500.
+  severity sort last in both directions. `pageSize` ≤ 500. `at=<nodeId>` returns the page that holds that node
+  (under the same filters and sort) instead of `page`; if the node isn't listed, `page` is used.
+- `GET /highlights` takes no params (a filter param is a 400): it is the analyst's list, whatever the view.
+- `GET /export` downloads as `redwhale-export-<UTC time, no colons>.json`.
 - `PUT /layout` takes `{ positions: [{ id, x, y }] }` (≤ 5,000); an unknown or duplicate ID rejects the whole batch.
 - `POST /ingest`: 201 ingested, 200 duplicate, 422 `{ error, issues }` with the exact validation errors, 400 bad JSON,
   415 not `application/json`, 413 over 50 MB. Errors are always `{ error, issues? }`.
@@ -185,8 +189,26 @@ aggregates more aggressively and says so in the response (`truncated: true`): it
   them, plus view-only `mute=1` and `hops=N`, which never reach the API. Bad values are dropped one by one.
 - **Mute low-risk:** fades nodes whose effective severity is below medium (aggregates by `maxSeverity`), and edges
   touching them; a quiet parent above a serious finding stays bright.
-- **Table view:** TanStack Table beside/below the graph; selecting a row selects + centers the node, and vice versa.
-- **Live updates:** WebSocket event → TanStack Query invalidation → wrapper diffs new elements in.
+- **Bottom panel:** toggled from the header, under the canvas: **Table** or **Highlights**.
+- **Table view** (`web/src/table/`): TanStack Table (v9) over `GET /nodes` with the graph's filters, 50 per page,
+  sorted on the server (click a header; shift-click adds a column). Clicking a row selects the node and centers on it
+  if it's on the canvas. When the selection changes (e.g. a graph click), the table turns to the page that holds it
+  (`at=`) and highlights the row; once. Paging away afterwards doesn't jump back. Rows of nodes not on the canvas
+  are dimmer.
+- **Hidden nodes:** selecting a node that isn't on the canvas (from the table or highlights, or after a filter
+  change) opens its side panel from `GET /nodes/:id` and leaves the canvas alone. The panel offers **Show on graph**,
+  which adds the node next to a neighbor that's on the canvas (with its edges to shown nodes only) and centers on it.
+  It is disabled, with the reason written out, when no neighbor is shown or the element budget is full. Shown nodes
+  are an overlay like expansions (`compose.ts` `reveals`), dropped on a filter change.
+- **Live updates** (`web/src/api/live.ts`): one WebSocket to `/api/ws`, reconnecting with backoff (0.5 s doubling
+  to 10 s, reset after a good connection); the header shows live / reconnecting. Each event invalidates every `api`
+  query, coalesced over 200 ms; a reconnect refetches at once (events may have been missed). The wrapper diffs the
+  result in: only new nodes are laid out, nothing on the canvas moves. New nodes named by an event in the last 15 s,
+  and aggregates that grew, flash a cyan halo for 2.5 s.
+- **Highlights:** cards for every `interesting` node with its notes (markdown, no raw HTML); click = same as a row.
+- **Export:** JSON = a plain download of `GET /export` (the whole workspace). PNG = `cy.png({ full: true })` on the
+  canvas color: everything loaded on the canvas, not just the viewport, as it looks (fading included), at 2× and at
+  most 8,192 px a side.
 
 ## 9. Build phases
 
@@ -270,4 +292,11 @@ diffing between scans · reports · CVE monitoring · local LLM scoring · JS an
 | 2026-10-30 | `q` keeps matches plus their ancestors (that pass the other filters) on `/graph` and `/graph/expand`; `/nodes` stays matches-only. Path nodes are drawn dimmer than matches. No response field: the UI applies the shared `matchesQuery` |
 | 2026-10-30 | N-hop focus (1–3) is computed on the canvas, not with `/graph/neighbors`; it also keeps edges between two bright nodes. Supersedes the 1-hop-only focus from Phase 4 |
 | 2026-10-30 | "Hide ignored" is off by default; on, it is `excludeTag=ignored` in the API params and the URL. View state uses `replaceState` (no history entry per click) |
-| 2026-10-30 | Changing filters clears expanded aggregates, expanded neighborhoods and focus; the selection stays (its panel shows again if the node comes back) |
+| 2026-10-30 | Changing filters clears expanded aggregates, expanded neighborhoods and focus; the selection stays (its panel shows again if the node comes back; superseded 2026-10-30: the panel stays, see "hidden nodes") |
+| 2026-10-30 | Phase 5 step 2: a table row for a node hidden from the canvas opens its side panel without touching the canvas. The panel's **Show on graph** adds it next to a shown neighbor; disabled with the reason when no neighbor is shown or the 2,000-element budget is full. The panel is built from `GET /nodes/:id`, so it also stays open for a selected node a filter change hid |
+| 2026-10-30 | `GET /nodes?at=<id>` returns the page holding that node; the table follows the selection once per change, never on later paging |
+| 2026-10-30 | Table: TanStack Table v9 (`@tanstack/react-table` 9.3.1, the current major); its bundled agent skills are not installed |
+| 2026-10-30 | Highlights get their own endpoint, `GET /highlights`: `GET /nodes?tag=interesting` was the first choice, but list items have no `notes` and adding them would make every table page carry up to 100 KB of notes per row. Ignores the graph filters by design; a filter param is a 400, not silently ignored |
+| 2026-10-30 | Live updates refetch every active `api` query on any event (coalesced 200 ms) instead of picking queries by node ID: simpler, and only on-screen queries refetch. A node's own PATCH refetches twice (mutation + event); accepted |
+| 2026-10-30 | Live flash: new nodes the event named (15 s window) and aggregates whose hidden count grew; nodes that only re-render, and expand/neighbor loads, never flash |
+| 2026-10-30 | PNG export = the whole canvas as drawn (fading included), `bg` = canvas color, scale 2 capped at 8,192 px; JSON export = the whole workspace, file names `redwhale-<kind>-<UTC, no colons>` |

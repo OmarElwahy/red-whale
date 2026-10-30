@@ -1,16 +1,17 @@
-// GET /api/stats, GET /api/scans, POST /api/ingest, GET /api/export (docs/architecture.md §6).
+// GET /api/stats, GET /api/scans, GET /api/highlights, POST /api/ingest, GET /api/export (docs/architecture.md §6).
 import {
   CONFIDENCE_LEVELS,
   NODE_TYPES,
   SEVERITIES,
   TAGS,
   exportQuerySchema,
+  highlightsQuerySchema,
   type StatsResponse,
 } from '@redwhale/shared';
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { edges, nodes, observations, scans } from '../db/schema';
-import { loadGraph } from '../graph/store';
+import { loadGraph, riskFirst } from '../graph/store';
 import { ingestDocument } from '../ingest/ingest';
 import { HttpError, parseInput } from '../http';
 import type { RouteContext } from './context';
@@ -73,6 +74,24 @@ export function dataRoutes({ app, db, broadcaster }: RouteContext): void {
 
   app.get('/api/scans', () => ({ scans: scanSummaries(db) }));
 
+  // Every node tagged `interesting`, with its notes. Not filtered: it's the analyst's list, whatever the view.
+  app.get('/api/highlights', (req) => {
+    parseInput(highlightsQuerySchema, req.query);
+    const notes = new Map(
+      db
+        .select({ id: nodes.id, notes: nodes.notes })
+        .from(nodes)
+        .where(eq(nodes.tag, 'interesting'))
+        .all()
+        .map((r) => [r.id, r.notes]),
+    );
+    const items = loadGraph(db)
+      .nodes.filter((n) => notes.has(n.id))
+      .sort(riskFirst)
+      .map((n) => ({ ...n, notes: notes.get(n.id) ?? '' }));
+    return { items };
+  });
+
   app.post('/api/ingest', (req, reply) => {
     const result = ingestDocument(db, req.body);
     switch (result.status) {
@@ -99,9 +118,10 @@ export function dataRoutes({ app, db, broadcaster }: RouteContext): void {
         .all()
         .map(({ id, ...rest }) => [id, rest]),
     );
+    const exportedAt = new Date().toISOString();
     const body = {
       format,
-      exportedAt: new Date().toISOString(),
+      exportedAt,
       nodes: loadGraph(db).nodes.map((n) => ({ ...n, ...(notesAndData.get(n.id) ?? { data: {}, notes: '' }) })),
       edges: db
         .select({
@@ -130,6 +150,8 @@ export function dataRoutes({ app, db, broadcaster }: RouteContext): void {
         .orderBy(asc(observations.id))
         .all(),
     };
-    return reply.header('content-disposition', 'attachment; filename="redwhale-export.json"').send(body);
+    // 2026-10-30T12:34:56.789Z → redwhale-export-2026-10-30T12-34-56Z.json (no colons: Windows can't save them).
+    const filename = `redwhale-export-${exportedAt.slice(0, 19).replaceAll(':', '-')}Z.json`;
+    return reply.header('content-disposition', `attachment; filename="${filename}"`).send(body);
   });
 }

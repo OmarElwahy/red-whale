@@ -87,22 +87,23 @@ describe('NodeTable', () => {
     expect(params?.get('q')).toBe('dev');
   });
 
-  test('clicking a header sorts on the server; clicking again flips it; shift-click adds a column', async () => {
+  test('clicking a header sorts on the server by that column; again flips it; shift-click adds one', async () => {
     renderTable();
     await within(grid()).findByText('n000.example.com');
-    fireEvent.click(within(grid()).getByRole('button', { name: /Label/ }));
+    fireEvent.click(within(grid()).getByRole('button', { name: /Type/ }));
     await waitFor(() => {
-      expect(lastUrl()?.searchParams.get('sort')).toBe('label');
+      expect(lastUrl()?.searchParams.get('sort')).toBe('type');
     });
-    fireEvent.click(within(grid()).getByRole('button', { name: /Label/ }));
+    fireEvent.click(within(grid()).getByRole('button', { name: /Type/ }));
     await waitFor(() => {
-      expect(lastUrl()?.searchParams.get('sort')).toBe('-label');
+      expect(lastUrl()?.searchParams.get('sort')).toBe('-type');
     });
+    // Severities, counts and times start descending (riskiest, most, newest first).
     fireEvent.click(within(grid()).getByRole('button', { name: /Last seen/ }), { shiftKey: true });
     await waitFor(() => {
-      expect(lastUrl()?.searchParams.get('sort')).toBe('-label,-lastSeen');
+      expect(lastUrl()?.searchParams.get('sort')).toBe('-type,-lastSeen');
     });
-    expect(within(grid()).getByRole('columnheader', { name: /Label/ }).getAttribute('aria-sort')).toBe('descending');
+    expect(within(grid()).getByRole('columnheader', { name: /Type/ }).getAttribute('aria-sort')).toBe('descending');
   });
 
   test('a new sort goes back to page 1', async () => {
@@ -110,10 +111,11 @@ describe('NodeTable', () => {
     await within(grid()).findByText('n000.example.com');
     fireEvent.click(screen.getByRole('button', { name: /Next/ }));
     await within(grid()).findByText('n050.example.com');
-    fireEvent.click(within(grid()).getByRole('button', { name: /Type/ }));
+    fireEvent.click(within(grid()).getByRole('button', { name: /Confidence/ }));
     await waitFor(() => {
-      expect(lastUrl()?.searchParams.get('page')).toBe('1');
+      expect(lastUrl()?.searchParams.get('sort')).toBe('confidence');
     });
+    expect(lastUrl()?.searchParams.get('page')).toBe('1');
   });
 
   test('tag is not sortable (the API has no tag sort)', async () => {

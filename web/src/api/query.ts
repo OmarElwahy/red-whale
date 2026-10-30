@@ -33,4 +33,6 @@ export const queryKeys = {
   nodes: (filters: GraphFilters, page: number, sort: string) =>
     ['api', 'nodes', graphSearchParams(filters).toString(), page, sort] as const,
   stats: ['api', 'stats'] as const,
+  /** Not filtered: every `interesting` node. */
+  highlights: ['api', 'highlights'] as const,
 };

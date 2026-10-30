@@ -2,17 +2,26 @@
 // is created once, and new elements are diffed in imperatively. React never re-renders the graph.
 import cytoscape, { type Core } from 'cytoscape';
 import fcose from 'cytoscape-fcose';
-import { useEffect, useRef } from 'react';
+import { useEffect, useImperativeHandle, useRef, type Ref } from 'react';
 import { applyDiff, byId, diffElements } from './diff';
 import type { Element } from './elements';
 import { applyFocus, applyMute, applySearchPath, focusNeighborhood } from './emphasis';
 import { bindGraphEvents, syncSelection, type GraphHandlers } from './events';
+import { graphPng } from './export';
+import { flash, flashIds } from './flash';
 import { initialLayout, layoutAdded } from './layout';
 import { COLORS, graphStylesheet } from './style';
 
 cytoscape.use(fcose);
 
+/** What the app can ask of the canvas directly. */
+export interface GraphHandle {
+  /** The whole loaded graph as a PNG, or null before the canvas exists. */
+  png: () => Blob | null;
+}
+
 export interface CytoscapeGraphProps {
+  ref?: Ref<GraphHandle>;
   elements: readonly Element[];
   selectedId: string | null;
   focusId: string | null;
@@ -24,6 +33,8 @@ export interface CytoscapeGraphProps {
   query: string | undefined;
   /** Pan to this node when `seq` changes. */
   centerOn: { id: string; seq: number } | null;
+  /** IDs named by recent live updates: when they first appear on the canvas, they flash. */
+  fresh: ReadonlyMap<string, number>;
   handlers: GraphHandlers;
   className?: string;
 }
@@ -32,6 +43,7 @@ const savedPositions = (elements: readonly Element[]): string[] =>
   elements.flatMap((el) => (el.group === 'nodes' && el.position ? [el.data.id] : []));
 
 export function CytoscapeGraph({
+  ref,
   elements,
   selectedId,
   focusId,
@@ -39,6 +51,7 @@ export function CytoscapeGraph({
   mute,
   query,
   centerOn,
+  fresh,
   handlers,
   className,
 }: CytoscapeGraphProps) {
@@ -49,9 +62,13 @@ export function CytoscapeGraph({
   /** Nodes that stay where they are when layouts run: saved positions, plus nodes dragged this session. */
   const pinned = useRef<Set<string>>(new Set());
   const handlersRef = useRef(handlers);
+  const freshRef = useRef(fresh);
   useEffect(() => {
     handlersRef.current = handlers;
+    freshRef.current = fresh;
   });
+
+  useImperativeHandle(ref, () => ({ png: () => (cyRef.current ? graphPng(cyRef.current) : null) }), []);
 
   useEffect(() => {
     if (!container.current) return;
@@ -91,14 +108,20 @@ export function CytoscapeGraph({
     const cy = cyRef.current;
     if (!cy) return;
     const diff = diffElements(applied.current, elements);
+    const previous = applied.current;
     applyDiff(cy, diff);
     applied.current = byId(elements);
 
     for (const id of savedPositions(elements)) pinned.current.add(id);
     // First paint, or a filter change that replaced every node: nothing to place the new nodes around.
-    const fresh = diff.add.nodes.length > 0 && diff.add.nodes.length === cy.nodes().length;
-    if (fresh) initialLayout(cy, pinned.current);
-    else layoutAdded(cy, diff.add.nodes.map((n) => n.data.id), pinned.current);
+    const firstPaint = diff.add.nodes.length > 0 && diff.add.nodes.length === cy.nodes().length;
+    if (firstPaint) {
+      initialLayout(cy, pinned.current);
+    } else {
+      // Only the new nodes are placed; everything already on the canvas stays where it is.
+      layoutAdded(cy, diff.add.nodes.map((n) => n.data.id), pinned.current);
+      flash(cy, flashIds(diff, previous, freshRef.current));
+    }
   }, [elements]);
 
   useEffect(() => {

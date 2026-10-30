@@ -7,6 +7,7 @@ import {
   TAGS,
   exportResponseSchema,
   graphResponseSchema,
+  highlightsResponseSchema,
   ingestResponseSchema,
   scansResponseSchema,
   statsResponseSchema,
@@ -14,7 +15,7 @@ import {
 } from '@redwhale/shared';
 import { describe, expect, test } from 'vitest';
 import { EXAMPLES, INVALID_DIR, counts, exampleDoc, exampleText, jsonFiles } from '../helpers';
-import { body, error, ingestExamples, testApi } from './helpers';
+import { body, error, idOf, ingestExamples, testApi } from './helpers';
 
 const zeros = (keys: readonly string[]) => Object.fromEntries(keys.map((k) => [k, 0]));
 
@@ -137,13 +138,49 @@ describe('POST /api/ingest', () => {
   });
 });
 
+describe('GET /api/highlights', () => {
+  const tag = (api: Awaited<ReturnType<typeof testApi>>, label: string, patch: Record<string, unknown>) =>
+    api.send('PATCH', `/api/nodes/${idOf(api.db, label)}`, patch);
+
+  test('empty workspace, or nothing tagged: an empty list', async () => {
+    const api = await testApi();
+    expect(body(await api.get('/api/highlights'), 200, highlightsResponseSchema)).toEqual({ items: [] });
+    ingestExamples(api.db);
+    expect(body(await api.get('/api/highlights'), 200, highlightsResponseSchema)).toEqual({ items: [] });
+  });
+
+  test('every interesting node with its notes, riskiest first; other tags are left out', async () => {
+    const api = await testApi();
+    ingestExamples(api.db);
+    await tag(api, 'api.example.com', { tag: 'interesting', notes: '## API\nCheck **auth**.' });
+    await tag(api, 'dev.example.com', { tag: 'interesting' });
+    await tag(api, 'example.com', { tag: 'checked', notes: 'done' });
+    const r = body(await api.get('/api/highlights'), 200, highlightsResponseSchema);
+    // dev.example.com has a medium finding below it; api.example.com has none.
+    expect(r.items.map((n) => [n.label, n.notes, n.effectiveSeverity])).toEqual([
+      ['dev.example.com', '', 'medium'],
+      ['api.example.com', '## API\nCheck **auth**.', null],
+    ]);
+    expect(r.items.every((n) => n.tag === 'interesting')).toBe(true);
+  });
+
+  test('takes no filters: a filter param is a 400 rather than silently ignored', async () => {
+    const api = await testApi();
+    error(await api.get('/api/highlights?types=ip'), 400, 'types');
+  });
+});
+
 describe('GET /api/export', () => {
   test('everything, as a download; counts match /api/stats', async () => {
     const api = await testApi();
     ingestExamples(api.db);
     const res = await api.get('/api/export?format=json');
     const e = body(res, 200, exportResponseSchema);
-    expect(res.headers['content-disposition']).toBe('attachment; filename="redwhale-export.json"');
+    expect(res.headers['content-disposition']).toBe(
+      `attachment; filename="redwhale-export-${e.exportedAt.slice(0, 19).replaceAll(':', '-')}Z.json"`,
+    );
+    // No colons in the name: Windows can't save them.
+    expect(res.headers['content-disposition']).toMatch(/filename="redwhale-export-\d{4}-\d\d-\d\dT\d\d-\d\d-\d\dZ\.json"/);
     const { totals } = body(await api.get('/api/stats'), 200, statsResponseSchema);
     expect({ nodes: e.nodes.length, edges: e.edges.length, scans: e.scans.length, observations: e.observations.length }).toEqual(
       totals,

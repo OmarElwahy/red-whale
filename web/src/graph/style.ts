@@ -70,6 +70,8 @@ export const COLORS = {
   /** Ring for `interesting`: fuchsia, so it never blends with a severity fill. */
   interesting: '#e879f9', // fuchsia-400
   selected: '#f8fafc', // slate-50
+  /** Halo on nodes a live update just added. */
+  fresh: '#22d3ee', // cyan-400
 } as const;
 
 export const IGNORED_OPACITY = 0.3;
@@ -144,6 +146,11 @@ export function graphStylesheet(): StylesheetJson {
     {
       selector: 'node:selected',
       style: { 'underlay-color': COLORS.selected, 'underlay-padding': 8, 'underlay-opacity': 0.25 },
+    },
+    // Live update: a brief, bright halo on what a new scan just added (graph/flash.ts).
+    {
+      selector: 'node.fresh',
+      style: { 'underlay-color': COLORS.fresh, 'underlay-padding': 12, 'underlay-opacity': 0.7 },
     },
     {
       selector: 'edge',

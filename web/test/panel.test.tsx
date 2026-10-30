@@ -226,6 +226,33 @@ describe('node panel', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close panel' }));
     expect(onClose).toHaveBeenCalledOnce();
   });
+
+  test('a node on the graph has no "Show on graph"', async () => {
+    renderPanel();
+    await screen.findByRole('region', { name: 'Tag' });
+    expect(screen.queryByRole('button', { name: 'Show on graph' })).toBeNull();
+  });
+
+  test('a hidden node offers "Show on graph"', async () => {
+    const onReveal = vi.fn();
+    renderPanel({ reveal: { blocked: null, onReveal } });
+    const graph = within(await screen.findByRole('region', { name: 'Graph' }));
+    expect(graph.getByText(/isn't on the graph right now/)).toBeTruthy();
+    fireEvent.click(graph.getByRole('button', { name: 'Show on graph' }));
+    expect(onReveal).toHaveBeenCalledOnce();
+  });
+
+  test('when it cannot be shown, the button is disabled and the reason is written out', async () => {
+    const onReveal = vi.fn();
+    const reason = 'The graph is at its ~2,000-element limit. Collapse a group to make room.';
+    renderPanel({ reveal: { blocked: reason, onReveal } });
+    const graph = within(await screen.findByRole('region', { name: 'Graph' }));
+    const button = graph.getByRole('button', { name: 'Show on graph' });
+    expect(button.hasAttribute('disabled')).toBe(true);
+    expect(graph.getByText(reason)).toBeTruthy();
+    fireEvent.click(button);
+    expect(onReveal).not.toHaveBeenCalled();
+  });
 });
 
 describe('aggregate panel', () => {

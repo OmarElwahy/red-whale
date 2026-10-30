@@ -1,7 +1,7 @@
 // Markdown notes: edit / preview, saved explicitly (button or Ctrl+Enter) rather than on every keystroke,
 // since each save is a PATCH that the server broadcasts.
 import { useState } from 'react';
-import Markdown from 'react-markdown';
+import { NotesMarkdown } from '@/components/NotesMarkdown';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -71,17 +71,7 @@ export function NotesEditor({ notes, onSave, saving, error }: NotesEditorProps) 
           {text === '' ? (
             'No notes.'
           ) : (
-            <Markdown
-              components={{
-                a: ({ href, children }) => (
-                  <a href={href} target="_blank" rel="noopener noreferrer">
-                    {children}
-                  </a>
-                ),
-              }}
-            >
-              {text}
-            </Markdown>
+            <NotesMarkdown>{text}</NotesMarkdown>
           )}
         </div>
       )}

@@ -134,6 +134,9 @@ export const nodeListQuerySchema = graphFiltersSchema.extend({
 
 export const exportQuerySchema = z.strictObject({ format: z.literal('json').default('json') });
 
+/** GET /highlights takes no params: it lists every `interesting` node whatever the graph filters are. */
+export const highlightsQuerySchema = z.strictObject({});
+
 // --- request bodies --------------------------------------------------------------------------------
 
 // z.number() rejects Infinity and NaN in Zod 4.

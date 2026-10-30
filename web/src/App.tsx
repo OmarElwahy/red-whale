@@ -1,10 +1,13 @@
 import type { AggregateNode, GraphNode } from '@redwhale/shared';
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { ApiError, ResponseShapeError } from '@/api/client';
+import type { LiveStatus } from '@/api/live';
+import { useLiveUpdates } from '@/api/useLiveUpdates';
 import {
   saveLayout,
   useExpansions,
   useGraph,
+  useHighlights,
   useNeighborhoods,
   useNodeDetail,
   useReveals,
@@ -13,6 +16,7 @@ import {
 import { Legend } from '@/components/Legend';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import { FilterSidebar } from '@/filters/FilterSidebar';
 import { firstMatch } from '@/filters/search';
 import {
@@ -24,13 +28,16 @@ import {
   type ComposedGraph,
   type GroupState,
 } from '@/graph/compose';
-import { CytoscapeGraph } from '@/graph/CytoscapeGraph';
+import { CytoscapeGraph, type GraphHandle } from '@/graph/CytoscapeGraph';
+import { ExportButtons } from '@/graph/ExportButtons';
 import { toElements } from '@/graph/elements';
 import type { GraphHandlers } from '@/graph/events';
 import { PositionSaver } from '@/graph/positions';
 import { ContextMenu } from '@/menu/ContextMenu';
 import { menuItems, safeHttpUrl, type MenuAction } from '@/menu/items';
+import { HighlightsView } from '@/highlights/HighlightsView';
 import { SidePanel } from '@/panel/SidePanel';
+import { useLive } from '@/state/live';
 import { useUi, type BottomPanel } from '@/state/ui';
 import { NodeTable } from '@/table/NodeTable';
 import { hasFilters, useView } from '@/state/view';
@@ -53,6 +60,19 @@ function ErrorPanel({ error }: { error: Error }) {
         Is the API running? Start both with <code className="font-mono">pnpm dev</code>.
       </p>
     </div>
+  );
+}
+
+function LiveIndicator({ status }: { status: LiveStatus }) {
+  const open = status === 'open';
+  return (
+    <span
+      className="text-muted-foreground mr-2 inline-flex items-center gap-1.5 text-xs"
+      title={open ? 'New scans appear as soon as they are ingested' : 'Live updates are off until the API is back'}
+    >
+      <span className={cn('size-2 rounded-full', open ? 'bg-emerald-500' : 'animate-pulse bg-amber-400')} aria-hidden />
+      {open ? 'live' : status === 'connecting' ? 'connecting…' : 'reconnecting…'}
+    </span>
   );
 }
 
@@ -126,8 +146,13 @@ export function App() {
   const filters = useView((s) => s.filters);
   const mute = useView((s) => s.mute);
   const hops = useView((s) => s.hops);
+  useLiveUpdates();
+  const liveStatus = useLive((s) => s.status);
+  const fresh = useLive((s) => s.fresh);
   const graph = useGraph(filters);
   const stats = useStats();
+  const highlights = useHighlights();
+  const graphRef = useRef<GraphHandle>(null);
   const selectedId = useUi((s) => s.selectedId);
   const focusId = useUi((s) => s.focusId);
   const expanded = useUi((s) => s.expanded);
@@ -315,9 +340,18 @@ export function App() {
           <span className="text-muted-foreground text-xs">loading…</span>
         )}
         <div className="ml-auto flex items-center gap-1">
+          <LiveIndicator status={liveStatus} />
           <PanelToggle panel="table" current={bottomPanel}>
             Table
           </PanelToggle>
+          <PanelToggle panel="highlights" current={bottomPanel}>
+            Highlights{highlights.data ? ` (${String(highlights.data.length)})` : ''}
+          </PanelToggle>
+          <span className="bg-border mx-1 h-5 w-px" aria-hidden />
+          <ExportButtons
+            png={() => graphRef.current?.png() ?? null}
+            pngDisabled={graph.error !== null || workspaceEmpty || composed === null}
+          />
         </div>
       </header>
       <main className="flex min-h-0 flex-1">
@@ -333,6 +367,7 @@ export function App() {
               </Message>
             ) : (
               <CytoscapeGraph
+                ref={graphRef}
                 elements={elements}
                 selectedId={selectedId}
                 focusId={focusId}
@@ -340,6 +375,7 @@ export function App() {
                 mute={mute}
                 query={loadedQuery}
                 centerOn={centerOn}
+                fresh={fresh}
                 handlers={handlers}
                 className="absolute inset-0"
               />
@@ -379,6 +415,18 @@ export function App() {
                   pick(node.id);
                 }}
                 className="flex-1"
+              />
+            </section>
+          )}
+          {bottomPanel === 'highlights' && (
+            <section aria-label="Highlights" className="flex h-[40%] min-h-40 shrink-0 flex-col border-t">
+              <HighlightsView
+                items={highlights.data}
+                error={highlights.error}
+                selectedId={selectedId}
+                isShown={(id) => nodesById.has(id)}
+                onPick={pick}
+                className="min-h-0 flex-1"
               />
             </section>
           )}

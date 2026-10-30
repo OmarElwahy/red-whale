@@ -34,7 +34,7 @@ Dropped: `cytoscape-expand-collapse` (aggregation is server-side). Docker/Docker
 | 4 | Graph UI: styling, side panel + provenance, tags/notes, expand/collapse, saved positions | ✅ done |
 | — | Review fixes: `observations.role` (parent refs don't corroborate), ASCII/punycode hosts, docs synced | ✅ done |
 | 5A | Filters sidebar, search, URL state, N-hop focus, mute low-risk | ✅ done |
-| 5B | Synced table, WebSocket live updates, Highlights view, JSON/PNG export | 🔄 in progress |
+| 5B | Synced table, WebSocket live updates, Highlights view, JSON/PNG export | ✅ code + tests done; manual browser check pending |
 | 6+ | **Scope guard first**, then Docker orchestrator, presets, auto-chaining, diffing, reports, CVE monitor, local LLM scoring, JS agent | later |
 
 ## How I work with Claude Code
@@ -56,7 +56,7 @@ Dropped: `cytoscape-expand-collapse` (aggregation is server-side). Docker/Docker
 - Table row for a hidden node → open side panel; a **"Show on graph"** button reveals it (disabled at the
   2,000-element cap or with no visible neighbor).
 - Table supports `?at=` to jump to the selected node's page.
-- Highlights view ignores graph filters (reuse `GET /api/nodes?tag=interesting` if it returns notes).
+- Highlights view ignores graph filters. `/api/nodes` items have no notes, so it got its own `GET /api/highlights`.
 
 ## Open items to remember
 

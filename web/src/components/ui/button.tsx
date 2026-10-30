@@ -31,4 +31,4 @@ function Button({
   return <button data-slot="button" type={type} className={cn(buttonVariants({ variant, size }), className)} {...props} />;
 }
 
-export { Button };
+export { Button, buttonVariants };
