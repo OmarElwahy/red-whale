@@ -127,8 +127,10 @@ export function nodeDetail(db: Db, id: string) {
 
 export function nodeRoutes({ app, db, broadcaster }: RouteContext): void {
   app.get('/api/nodes', (req) => {
-    const { page, pageSize, sort, ...filters } = parseInput(nodeListQuerySchema, req.query);
+    const { page: requested, pageSize, sort, at, ...filters } = parseInput(nodeListQuerySchema, req.query);
     const items = filteredGraph(db, filters).nodes.sort(nodeComparator(sort));
+    const index = at === undefined ? -1 : items.findIndex((n) => n.id === at);
+    const page = index === -1 ? requested : Math.floor(index / pageSize) + 1;
     return { items: items.slice((page - 1) * pageSize, page * pageSize), page, pageSize, total: items.length };
   });
 

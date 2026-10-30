@@ -1,12 +1,12 @@
 // Right-hand panel for the selected node (docs/architecture.md §8): details, provenance, tag and notes from
 // GET /api/nodes/:id; for an aggregate, its size and the expand / load more / collapse controls.
-import type { AggregateNode, GraphNode, Severity, Tag } from '@redwhale/shared';
+import type { AggregateNode, GraphNode, Tag } from '@redwhale/shared';
 import { useId, type ReactNode } from 'react';
 import { useNodeDetail, usePatchNode } from '@/api/hooks';
 import { Badge } from '@/components/ui/badge';
+import { SeverityValue } from '@/components/SeverityValue';
 import { Button } from '@/components/ui/button';
 import type { GroupState } from '@/graph/compose';
-import { SEVERITY_COLOR } from '@/graph/style';
 import type { MenuAction } from '@/menu/items';
 import { formatTime, formatValue } from './format';
 import { NotesEditor } from './NotesEditor';
@@ -20,6 +20,11 @@ export interface SidePanelProps {
   /** Label of the aggregate's parent node, when it's on the canvas. */
   parentLabel?: string;
   canLoadPage: boolean;
+  /**
+   * Set when the node isn't on the graph (e.g. picked in the table while it's inside an aggregate). `blocked` is
+   * why it can't be shown, or null when it can.
+   */
+  reveal?: { blocked: string | null; onReveal: () => void };
   onAction: (action: MenuAction) => void;
   onClose: () => void;
 }
@@ -42,15 +47,6 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="min-w-0 break-words">{children}</dd>
     </>
-  );
-}
-
-function SeverityValue({ severity }: { severity: Severity | null }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 capitalize">
-      <span className="size-2.5 rounded-full" style={{ background: SEVERITY_COLOR[severity ?? 'none'] }} aria-hidden />
-      {severity ?? 'none'}
-    </span>
   );
 }
 
@@ -101,7 +97,23 @@ function AggregatePanel({ target, group, parentLabel, canLoadPage, onAction }: S
   );
 }
 
-function NodePanel({ target, group, onAction }: SidePanelProps & { target: GraphNode }) {
+function RevealSection({ blocked, onReveal }: NonNullable<SidePanelProps['reveal']>) {
+  return (
+    <Section title="Graph">
+      <p className="text-muted-foreground text-xs">
+        This node isn't on the graph right now (it's inside a group, or the filters leave it out).
+      </p>
+      <div>
+        <Button size="sm" disabled={blocked !== null} onClick={onReveal}>
+          Show on graph
+        </Button>
+      </div>
+      {blocked !== null && <p className="text-xs text-amber-400">{blocked}</p>}
+    </Section>
+  );
+}
+
+function NodePanel({ target, group, reveal, onAction }: SidePanelProps & { target: GraphNode }) {
   const detail = useNodeDetail(target.id);
   const patch = usePatchNode(target.id);
   const node = detail.data?.node;
@@ -169,6 +181,7 @@ function NodePanel({ target, group, onAction }: SidePanelProps & { target: Graph
           </div>
         )}
       </Section>
+      {reveal && <RevealSection {...reveal} />}
       <Section title="Tag">
         <TagPicker value={node.tag} onChange={setTag} disabled={patch.isPending} />
         {tagError && <p className="text-xs text-red-400">Tag not saved: {tagError.message}</p>}

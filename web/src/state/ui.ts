@@ -1,5 +1,6 @@
 // UI state (Zustand): what's selected, focused, expanded, and where the context menu is. Server data lives in
 // TanStack Query; this only says which expand pages and neighborhoods to fetch.
+import { DEFAULT_NODE_SORT } from '@redwhale/shared';
 import { create } from 'zustand';
 
 export interface MenuState {
@@ -9,6 +10,15 @@ export interface MenuState {
   y: number;
 }
 
+/** The panel under the graph. */
+export type BottomPanel = 'table' | 'highlights';
+
+export interface TableState {
+  page: number;
+  /** As GET /api/nodes takes it: `-effectiveSeverity,label`. */
+  sort: string;
+}
+
 export interface UiState {
   selectedId: string | null;
   focusId: string | null;
@@ -16,6 +26,12 @@ export interface UiState {
   expanded: { id: string; pages: number }[];
   /** Nodes whose neighborhood was expanded, in order. */
   neighbors: string[];
+  /** Hidden nodes the analyst asked to show on the graph ("Show on graph"), in order. */
+  revealed: string[];
+  /** Center on this node as soon as it is on the canvas (after "Show on graph"). */
+  centerWhenShown: string | null;
+  bottomPanel: BottomPanel | null;
+  table: TableState;
   menu: MenuState | null;
   /** A request to pan to a node; `seq` changes on every request, so the same node can be centered again. */
   centerOn: { id: string; seq: number } | null;
@@ -29,12 +45,23 @@ export interface UiState {
   /** Removes the expansion, and the neighborhoods expanded from its members. */
   collapse: (aggregateId: string, members: readonly string[]) => void;
   expandNeighbors: (id: string) => void;
+  /** Shows a hidden node next to a neighbor that's on the graph, then centers on it. */
+  reveal: (id: string) => void;
+  clearCenterWhenShown: () => void;
+  /** Opens the panel, or closes it if it's already showing. */
+  toggleBottomPanel: (panel: BottomPanel) => void;
+  setTablePage: (page: number) => void;
+  /** A new sort starts again at page 1. */
+  setTableSort: (sort: string) => void;
   openMenu: (menu: MenuState) => void;
   closeMenu: () => void;
   center: (id: string) => void;
   requestJump: () => void;
   clearJump: () => void;
-  /** Filters changed: expand pages and neighborhoods were loaded under the old ones, so drop them, and focus. */
+  /**
+   * Filters changed: expand pages, neighborhoods and reveals were loaded under the old ones, so drop them, and
+   * focus. The table goes back to page 1.
+   */
   clearOverlays: () => void;
 }
 
@@ -43,6 +70,10 @@ export const initialUiState = {
   focusId: null,
   expanded: [],
   neighbors: [],
+  revealed: [],
+  centerWhenShown: null,
+  bottomPanel: null,
+  table: { page: 1, sort: DEFAULT_NODE_SORT },
   menu: null,
   centerOn: null,
   jumpPending: false,
@@ -52,7 +83,11 @@ export const useUi = create<UiState>()((set) => ({
   ...initialUiState,
 
   select: (id) => {
-    set({ selectedId: id, menu: null });
+    set((s) => ({
+      selectedId: id,
+      menu: null,
+      centerWhenShown: s.centerWhenShown === id ? s.centerWhenShown : null,
+    }));
   },
   focus: (id) => {
     set({ focusId: id, menu: null });
@@ -80,6 +115,21 @@ export const useUi = create<UiState>()((set) => ({
   expandNeighbors: (id) => {
     set((s) => ({ menu: null, neighbors: s.neighbors.includes(id) ? s.neighbors : [...s.neighbors, id] }));
   },
+  reveal: (id) => {
+    set((s) => ({ revealed: s.revealed.includes(id) ? s.revealed : [...s.revealed, id], centerWhenShown: id }));
+  },
+  clearCenterWhenShown: () => {
+    set({ centerWhenShown: null });
+  },
+  toggleBottomPanel: (panel) => {
+    set((s) => ({ bottomPanel: s.bottomPanel === panel ? null : panel }));
+  },
+  setTablePage: (page) => {
+    set((s) => ({ table: { ...s.table, page } }));
+  },
+  setTableSort: (sort) => {
+    set({ table: { page: 1, sort } });
+  },
   openMenu: (menu) => {
     set({ menu });
   },
@@ -96,6 +146,14 @@ export const useUi = create<UiState>()((set) => ({
     set({ jumpPending: false });
   },
   clearOverlays: () => {
-    set({ expanded: [], neighbors: [], focusId: null, menu: null });
+    set((s) => ({
+      expanded: [],
+      neighbors: [],
+      revealed: [],
+      centerWhenShown: null,
+      focusId: null,
+      menu: null,
+      table: { ...s.table, page: 1 },
+    }));
   },
 }));

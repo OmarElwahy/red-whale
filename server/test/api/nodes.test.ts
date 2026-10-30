@@ -276,7 +276,34 @@ describe('GET /api/nodes', () => {
     );
   });
 
+  test('at=<id> returns the page that holds the node, under the same sort and filters', async () => {
+    const api = await testApi();
+    ingestMock(api.db, 60);
+    const all = body(await api.get('/api/nodes?pageSize=500&sort=label&types=subdomain'), 200, nodeListResponseSchema);
+    const target = all.items[57];
+    if (!target) throw new Error('mock too small');
+    const r = body(
+      await api.get(`/api/nodes?pageSize=20&page=1&sort=label&types=subdomain&at=${target.id}`),
+      200,
+      nodeListResponseSchema,
+    );
+    expect(r.page).toBe(3);
+    expect(r.items.map((n) => n.id)).toEqual(all.items.slice(40, 60).map((n) => n.id));
+    expect(r.items.map((n) => n.id)).toContain(target.id);
+  });
+
+  test('at=<id> for a node that is not listed falls back to the requested page', async () => {
+    const api = await examples();
+    const domain = idOf(api.db, 'example.com');
+    const r = body(await api.get(`/api/nodes?pageSize=2&page=2&types=port&at=${domain}`), 200, nodeListResponseSchema);
+    expect(r.page).toBe(2);
+    expect(r.items).toEqual([]);
+    const unknown = body(await api.get('/api/nodes?pageSize=5&page=2&at=0000000000000000'), 200, nodeListResponseSchema);
+    expect(unknown.page).toBe(2);
+  });
+
   test.each([
+    ['at=', 'at'],
     ['sort=bogus', 'sort[0].field'],
     ['sort=-label,colour', 'sort[1].field'],
     ['page=0', 'page'],

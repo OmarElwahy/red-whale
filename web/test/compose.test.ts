@@ -1,4 +1,4 @@
-import type { GraphNode } from '@redwhale/shared';
+import { nodeDetailResponseSchema, type GraphNode } from '@redwhale/shared';
 import { describe, expect, test } from 'vitest';
 import {
   ELEMENT_BUDGET,
@@ -6,8 +6,11 @@ import {
   canExpandNeighbors,
   canLoadPage,
   composeGraph,
+  revealCheck,
+  revealFrom,
   type ExpandPage,
   type Expansion,
+  type Reveal,
 } from '../src/graph/compose';
 import { aggregate, edge, node } from './fixtures';
 
@@ -150,5 +153,107 @@ describe('budget checks', () => {
   test('neighbors need some head room', () => {
     expect(canExpandNeighbors({ size: 100 })).toBe(true);
     expect(canExpandNeighbors({ size: ELEMENT_BUDGET - 1 })).toBe(false);
+  });
+});
+
+describe('reveals ("Show on graph")', () => {
+  /** m7 is hidden in the aggregate; it hangs off the domain and resolves to an IP that isn't shown. */
+  const hidden = (): Reveal => ({
+    node: node('m7'),
+    edges: [edge(P, 'm7'), edge('m7', 'ip1', { relation: 'resolves_to' })],
+  });
+
+  test('the node joins next to a shown neighbor, with only the edges to shown nodes', () => {
+    const c = composeGraph({ base: base(), expansions: [], neighborhoods: [], reveals: [hidden()] });
+    expect(ids(c.nodes)).toEqual([P, 'm0', AGG, 'm7']);
+    expect(ids(c.edges)).toContain(`${P}->m7`);
+    expect(ids(c.edges)).not.toContain('m7->ip1');
+    // The aggregate is unchanged: the server still counts m7 as one of its members.
+    expect(c.nodes.find((n) => n.id === AGG)).toMatchObject({ count: 249 });
+  });
+
+  test('with no shown neighbor nothing is added', () => {
+    const orphan: Reveal = { node: node('m7'), edges: [edge('m7', 'ip1', { relation: 'resolves_to' })] };
+    const c = composeGraph({ base: base(), expansions: [], neighborhoods: [], reveals: [orphan] });
+    expect(ids(c.nodes)).toEqual([P, 'm0', AGG]);
+  });
+
+  test('a node that is already shown is left as it is', () => {
+    const c = composeGraph({
+      base: base(),
+      expansions: [],
+      neighborhoods: [],
+      reveals: [{ node: node('m0', { label: 'stale' }), edges: [edge(P, 'm0')] }],
+    });
+    expect(c.nodes.find((n) => n.id === 'm0')?.label).toBe('m0.example.com');
+    expect(c.nodes).toHaveLength(3);
+  });
+
+  test('a revealed node can anchor the next one, and a neighborhood', () => {
+    const url: Reveal = { node: node('u1', { type: 'url' }), edges: [edge('m7', 'u1', { relation: 'serves' })] };
+    const c = composeGraph({
+      base: base(),
+      expansions: [],
+      // Asked for before m7 was on the graph: it waits for its center.
+      neighborhoods: [{ center: 'u1', nodes: [node('t1', { type: 'technology' })], edges: [edge('u1', 't1')] }],
+      reveals: [url, hidden()],
+    });
+    expect(ids(c.nodes)).toEqual([P, 'm0', AGG, 'm7', 'u1', 't1']);
+  });
+
+  test('a reveal over the budget is skipped and reported', () => {
+    const c = composeGraph({ base: base(), expansions: [], neighborhoods: [], reveals: [hidden()], budget: 6 });
+    expect(c.overBudget).toEqual(['reveal:m7']);
+    expect(c.nodes).toHaveLength(3);
+  });
+
+  test('revealFrom turns node detail into graph form: direction decides source and target', () => {
+    const ref = (id: string, type: 'domain' | 'ip', value: string) => ({
+      id,
+      type,
+      value,
+      label: value,
+      severity: null,
+      confidence: 'discovered',
+    });
+    const T = '2026-10-30T00:00:00.000Z';
+    const detail = nodeDetailResponseSchema.parse({
+      node: { ...node('m7'), data: { a: 1 }, notes: 'some notes' },
+      edges: [
+        { id: 'e-in', relation: 'has_subdomain', direction: 'in', other: ref(P, 'domain', 'example.com'), firstSeen: T, lastSeen: T },
+        { id: 'e-out', relation: 'resolves_to', direction: 'out', other: ref('ip1', 'ip', '198.18.0.1'), firstSeen: T, lastSeen: T },
+      ],
+      observations: [],
+    });
+    const r = revealFrom(detail);
+    expect(r.node).toEqual(node('m7'));
+    expect(r.edges).toEqual([
+      { id: 'e-in', source: P, target: 'm7', relation: 'has_subdomain' },
+      { id: 'e-out', source: 'm7', target: 'ip1', relation: 'resolves_to' },
+    ]);
+  });
+});
+
+describe('revealCheck', () => {
+  const composed = () => composeGraph({ base: base(), expansions: [], neighborhoods: [] });
+  const r: Reveal = { node: node('m7'), edges: [edge(P, 'm7'), edge('m7', 'ip1', { relation: 'resolves_to' })] };
+
+  test('ok when a neighbor is shown and there is room', () => {
+    expect(revealCheck(composed(), r)).toEqual({ ok: true });
+  });
+
+  test('no shown neighbor: says to expand what is above it', () => {
+    const lonely: Reveal = { node: node('m7'), edges: [edge('m7', 'ip1', { relation: 'resolves_to' })] };
+    const check = revealCheck(composed(), lonely);
+    expect(check.ok).toBe(false);
+    if (!check.ok) expect(check.reason).toMatch(/None of its neighbors is on the graph/);
+  });
+
+  test('at the element limit: says so', () => {
+    // 5 elements on the canvas; the node and its one edge to a shown node need 2 more.
+    expect(revealCheck(composed(), r, 7)).toEqual({ ok: true });
+    const check = revealCheck(composed(), r, 6);
+    expect(check.ok).toBe(false);
+    if (!check.ok) expect(check.reason).toMatch(/2,000-element limit/);
   });
 });

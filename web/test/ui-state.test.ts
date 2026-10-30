@@ -65,4 +65,41 @@ describe('UI state', () => {
       expect(ui().menu).toBeNull();
     }
   });
+
+  test('reveal remembers the node once and asks to center on it once shown', () => {
+    ui().select('n1');
+    ui().reveal('n1');
+    ui().reveal('n1');
+    expect(ui().revealed).toEqual(['n1']);
+    expect(ui().centerWhenShown).toBe('n1');
+    // Selecting something else drops the pending center, but the node stays on the graph.
+    ui().select('n2');
+    expect(ui().centerWhenShown).toBeNull();
+    expect(ui().revealed).toEqual(['n1']);
+  });
+
+  test('a filter change drops reveals and sends the table back to page 1, keeping its sort', () => {
+    ui().reveal('n1');
+    ui().setTableSort('label');
+    ui().setTablePage(4);
+    ui().clearOverlays();
+    expect(ui().revealed).toEqual([]);
+    expect(ui().centerWhenShown).toBeNull();
+    expect(ui().table).toEqual({ page: 1, sort: 'label' });
+  });
+
+  test('a new sort starts at page 1', () => {
+    ui().setTablePage(3);
+    ui().setTableSort('-lastSeen');
+    expect(ui().table).toEqual({ page: 1, sort: '-lastSeen' });
+  });
+
+  test('the bottom panel toggles, and switches between table and highlights', () => {
+    ui().toggleBottomPanel('table');
+    expect(ui().bottomPanel).toBe('table');
+    ui().toggleBottomPanel('highlights');
+    expect(ui().bottomPanel).toBe('highlights');
+    ui().toggleBottomPanel('highlights');
+    expect(ui().bottomPanel).toBeNull();
+  });
 });

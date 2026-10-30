@@ -128,6 +128,8 @@ export const nodeListQuerySchema = graphFiltersSchema.extend({
   page: positiveInt.default(1),
   pageSize: positiveInt.max(NODE_PAGE_SIZE.max).default(NODE_PAGE_SIZE.default),
   sort: sortSchema.prefault(DEFAULT_NODE_SORT),
+  /** Return the page that holds this node instead of `page` (table ↔ graph sync). Ignored if it isn't listed. */
+  at: z.string().min(1).max(200).optional(),
 });
 
 export const exportQuerySchema = z.strictObject({ format: z.literal('json').default('json') });
@@ -280,6 +282,13 @@ export const nodeListResponseSchema = z.strictObject({
   pageSize: z.number().int(),
   total: z.number().int(),
 });
+
+/** A node the analyst tagged `interesting`, with its notes (GET /highlights). */
+export const highlightSchema = graphNodeSchema.extend({ notes: z.string() });
+export type Highlight = z.infer<typeof highlightSchema>;
+
+/** Every `interesting` node in the workspace, riskiest first. Not filtered, not paged. */
+export const highlightsResponseSchema = z.strictObject({ items: z.array(highlightSchema) });
 
 export const layoutResponseSchema = z.strictObject({ updated: z.number().int() });
 
