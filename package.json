@@ -11,7 +11,9 @@
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json && tsc -p shared && tsc -p server && tsc -p web",
     "lint": "eslint .",
-    "ingest": "tsx server/src/cli/run-ingest.ts"
+    "ingest": "tsx server/src/cli/run-ingest.ts",
+    "mock": "tsx scripts/mock.ts",
+    "dev:server": "tsx watch server/src/cli/run-server.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

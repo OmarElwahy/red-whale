@@ -93,8 +93,8 @@ ingest order. "Newer" means a later `observed_at`, not a later ingest. Only `lab
 
 | Method & path | Purpose |
 |---|---|
-| `GET /graph?types=&minSeverity=&confidence=&tool=&tag=&q=` | Filtered graph, **aggregated** (see §7) |
-| `GET /graph/expand/:aggregateId` | Members of an aggregate node (paged) |
+| `GET /graph?types=&minSeverity=&confidence=&tool=&tag=&excludeTag=&q=` | Filtered graph, **aggregated** (see §7) |
+| `GET /graph/expand/:aggregateId?…filters&page=&pageSize=` | Members of an aggregate node (paged, riskiest first) |
 | `GET /graph/neighbors/:nodeId?depth=1` | Neighborhood for focus mode / expanding a node |
 | `GET /nodes/:id` | Node detail + edges + all observations (provenance) |
 | `PATCH /nodes/:id` | Update `tag`, `notes`, `confidence: "verified"`, `pos_x/pos_y` |
@@ -104,7 +104,21 @@ ingest order. "Newer" means a later `observed_at`, not a later ingest. Only `lab
 | `GET /scans` | Ingested scans |
 | `POST /ingest` | Upload one tool-output JSON |
 | `GET /export?format=json` | Full graph export (CSV/GraphML later) |
-| `WS /ws` | Push events: `graph.updated`, `scan.ingested` |
+| `WS /ws` (i.e. `/api/ws`) | Push events: `graph.updated`, `scan.ingested` |
+
+Request and response shapes are the Zod schemas in `shared/src/api.ts`. Details:
+- **Filters** (shared by `/graph`, `/graph/expand`, `/nodes`): `types`, `confidence`, `tool`, `tag`, `excludeTag`
+  take comma-separated lists (or repeated params); `q` is a case-insensitive substring of value or label;
+  `minSeverity` compares **effective severity** (§7), so the path from the root down to a finding stays in the result.
+  Filters select nodes; edges are kept when both ends are kept. Unknown params are a 400.
+- Hiding a node is done with the `ignored` tag (+ `excludeTag=ignored`). Nothing is ever deleted (rule 4).
+- `GET /nodes` sorts with `sort=-effectiveSeverity,label` (the default); `-` means descending; nodes without a
+  severity sort last in both directions. `pageSize` ≤ 500.
+- `PUT /layout` takes `{ positions: [{ id, x, y }] }` (≤ 5,000); an unknown or duplicate ID rejects the whole batch.
+- `POST /ingest`: 201 ingested, 200 duplicate, 422 `{ error, issues }` with the exact validation errors, 400 bad JSON,
+  415 not `application/json`, 413 over 50 MB. Errors are always `{ error, issues? }`.
+- Localhost only: requests whose `Host` isn't `127.0.0.1`/`localhost` on the API or Vite port, or whose `Origin`
+  isn't our UI, get 403 (blocks DNS rebinding and other web pages calling the API).
 
 ## 7. Aggregation
 
@@ -113,13 +127,22 @@ type via the same relation, replace them with one aggregate node:
 
 ```json
 { "id": "agg:<parentId>:has_subdomain:subdomain", "type": "aggregate",
-  "label": "412 subdomains", "count": 412, "childType": "subdomain",
-  "maxSeverity": "high", "parentId": "<parentId>" }
+  "label": "412 subdomains", "count": 412, "total": 420, "childType": "subdomain",
+  "relation": "has_subdomain", "maxSeverity": "high", "parentId": "<parentId>" }
 ```
 
-Children with severity ≥ medium, or tagged `interesting`, are **not** collapsed (they stay visible).
+Children with **effective severity** ≥ medium, or tagged `interesting`, are **not** collapsed (they stay visible).
+Effective severity = the highest severity of the node and everything reachable below it, so a subdomain whose
+URL has a critical finding stays visible. Every graph node carries `effectiveSeverity` (the UI can mute low-risk nodes).
+- `count` = members hidden in the aggregate; `total` = all members; `maxSeverity` = highest effective severity
+  among all members.
+- Anything reachable only through collapsed children is hidden until the aggregate is expanded.
+- Parentless nodes (e.g. when a filter removes the domain) aggregate the same way, as `agg:root:<childType>`.
+- `GET /graph/expand/:aggregateId` returns every member, riskiest first, then by value; the client de-duplicates by ID.
+
 The browser never receives more than ~2,000 elements; if a response would exceed that, the server
-aggregates more aggressively and says so in the response (`truncated: true`).
+aggregates more aggressively and says so in the response (`truncated: true`): it lowers the threshold
+(10, 5, 2), then collapses sticky children too, and as a last resort cuts the result.
 
 ## 8. Graph UI
 
@@ -192,3 +215,9 @@ diffing between scans · reports · CVE monitoring · local LLM scoring · JS an
 | 2026-10-29 | A parent reference counts as an observation by that tool, so it can corroborate the node |
 | 2026-10-29 | `file_hash` is over canonical JSON, not raw bytes, so CRLF/reindented copies are duplicates |
 | 2026-10-29 | pnpm 12 native builds are allowed via `allowBuilds` in `pnpm-workspace.yaml` (better-sqlite3, esbuild) |
+| 2026-10-30 | Aggregation keeps nodes visible by **effective severity** (worst finding below them), not only their own; `minSeverity` filters on it too |
+| 2026-10-30 | Parentless nodes over the threshold aggregate as `agg:root:<type>`; aggregate `maxSeverity` covers all members |
+| 2026-10-30 | Aggregate members and the node list are ordered riskiest first |
+| 2026-10-30 | No node deletion: the `ignored` tag + `excludeTag` filter hides nodes (provenance is never dropped) |
+| 2026-10-30 | API rejects foreign `Host`/`Origin` headers (403) in addition to binding 127.0.0.1 |
+| 2026-10-30 | Mock data: `northwind.example`, IPs from 198.18.0.0/15, seed 1337, 7 fake tools; generator in `server/src/mock/` |

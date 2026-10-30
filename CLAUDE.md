@@ -47,7 +47,8 @@ Once scaffolded, these must work from the repo root:
 - `pnpm typecheck` — `tsc --noEmit` across all packages
 - `pnpm lint`
 - `pnpm ingest <file.json>` — load one tool-output file into the DB
-- `pnpm mock -- --subdomains 400` — generate a large fake graph
+- `pnpm mock -- --subdomains 400` — generate a large fake graph (files in `data/mock/`, ingested into the workspace DB; `--db`, `--seed`, `--no-ingest`)
+- `pnpm dev:server` — API only, on `127.0.0.1:4100` (`REDWHALE_DB` picks the database)
 
 Run `pnpm typecheck` and `pnpm test` after every change, and before saying a task is done.
 

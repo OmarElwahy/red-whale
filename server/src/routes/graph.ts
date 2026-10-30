@@ -1,0 +1,106 @@
+// GET /api/graph, /api/graph/expand/:aggregateId, /api/graph/neighbors/:nodeId (docs/architecture.md §6–7).
+import {
+  RELATIONS,
+  expandQuerySchema,
+  graphFiltersSchema,
+  neighborsQuerySchema,
+  parseAggregateId,
+  type GraphEdge,
+  type GraphNode,
+} from '@redwhale/shared';
+import { eq } from 'drizzle-orm';
+import { nodes } from '../db/schema';
+import { aggregateGraph } from '../graph/aggregate';
+import { filteredGraph, loadGraph, riskFirst, type Graph } from '../graph/store';
+import { HttpError, notFound, parseInput } from '../http';
+import type { RouteContext } from './context';
+
+export function graphRoutes({ app, db, threshold, maxElements }: RouteContext): void {
+  app.get('/api/graph', (req) => {
+    const filters = parseInput(graphFiltersSchema, req.query);
+    const graph = filteredGraph(db, filters);
+    const result = aggregateGraph(graph, { threshold, maxElements });
+    return { ...result, totals: { nodes: graph.nodes.length, edges: graph.edges.length } };
+  });
+
+  app.get<{ Params: { aggregateId: string } }>('/api/graph/expand/:aggregateId', (req) => {
+    const id = req.params.aggregateId;
+    const key = parseAggregateId(id);
+    if ('error' in key) throw new HttpError(400, key.error);
+    const { page, pageSize, ...filters } = parseInput(expandQuerySchema, req.query);
+
+    if (key.parentId !== null) {
+      const parent = db.select({ type: nodes.type }).from(nodes).where(eq(nodes.id, key.parentId)).get();
+      if (!parent) throw notFound(`node ${key.parentId}`);
+      if (!RELATIONS[key.relation].parents.includes(parent.type)) {
+        throw new HttpError(400, `'${key.relation}' never starts at a ${parent.type}`);
+      }
+    }
+
+    const graph = filteredGraph(db, filters);
+    const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+    const edgeTo = new Map<string, GraphEdge>();
+    let members: GraphNode[];
+    if (key.parentId !== null) {
+      for (const e of graph.edges) {
+        if (e.source === key.parentId && e.relation === key.relation && byId.get(e.target)?.type === key.childType) {
+          edgeTo.set(e.target, e);
+        }
+      }
+      members = [...edgeTo.keys()].map((m) => byId.get(m) as GraphNode);
+    } else {
+      const hasParent = new Set(graph.edges.map((e) => e.target));
+      members = graph.nodes.filter((n) => n.type === key.childType && !hasParent.has(n.id));
+    }
+    members.sort(riskFirst);
+
+    const pageNodes = members.slice((page - 1) * pageSize, page * pageSize);
+    return {
+      aggregate: { id, parentId: key.parentId, relation: key.relation, childType: key.childType },
+      nodes: pageNodes,
+      edges: pageNodes.flatMap((n) => edgeTo.get(n.id) ?? []),
+      page,
+      pageSize,
+      total: members.length,
+    };
+  });
+
+  app.get<{ Params: { nodeId: string } }>('/api/graph/neighbors/:nodeId', (req) => {
+    const center = req.params.nodeId;
+    const { depth } = parseInput(neighborsQuerySchema, req.query);
+    const full = loadGraph(db);
+    if (!full.nodes.some((n) => n.id === center)) throw notFound(`node ${center}`);
+
+    // Undirected: parents and children both count as neighbours.
+    const adjacent = new Map<string, string[]>();
+    const link = (a: string, b: string) => {
+      const list = adjacent.get(a);
+      if (list) list.push(b);
+      else adjacent.set(a, [b]);
+    };
+    for (const e of full.edges) {
+      link(e.source, e.target);
+      link(e.target, e.source);
+    }
+    const reached = new Set([center]);
+    let frontier = [center];
+    for (let d = 0; d < depth; d++) {
+      const next: string[] = [];
+      for (const id of frontier) {
+        for (const other of adjacent.get(id) ?? []) {
+          if (reached.has(other)) continue;
+          reached.add(other);
+          next.push(other);
+        }
+      }
+      frontier = next;
+    }
+
+    const sub: Graph = {
+      nodes: full.nodes.filter((n) => reached.has(n.id)),
+      edges: full.edges.filter((e) => reached.has(e.source) && reached.has(e.target)),
+    };
+    const result = aggregateGraph(sub, { threshold, maxElements, pinned: [center] });
+    return { ...result, totals: { nodes: sub.nodes.length, edges: sub.edges.length }, center };
+  });
+}
