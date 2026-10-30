@@ -227,6 +227,12 @@ describe('GET /api/nodes', () => {
     expect(past.items).toEqual([]);
   });
 
+  test('q lists the matches only, without the path the graph keeps above them', async () => {
+    const api = await examples();
+    const r = body(await api.get('/api/nodes?q=API&sort=label'), 200, nodeListResponseSchema);
+    expect(r.items.map((n) => n.label)).toEqual(['api.example.com', 'https://api.example.com/']);
+  });
+
   test('sort=label and sort=-label', async () => {
     const api = await examples();
     const asc = body(await api.get('/api/nodes?sort=label'), 200, nodeListResponseSchema).items.map((n) => n.label);

@@ -4,6 +4,7 @@ import {
   CONFIDENCE_LEVELS,
   NODE_TYPES,
   SEVERITIES,
+  matchesQuery,
   type GraphEdge,
   type GraphFilters,
   type GraphNode,
@@ -102,31 +103,69 @@ export function nodeIdsSeenBy(db: Db, tools: readonly string[]): Set<string> {
   return new Set(rows.map((r) => r.id));
 }
 
+/** The matches plus every ancestor among `candidates`, walking up parent edges. Cycle-safe. */
+function withAncestors(matches: readonly GraphNode[], candidates: readonly GraphNode[], edgeList: readonly GraphEdge[]) {
+  const allowed = new Set(candidates.map((n) => n.id));
+  const parents = new Map<string, string[]>();
+  for (const e of edgeList) {
+    if (!allowed.has(e.source)) continue;
+    const list = parents.get(e.target);
+    if (list) list.push(e.source);
+    else parents.set(e.target, [e.source]);
+  }
+  const keep = new Set(matches.map((n) => n.id));
+  const queue = [...keep];
+  for (let i = 0; i < queue.length; i++) {
+    for (const parent of parents.get(queue[i] ?? '') ?? []) {
+      if (keep.has(parent)) continue;
+      keep.add(parent);
+      queue.push(parent);
+    }
+  }
+  return candidates.filter((n) => keep.has(n.id));
+}
+
+export interface FilterOptions {
+  /**
+   * With `q`, also keep each match's ancestors (those that pass the other filters), so search results show
+   * their path up to the root instead of floating alone. Used by the graph views, not by the /nodes list.
+   */
+  searchPaths?: boolean;
+}
+
 /** Keeps the nodes that match every filter, and the edges between them. */
-export function applyFilters(graph: Graph, filters: GraphFilters, seenByTool: Set<string> | null): Graph {
-  const { types, minSeverity, confidence, tag, excludeTag } = filters;
-  const q = filters.q?.toLowerCase();
+export function applyFilters(
+  graph: Graph,
+  filters: GraphFilters,
+  seenByTool: Set<string> | null,
+  { searchPaths = false }: FilterOptions = {},
+): Graph {
+  const { types, minSeverity, confidence, tag, excludeTag, q } = filters;
   const min = minSeverity ? severityRank(minSeverity) : null;
 
-  const kept = graph.nodes.filter(
+  const candidates = graph.nodes.filter(
     (n) =>
       (!types || types.includes(n.type)) &&
       (min === null || severityRank(n.effectiveSeverity) >= min) &&
       (!confidence || confidence.includes(n.confidence)) &&
       (!seenByTool || seenByTool.has(n.id)) &&
       (!tag || (n.tag !== null && tag.includes(n.tag))) &&
-      (!excludeTag || n.tag === null || !excludeTag.includes(n.tag)) &&
-      (!q || n.value.toLowerCase().includes(q) || n.label.toLowerCase().includes(q)),
+      (!excludeTag || n.tag === null || !excludeTag.includes(n.tag)),
   );
+  let kept = candidates;
+  if (q !== undefined) {
+    const matches = candidates.filter((n) => matchesQuery(n, q));
+    kept = searchPaths ? withAncestors(matches, candidates, graph.edges) : matches;
+  }
   if (kept.length === graph.nodes.length) return graph;
   const ids = new Set(kept.map((n) => n.id));
   return { nodes: kept, edges: graph.edges.filter((e) => ids.has(e.source) && ids.has(e.target)) };
 }
 
 /** Loads the graph and applies the filters. */
-export function filteredGraph(db: Db, filters: GraphFilters): Graph {
+export function filteredGraph(db: Db, filters: GraphFilters, options: FilterOptions = {}): Graph {
   const seenByTool = filters.tool ? nodeIdsSeenBy(db, filters.tool) : null;
-  return applyFilters(loadGraph(db), filters, seenByTool);
+  return applyFilters(loadGraph(db), filters, seenByTool, options);
 }
 
 function compareText(a: string, b: string): number {

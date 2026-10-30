@@ -18,7 +18,7 @@ import type { RouteContext } from './context';
 export function graphRoutes({ app, db, threshold, maxElements }: RouteContext): void {
   app.get('/api/graph', (req) => {
     const filters = parseInput(graphFiltersSchema, req.query);
-    const graph = filteredGraph(db, filters);
+    const graph = filteredGraph(db, filters, { searchPaths: true });
     const result = aggregateGraph(graph, { threshold, maxElements });
     return { ...result, totals: { nodes: graph.nodes.length, edges: graph.edges.length } };
   });
@@ -37,7 +37,7 @@ export function graphRoutes({ app, db, threshold, maxElements }: RouteContext): 
       }
     }
 
-    const graph = filteredGraph(db, filters);
+    const graph = filteredGraph(db, filters, { searchPaths: true });
     const byId = new Map(graph.nodes.map((n) => [n.id, n]));
     const edgeTo = new Map<string, GraphEdge>();
     let members: GraphNode[];

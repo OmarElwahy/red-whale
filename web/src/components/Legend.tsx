@@ -7,6 +7,8 @@ import {
   COLORS,
   CONFIDENCE_BORDER,
   IGNORED_OPACITY,
+  MUTED_OPACITY,
+  SEARCH_PATH_OPACITY,
   SEVERITY_COLOR,
   SEVERITY_KEYS,
   SHAPE_BY_TYPE,
@@ -122,6 +124,8 @@ export function Legend({ className }: { className?: string }) {
             <Row swatch={<Swatch borderStyle={AGGREGATE_BORDER.style} size={22} />}>group (count)</Row>
             <Row swatch={<Swatch ring />}>interesting</Row>
             <Row swatch={<Swatch opacity={IGNORED_OPACITY} />}>ignored</Row>
+            <Row swatch={<Swatch opacity={SEARCH_PATH_OPACITY} />}>search path</Row>
+            <Row swatch={<Swatch opacity={MUTED_OPACITY} />}>muted (low-risk)</Row>
           </Section>
         </CardContent>
       )}

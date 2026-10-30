@@ -73,6 +73,8 @@ export const COLORS = {
 } as const;
 
 export const IGNORED_OPACITY = 0.3;
+export const SEARCH_PATH_OPACITY = 0.45;
+export const MUTED_OPACITY = 0.2;
 export const FADED_OPACITY = 0.12;
 export const INTERESTING_RING = { width: 3, offset: 3 } as const;
 
@@ -158,7 +160,11 @@ export function graphStylesheet(): StylesheetJson {
       selector: 'edge:selected',
       style: { 'line-color': COLORS.selected, 'target-arrow-color': COLORS.selected, width: 2.5 },
     },
-    // Focus mode: outside the focused neighborhood. Last, so it wins over the `ignored` opacity.
+    // Search: nodes kept only as the path up to a match. Still clickable.
+    { selector: '.search-path', style: { opacity: SEARCH_PATH_OPACITY } },
+    // "Mute low-risk": after the path, so a low-risk path node is as faint as any other low-risk node.
+    { selector: '.muted', style: { opacity: MUTED_OPACITY } },
+    // Focus mode: outside the focused neighborhood. Last, so it wins over every other opacity.
     { selector: '.faded', style: { opacity: FADED_OPACITY, events: 'no' } },
   ];
 }

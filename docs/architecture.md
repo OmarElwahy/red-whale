@@ -111,7 +111,7 @@ ingest order. "Newer" means a later `observed_at`, not a later ingest. Only `lab
 | `PATCH /nodes/:id` | Update `tag`, `notes`, `confidence: "verified"`, `pos_x/pos_y` |
 | `PUT /layout` | Bulk-save node positions |
 | `GET /nodes?…&page=&sort=` | Paged flat list for the table view |
-| `GET /stats` | Counts by type, severity, confidence (dashboard / filter badges) |
+| `GET /stats` | Workspace counts by type, severity, confidence, tag, tool (dashboard / filter badges); not filtered |
 | `GET /scans` | Ingested scans |
 | `POST /ingest` | Upload one tool-output JSON |
 | `GET /export?format=json` | Full graph export (CSV/GraphML later) |
@@ -122,6 +122,10 @@ Request and response shapes are the Zod schemas in `shared/src/api.ts`. Details:
   take comma-separated lists (or repeated params); `q` is a case-insensitive substring of value or label;
   `minSeverity` compares **effective severity** (§7), so the path from the root down to a finding stays in the result.
   Filters select nodes; edges are kept when both ends are kept. Unknown params are a 400.
+- **Search paths:** on `/graph` and `/graph/expand`, `q` keeps the matches **plus their ancestors** (walking up parent
+  edges), so results show their path to the root. Only ancestors that pass the other filters are kept; a filtered-out
+  parent ends the path. `/nodes` lists the matches only. The rule itself is `matchesQuery` in `shared/src/api.ts`, so the
+  UI can tell a match from a path node without a response field.
 - Hiding a node is done with the `ignored` tag (+ `excludeTag=ignored`). Nothing is ever deleted (rule 4).
 - `GET /nodes` sorts with `sort=-effectiveSeverity,label` (the default); `-` means descending; nodes without a
   severity sort last in both directions. `pageSize` ≤ 500.
@@ -169,8 +173,18 @@ aggregates more aggressively and says so in the response (`truncated: true`): it
 - **Interactions:** click → side panel (details, provenance table, tag, notes); double-click aggregate →
   expand; right-click → context menu (focus, expand neighbors, copy value, open URL; "run tool" disabled
   until orchestrator exists).
-- **Focus mode:** selected node + N-hop neighborhood stay bright; everything else dimmed.
-- **Filters & search:** left sidebar; state in Zustand; filters map 1:1 to `GET /graph` query params.
+- **Focus mode:** the node + its N-hop neighborhood (1–3, either edge direction) stay bright, plus the edges among
+  them; everything else is faded. Computed on the canvas (`web/src/graph/emphasis.ts`), nothing is fetched; a
+  neighbor hidden in an aggregate counts as the aggregate. Esc or a background click clears it.
+- **Filters & search:** left sidebar (`web/src/filters/`); state in Zustand (`web/src/state/view.ts`), where
+  `filters` has the API's `GraphFilters` type and maps 1:1 to `GET /graph` (and `/graph/expand`) params. Counts
+  next to each option are `/stats` workspace totals, labeled as such. Search is debounced (300 ms); Enter
+  searches at once, then selects + centers the riskiest visible match. Path nodes (kept above matches) are drawn dimmer.
+  Changing filters drops expanded pages, expanded neighborhoods and focus (they were loaded under the old filters).
+- **URL:** the view lives in the query string (`web/src/state/url.ts`): the filter params exactly as the API takes
+  them, plus view-only `mute=1` and `hops=N`, which never reach the API. Bad values are dropped one by one.
+- **Mute low-risk:** fades nodes whose effective severity is below medium (aggregates by `maxSeverity`), and edges
+  touching them; a quiet parent above a serious finding stays bright.
 - **Table view:** TanStack Table beside/below the graph; selecting a row selects + centers the node, and vice versa.
 - **Live updates:** WebSocket event → TanStack Query invalidation → wrapper diffs new elements in.
 
@@ -211,6 +225,10 @@ Each phase ends with passing `pnpm typecheck` and `pnpm test`, and a short demo.
 Orchestrator (Dockerode, containerized tool groups) · scope guard · presets & auto-chaining ·
 diffing between scans · reports · CVE monitoring · local LLM scoring · JS analysis agent.
 
+**Later improvements (logged, not scheduled)**
+- Filter-aware `/stats` (counts that follow the active filters, i.e. faceted counts). Today the sidebar shows
+  workspace totals.
+
 ## 10. Decisions log
 
 | Date | Decision |
@@ -246,3 +264,10 @@ diffing between scans · reports · CVE monitoring · local LLM scoring · JS an
 | 2026-10-30 | No backfills for schema changes until there is real engagement data (only mock and example files exist, and both regenerate). Migration `0001_observation_role` adds the column without one; `openDb` refuses a database with observations from before a breaking migration: "Database is from an older schema. Delete data/redwhale.db and run pnpm mock (or re-ingest your files)." |
 | 2026-10-30 | URL hosts must be ASCII with no `%`; non-ASCII names are sent as punycode (`xn--…`). Error: "non-ASCII host: convert it to punycode, e.g. host.encode('idna').decode()" (also for `domain`/`subdomain`). Both validators also reject URLs WHATWG `URL` can't parse (space or `<>[]^\|` in the host, port > 65535, a host ending in a number that isn't valid IPv4); Python mirrors the WHATWG host parser. Closes validator gap (3) from 2026-10-29 |
 | 2026-10-30 | `POST /api/ingest` with no `Origin` header (a script, e.g. Python `requests`) is accepted; only a foreign `Origin` is refused. Covered by an explicit test |
+| 2026-10-30 | Phase 5 step 1: filter counts are `/stats` **workspace totals**, labeled as totals in the sidebar; filter-aware `/stats` is logged as a later improvement |
+| 2026-10-30 | Min-severity counts are each node's **own** severity, with a tooltip saying the filter (effective severity) also keeps the nodes above each finding |
+| 2026-10-30 | "Mute low-risk" mutes effective severity `none`/`info`/`low`; medium and up stay bright, so a quiet parent above a critical finding is not muted |
+| 2026-10-30 | `q` keeps matches plus their ancestors (that pass the other filters) on `/graph` and `/graph/expand`; `/nodes` stays matches-only. Path nodes are drawn dimmer than matches. No response field: the UI applies the shared `matchesQuery` |
+| 2026-10-30 | N-hop focus (1–3) is computed on the canvas, not with `/graph/neighbors`; it also keeps edges between two bright nodes. Supersedes the 1-hop-only focus from Phase 4 |
+| 2026-10-30 | "Hide ignored" is off by default; on, it is `excludeTag=ignored` in the API params and the URL. View state uses `replaceState` (no history entry per click) |
+| 2026-10-30 | Changing filters clears expanded aggregates, expanded neighborhoods and focus; the selection stays (its panel shows again if the node comes back) |

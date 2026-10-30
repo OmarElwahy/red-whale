@@ -1,4 +1,4 @@
-// Cytoscape events → app callbacks, and focus dimming. Kept out of the React wrapper so it can be tested
+// Cytoscape events → app callbacks, and selection sync. Kept out of the React wrapper so it can be tested
 // against a headless Cytoscape.
 import type { Core, EventObject, NodeSingular } from 'cytoscape';
 import type { Position } from '@/api/hooks';
@@ -50,27 +50,6 @@ export function bindGraphEvents(cy: Core, handlers: () => GraphHandlers): () => 
     cy.off('cxttap', 'node', onRightClick);
     cy.off('dragfree', 'node', onDragEnd);
   };
-}
-
-/** Class added to everything outside the focused neighborhood (styled in style.ts). */
-export const FADED = 'faded';
-
-/**
- * Focus: the node and its direct neighbors stay bright, everything else is faded. Returns the bright part,
- * or null when focus is cleared (or the node isn't on the canvas).
- */
-export function applyFocus(cy: Core, id: string | null) {
-  const node = id === null ? cy.collection() : cy.getElementById(id);
-  if (node.empty()) {
-    cy.elements().removeClass(FADED);
-    return null;
-  }
-  const bright = node.closedNeighborhood();
-  cy.batch(() => {
-    bright.removeClass(FADED);
-    cy.elements().difference(bright).addClass(FADED);
-  });
-  return bright;
 }
 
 /** Selects exactly this node (or nothing), without emitting a tap. */

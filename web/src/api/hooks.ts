@@ -5,11 +5,14 @@ import {
   layoutResponseSchema,
   neighborsResponseSchema,
   nodeDetailResponseSchema,
+  statsResponseSchema,
   type GraphFilters,
   type GraphResponse,
   type NodePatch,
+  type StatsResponse,
 } from '@redwhale/shared';
 import {
+  keepPreviousData,
   useMutation,
   useQueries,
   useQuery,
@@ -27,10 +30,23 @@ type NeighborsResponse = z.infer<typeof neighborsResponseSchema>;
 
 const path = (prefix: string, id: string) => `${prefix}/${encodeURIComponent(id)}`;
 
+/**
+ * The filtered graph. While a new filter loads, the previous graph stays on the canvas (`isPlaceholderData`),
+ * so typing in search doesn't blank the graph and re-run the full layout on every keystroke.
+ */
 export function useGraph(filters: GraphFilters = {}): UseQueryResult<GraphResponse> {
   return useQuery({
     queryKey: queryKeys.graph(filters),
     queryFn: ({ signal }) => getJson(withParams('/api/graph', graphSearchParams(filters)), graphResponseSchema, { signal }),
+    placeholderData: keepPreviousData,
+  });
+}
+
+/** Workspace totals for the filter badges. Not filtered: the counts don't change with the filters. */
+export function useStats(): UseQueryResult<StatsResponse> {
+  return useQuery({
+    queryKey: queryKeys.stats,
+    queryFn: ({ signal }) => getJson('/api/stats', statsResponseSchema, { signal }),
   });
 }
 
@@ -57,15 +73,20 @@ function combineExpansions(results: UseQueryResult<ExpandResponse>[]): Overlays<
   return { data, isFetching: results.some((r) => r.isFetching), error: results.find((r) => r.error)?.error ?? null };
 }
 
-/** Every loaded page of every expanded aggregate. */
-export function useExpansions(expanded: readonly { id: string; pages: number }[]): Overlays<Expansion> {
+/** Every loaded page of every expanded aggregate, under the same filters as the graph. */
+export function useExpansions(
+  expanded: readonly { id: string; pages: number }[],
+  filters: GraphFilters = {},
+): Overlays<Expansion> {
   return useQueries({
     queries: expanded.flatMap(({ id, pages }) =>
       Array.from({ length: pages }, (_, i) => {
         const page = i + 1;
-        const params = new URLSearchParams({ page: String(page), pageSize: String(EXPAND_PAGE_SIZE) });
+        const params = graphSearchParams(filters);
+        params.set('page', String(page));
+        params.set('pageSize', String(EXPAND_PAGE_SIZE));
         return {
-          queryKey: queryKeys.expand(id, page),
+          queryKey: queryKeys.expand(id, page, filters),
           queryFn: ({ signal }: { signal: AbortSignal }) =>
             getJson(withParams(path('/api/graph/expand', id), params), expandResponseSchema, { signal }),
         };

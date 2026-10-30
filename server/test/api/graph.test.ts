@@ -116,10 +116,19 @@ describe('GET /api/graph', () => {
       expect(rest.nodes).toHaveLength(10);
     });
 
-    test('q: case-insensitive substring of value or label', async () => {
+    test('q: case-insensitive matches, plus their path up to the root', async () => {
       const api = await examples();
       const g = body(await api.get('/api/graph?q=API'), 200, graphResponseSchema);
-      expect(labels(g)).toEqual(['api.example.com', 'https://api.example.com/']);
+      expect(labels(g)).toEqual(['api.example.com', 'example.com', 'https://api.example.com/']);
+      expect(g.edges).toHaveLength(2);
+    });
+
+    test('q: the path only goes through nodes that pass the other filters', async () => {
+      const api = await examples();
+      const g = body(await api.get('/api/graph?q=git-config&types=vulnerability,url'), 200, graphResponseSchema);
+      expect(labels(g)).toEqual(['git-config-exposure', 'https://dev.example.com/.git/config']);
+      const cut = body(await api.get('/api/graph?q=git-config&types=vulnerability,subdomain,domain'), 200, graphResponseSchema);
+      expect(labels(cut)).toEqual(['git-config-exposure']);
     });
 
     test.each([

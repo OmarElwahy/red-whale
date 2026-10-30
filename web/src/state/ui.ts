@@ -17,6 +17,10 @@ export interface UiState {
   /** Nodes whose neighborhood was expanded, in order. */
   neighbors: string[];
   menu: MenuState | null;
+  /** A request to pan to a node; `seq` changes on every request, so the same node can be centered again. */
+  centerOn: { id: string; seq: number } | null;
+  /** Enter was pressed in search: select and center the first match once the graph for that query is loaded. */
+  jumpPending: boolean;
 
   select: (id: string | null) => void;
   focus: (id: string | null) => void;
@@ -27,6 +31,11 @@ export interface UiState {
   expandNeighbors: (id: string) => void;
   openMenu: (menu: MenuState) => void;
   closeMenu: () => void;
+  center: (id: string) => void;
+  requestJump: () => void;
+  clearJump: () => void;
+  /** Filters changed: expand pages and neighborhoods were loaded under the old ones, so drop them, and focus. */
+  clearOverlays: () => void;
 }
 
 export const initialUiState = {
@@ -35,6 +44,8 @@ export const initialUiState = {
   expanded: [],
   neighbors: [],
   menu: null,
+  centerOn: null,
+  jumpPending: false,
 } satisfies Partial<UiState>;
 
 export const useUi = create<UiState>()((set) => ({
@@ -74,5 +85,17 @@ export const useUi = create<UiState>()((set) => ({
   },
   closeMenu: () => {
     set({ menu: null });
+  },
+  center: (id) => {
+    set((s) => ({ centerOn: { id, seq: (s.centerOn?.seq ?? 0) + 1 } }));
+  },
+  requestJump: () => {
+    set({ jumpPending: true });
+  },
+  clearJump: () => {
+    set({ jumpPending: false });
+  },
+  clearOverlays: () => {
+    set({ expanded: [], neighbors: [], focusId: null, menu: null });
   },
 }));

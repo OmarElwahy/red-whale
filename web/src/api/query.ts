@@ -24,7 +24,10 @@ export function withParams(path: string, params: URLSearchParams): string {
 export const queryKeys = {
   all: ['api'] as const,
   graph: (filters: GraphFilters) => ['api', 'graph', graphSearchParams(filters).toString()] as const,
-  expand: (aggregateId: string, page: number) => ['api', 'expand', aggregateId, page] as const,
+  /** Members depend on the filters too: /graph/expand applies them. */
+  expand: (aggregateId: string, page: number, filters: GraphFilters) =>
+    ['api', 'expand', aggregateId, page, graphSearchParams(filters).toString()] as const,
   neighbors: (nodeId: string) => ['api', 'neighbors', nodeId] as const,
   node: (id: string) => ['api', 'node', id] as const,
+  stats: ['api', 'stats'] as const,
 };

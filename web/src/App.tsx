@@ -1,9 +1,12 @@
 import type { AggregateNode, GraphNode } from '@redwhale/shared';
 import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { ApiError, ResponseShapeError } from '@/api/client';
-import { saveLayout, useExpansions, useGraph, useNeighborhoods } from '@/api/hooks';
+import { saveLayout, useExpansions, useGraph, useNeighborhoods, useStats } from '@/api/hooks';
 import { Legend } from '@/components/Legend';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { FilterSidebar } from '@/filters/FilterSidebar';
+import { firstMatch } from '@/filters/search';
 import { canExpandNeighbors, canLoadPage, composeGraph, type ComposedGraph, type GroupState } from '@/graph/compose';
 import { CytoscapeGraph } from '@/graph/CytoscapeGraph';
 import { toElements } from '@/graph/elements';
@@ -13,6 +16,7 @@ import { ContextMenu } from '@/menu/ContextMenu';
 import { menuItems, safeHttpUrl, type MenuAction } from '@/menu/items';
 import { SidePanel } from '@/panel/SidePanel';
 import { useUi } from '@/state/ui';
+import { hasFilters, useView } from '@/state/view';
 
 type AnyNode = GraphNode | AggregateNode;
 
@@ -79,15 +83,21 @@ function usePositionSaver(): { saver: RefObject<PositionSaver | null>; error: st
 }
 
 export function App() {
-  const graph = useGraph();
+  const filters = useView((s) => s.filters);
+  const mute = useView((s) => s.mute);
+  const hops = useView((s) => s.hops);
+  const graph = useGraph(filters);
+  const stats = useStats();
   const selectedId = useUi((s) => s.selectedId);
   const focusId = useUi((s) => s.focusId);
   const expanded = useUi((s) => s.expanded);
   const neighbors = useUi((s) => s.neighbors);
   const menu = useUi((s) => s.menu);
-  const { select, focus, expand, collapse, expandNeighbors, openMenu, closeMenu } = useUi.getState();
+  const centerOn = useUi((s) => s.centerOn);
+  const jumpPending = useUi((s) => s.jumpPending);
+  const { select, focus, expand, collapse, expandNeighbors, openMenu, closeMenu, center, clearJump } = useUi.getState();
 
-  const expansions = useExpansions(expanded);
+  const expansions = useExpansions(expanded, filters);
   const neighborhoods = useNeighborhoods(neighbors);
   const composed = useMemo(
     () =>
@@ -99,6 +109,27 @@ export function App() {
   const elements = useMemo(() => (composed ? toElements(composed) : []), [composed]);
   const nodesById = useMemo(() => new Map(composed?.nodes.map((n) => [n.id, n])), [composed]);
   const { saver, error: layoutError } = usePositionSaver();
+
+  // The search the canvas was loaded with: while a new one loads, the previous graph is still shown.
+  const [loadedQuery, setLoadedQuery] = useState(filters.q);
+  if (graph.data && !graph.isPlaceholderData && loadedQuery !== filters.q) setLoadedQuery(filters.q);
+
+  // Search jump: once the graph for the query has loaded, select and center the riskiest match.
+  const settled = graph.data !== undefined && !graph.isPlaceholderData && !graph.isFetching;
+  useEffect(() => {
+    if (!jumpPending) return;
+    if (graph.error) {
+      clearJump();
+      return;
+    }
+    if (!settled || !composed) return;
+    clearJump();
+    const target = filters.q === undefined ? null : firstMatch(composed.nodes, filters.q);
+    if (target) {
+      select(target.id);
+      center(target.id);
+    }
+  }, [jumpPending, settled, composed, graph.error, filters.q, select, center, clearJump]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -161,6 +192,10 @@ export function App() {
   const selected = selectedId === null ? undefined : nodesById.get(selectedId);
   const menuTarget = menu === null ? undefined : nodesById.get(menu.id);
   const overlayError = expansions.error ?? neighborhoods.error;
+  const filtered = hasFilters(filters);
+  const workspaceEmpty =
+    stats.data?.totals.nodes === 0 || (graph.data !== undefined && graph.data.totals.nodes === 0 && !filtered);
+  const noMatches = !workspaceEmpty && filtered && graph.data?.totals.nodes === 0;
 
   return (
     <div className="flex h-full flex-col">
@@ -169,6 +204,7 @@ export function App() {
         {graph.data && composed && (
           <span className="text-muted-foreground text-xs tabular-nums">
             {composed.nodes.length} of {graph.data.totals.nodes} nodes shown · {graph.data.totals.edges} edges
+            {filtered && stats.data && <> · filtered from {stats.data.totals.nodes}</>}
           </span>
         )}
         {graph.data?.truncated && (
@@ -199,7 +235,7 @@ export function App() {
               focus(null);
             }}
           >
-            focused · Esc to clear
+            focused · {hops} hop{hops === 1 ? '' : 's'} · Esc to clear
           </button>
         )}
         {(graph.isFetching || expansions.isFetching || neighborhoods.isFetching) && (
@@ -207,10 +243,11 @@ export function App() {
         )}
       </header>
       <main className="flex min-h-0 flex-1">
+        <FilterSidebar stats={stats.data} className="w-60 shrink-0" />
         <div className="relative flex min-w-0 flex-1">
           {graph.error ? (
             <ErrorPanel error={graph.error} />
-          ) : graph.data && graph.data.totals.nodes === 0 ? (
+          ) : workspaceEmpty ? (
             <Message>
               The workspace is empty. Load some data with <code className="font-mono">pnpm mock</code> or{' '}
               <code className="font-mono">pnpm ingest &lt;file.json&gt;</code>.
@@ -220,9 +257,21 @@ export function App() {
               elements={elements}
               selectedId={selectedId}
               focusId={focusId}
+              hops={hops}
+              mute={mute}
+              query={loadedQuery}
+              centerOn={centerOn}
               handlers={handlers}
               className="absolute inset-0"
             />
+          )}
+          {noMatches && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+              <p className="text-muted-foreground text-sm">Nothing matches these filters.</p>
+              <Button variant="outline" size="sm" onClick={useView.getState().resetFilters}>
+                Reset filters
+              </Button>
+            </div>
           )}
           <Legend className="absolute bottom-4 left-4" />
           {menu && menuTarget && composed && (

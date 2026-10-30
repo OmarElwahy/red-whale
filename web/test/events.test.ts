@@ -1,7 +1,7 @@
 import type { Core } from 'cytoscape';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { toElements } from '../src/graph/elements';
-import { FADED, applyFocus, bindGraphEvents, syncSelection, type GraphHandlers } from '../src/graph/events';
+import { bindGraphEvents, syncSelection, type GraphHandlers } from '../src/graph/events';
 import { aggregate, edge, headless, node } from './fixtures';
 
 const AGG = 'agg:0123456789abcdef:has_subdomain:subdomain';
@@ -82,50 +82,6 @@ describe('bindGraphEvents', () => {
     expect(h.onSelect).not.toHaveBeenCalled();
     expect(h.onExpand).not.toHaveBeenCalled();
     expect(h.onMoved).not.toHaveBeenCalled();
-  });
-});
-
-describe('applyFocus', () => {
-  const faded = (cy: Core) =>
-    cy
-      .elements(`.${FADED}`)
-      .map((e) => e.id())
-      .sort();
-
-  test('fades everything outside the node and its direct neighbors', () => {
-    const cy = setup();
-    const bright = applyFocus(cy, 'c');
-    expect(
-      bright
-        ?.nodes()
-        .map((n) => n.id())
-        .sort(),
-    ).toEqual(['a', 'c', 'd']);
-    expect(faded(cy)).toEqual(['a->b', `a->${AGG}`, AGG, 'b'].sort());
-  });
-
-  test('moving focus re-fades, and null clears it', () => {
-    const cy = setup();
-    applyFocus(cy, 'c');
-    applyFocus(cy, 'b');
-    expect(faded(cy)).toEqual(['a->c', `a->${AGG}`, AGG, 'c', 'c->d', 'd'].sort());
-    expect(applyFocus(cy, null)).toBeNull();
-    expect(faded(cy)).toEqual([]);
-  });
-
-  test('focus on a node that is not on the canvas clears it', () => {
-    const cy = setup();
-    applyFocus(cy, 'c');
-    expect(applyFocus(cy, 'gone')).toBeNull();
-    expect(faded(cy)).toEqual([]);
-  });
-
-  test('faded elements are drawn faint and ignore the mouse', () => {
-    const cy = setup();
-    applyFocus(cy, 'c');
-    const b = cy.getElementById('b');
-    expect(Number(b.style('opacity'))).toBeLessThan(0.2);
-    expect(b.style('events')).toBe('no');
   });
 });
 

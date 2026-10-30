@@ -79,6 +79,12 @@ export const graphFiltersSchema = z.strictObject({
 });
 export type GraphFilters = z.infer<typeof graphFiltersSchema>;
 
+/** The `q` rule, shared so the UI can tell search matches from the path nodes kept above them. */
+export function matchesQuery(node: { value: string; label: string }, q: string): boolean {
+  const needle = q.trim().toLowerCase();
+  return node.value.toLowerCase().includes(needle) || node.label.toLowerCase().includes(needle);
+}
+
 export const EXPAND_PAGE_SIZE = { default: 200, max: 500 } as const;
 export const expandQuerySchema = graphFiltersSchema.extend({
   page: positiveInt.default(1),
