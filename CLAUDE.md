@@ -17,14 +17,14 @@ Read these before starting any task:
 
 | Layer | Choice |
 |---|---|
-| Language | TypeScript everywhere, `strict: true`. Python only for teammates' tool scripts in `tools/` |
+| Language | TypeScript everywhere, `strict: true`, pinned to 6.0.x (typescript-eslint 8.72 doesn't support TS 7 yet). Python only for teammates' tool scripts in `tools/` |
 | Monorepo | pnpm workspaces: `shared/`, `server/`, `web/` |
 | Validation | Zod, in `shared/`. Validate at every boundary (ingest, API input, API output in tests) |
 | Server | Fastify + `@fastify/websocket` |
 | Database | SQLite via better-sqlite3 + Drizzle ORM. One `.db` file per workspace, default `./data/redwhale.db` |
 | Frontend | Vite + React + Cytoscape.js (+ `cytoscape-fcose`; aggregates expand through the API, not `cytoscape-expand-collapse`) |
 | UI state | Zustand. Server data via TanStack Query. Table view via TanStack Table |
-| Styling | Tailwind + shadcn/ui |
+| Styling | Tailwind + shadcn/ui (hand-written from upstream source, system fonts only). Notes preview: `react-markdown`, no raw HTML |
 | Tests | Vitest everywhere; React components with jsdom + Testing Library (`web/test/*.test.tsx`) |
 
 ## Repo layout
@@ -73,6 +73,10 @@ Run `pnpm typecheck` and `pnpm test` after every change, and before saying a tas
    from server or web.
 9. **No `any`.** Use `unknown` and narrow with Zod.
 10. Keep changes small and focused. One phase step at a time. Don't start the next phase unasked.
+11. **No backfills for schema changes** until we have real engagement data (today there's only mock and example
+    data, which regenerates). A migration that can't carry old rows forward goes in `BREAKING_MIGRATIONS`
+    (`server/src/db/client.ts`); the server then refuses an old database with "Database is from an older schema.
+    Delete data/redwhale.db and run pnpm mock (or re-ingest your files)."
 
 ## How to work in this repo
 

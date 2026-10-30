@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { expect, test } from 'vitest';
 import { runIngestCli } from '../src/cli/ingest';
-import { INVALID_DIR, examplePath, tempDir } from './helpers';
+import { INVALID_DIR, examplePath, schema0000Db, tempDir } from './helpers';
 
 function run(argv: string[], env: NodeJS.ProcessEnv = {}) {
   const out: string[] = [];
@@ -59,4 +59,11 @@ test('a missing file exits 2', () => {
   const result = run([join(tempDir(), 'nope.json'), '--db', join(tempDir(), 'x.db')]);
   expect(result.code).toBe(2);
   expect(result.err[0]).toMatch(/^cannot read /);
+});
+
+test('a database from an older schema exits 2 with the message', () => {
+  const db = schema0000Db(true);
+  const result = run([examplePath('nmap'), '--db', db]);
+  expect(result.code).toBe(2);
+  expect(result.err).toEqual([expect.stringMatching(/^Database is from an older schema\. Delete .*old\.db and run pnpm mock/)]);
 });

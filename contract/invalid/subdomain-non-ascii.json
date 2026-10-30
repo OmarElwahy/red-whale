@@ -1,0 +1,16 @@
+{
+  "contract_version": 1,
+  "tool": "testtool",
+  "target": "example.com",
+  "command": "testtool example.com",
+  "started_at": "2026-10-29T10:00:00Z",
+  "finished_at": "2026-10-29T10:01:00Z",
+  "status": "success",
+  "errors": [],
+  "findings": [
+    {
+      "type": "subdomain",
+      "value": "bücher.example.com"
+    }
+  ]
+}

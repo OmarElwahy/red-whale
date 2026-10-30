@@ -9,7 +9,7 @@ import { aggregate, node } from './fixtures';
 
 const ID = '00000000000000a1';
 
-function makeDetail(): NodeDetailResponse {
+function makeDetail(overrides: Parameters<typeof node>[1] = {}): NodeDetailResponse {
   const n = node(ID, {
     type: 'url',
     value: 'https://a.example.com/login',
@@ -18,6 +18,7 @@ function makeDetail(): NodeDetailResponse {
     effectiveSeverity: 'high',
     confidence: 'corroborated',
     sourceCount: 2,
+    ...overrides,
   });
   return nodeDetailResponseSchema.parse({
     node: { ...n, data: { status: 200, title: 'Sign in' }, notes: '' },
@@ -27,6 +28,7 @@ function makeDetail(): NodeDetailResponse {
         scanId: 's1',
         tool: 'httpx',
         command: 'httpx -u https://a.example.com/login',
+        role: 'finding',
         severity: null,
         data: { status: 200 },
         observedAt: '2026-10-29T08:15:00.000Z',
@@ -35,17 +37,27 @@ function makeDetail(): NodeDetailResponse {
         scanId: 's2',
         tool: 'nuclei',
         command: 'nuclei -u https://a.example.com/login -t exposures',
+        role: 'finding',
         severity: 'high',
         data: { template: 'exposed-login' },
         observedAt: '2026-10-30T09:30:00.000Z',
+      },
+      {
+        scanId: 's3',
+        tool: 'katana',
+        command: 'katana -u https://a.example.com',
+        role: 'parent',
+        severity: null,
+        data: {},
+        observedAt: '2026-10-30T11:00:00.000Z',
       },
     ],
   });
 }
 
 /** A fake API: GET returns the node, PATCH validates the body like the server and applies it. */
-function fakeApi() {
-  let detail = makeDetail();
+function fakeApi(initial = makeDetail()) {
+  let detail = initial;
   const patches: unknown[] = [];
   const json = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -110,12 +122,24 @@ describe('node panel', () => {
     renderPanel();
     const table = within(await screen.findByRole('table'));
     const rows = table.getAllByRole('row').slice(1);
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(3);
     expect(rows[0]?.textContent).toContain('httpx');
     expect(rows[0]?.textContent).toContain('httpx -u https://a.example.com/login');
     expect(rows[0]?.textContent).toContain('2026-10-29 08:15:00');
     expect(rows[1]?.textContent).toContain('nuclei');
     expect(rows[1]?.textContent).toContain('2026-10-30 09:30:00');
+    expect(rows[1]?.textContent).not.toContain('as parent');
+    expect(rows[2]?.textContent).toContain('katana');
+    expect(rows[2]?.textContent).toContain('as parent');
+  });
+
+  test('a node only referenced as a parent says so instead of "(0 tools)"', async () => {
+    api = fakeApi(makeDetail({ confidence: 'discovered', sourceCount: 0 }));
+    vi.stubGlobal('fetch', api.fetch);
+    renderPanel();
+    const details = within(await screen.findByRole('region', { name: 'Details' }));
+    expect(await details.findByText('(only referenced as a parent)')).toBeTruthy();
+    expect(details.queryByText(/0 tools/)).toBeNull();
   });
 
   test("a provenance row opens to show that tool's raw data", async () => {

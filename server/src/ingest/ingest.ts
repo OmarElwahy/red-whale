@@ -151,6 +151,7 @@ export function recomputeNodes(tx: Tx | Db, ids: readonly string[]): void {
       nodeId: observations.nodeId,
       scanId: observations.scanId,
       tool: observations.tool,
+      role: observations.role,
       severity: observations.severity,
       data: observations.data,
       observedAt: observations.observedAt,

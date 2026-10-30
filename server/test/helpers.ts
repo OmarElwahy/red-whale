@@ -1,7 +1,10 @@
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { validateContract, type ContractFile } from '@redwhale/shared';
+import Database from 'better-sqlite3';
+import { drizzle } from 'drizzle-orm/better-sqlite3';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import { afterEach } from 'vitest';
 import { openDb, type Db } from '../src/db/client';
 
@@ -74,6 +77,47 @@ export function tempDir(): string {
   return dir;
 }
 
+/**
+ * Path to a database left at migration 0000 (before `observations.role`), as an older checkout made it.
+ * With `withData` it holds one scan, node and observation.
+ */
+export function schema0000Db(withData: boolean): string {
+  const dir = tempDir();
+  const source = join(REPO_ROOT, 'server/drizzle');
+  const migrations = join(dir, 'drizzle');
+  mkdirSync(join(migrations, 'meta'), { recursive: true });
+  copyFileSync(join(source, '0000_init.sql'), join(migrations, '0000_init.sql'));
+  const journal = JSON.parse(readFileSync(join(source, 'meta/_journal.json'), 'utf8')) as { entries: unknown[] };
+  writeFileSync(join(migrations, 'meta/_journal.json'), JSON.stringify({ ...journal, entries: journal.entries.slice(0, 1) }));
+
+  const path = join(dir, 'old.db');
+  const sqlite = new Database(path);
+  migrate(drizzle(sqlite), { migrationsFolder: migrations });
+  if (withData) {
+    const t = '2026-10-29T10:00:00.000Z';
+    sqlite
+      .prepare(
+        `INSERT INTO scans (id, tool, target, command, status, errors, started_at, finished_at, ingested_at, file_hash, raw)
+         VALUES ('s1', 'subfinder', 'example.com', 'subfinder', 'success', '[]', @t, @t, @t, 'h1', '{}')`,
+      )
+      .run({ t });
+    sqlite
+      .prepare(
+        `INSERT INTO nodes (id, type, value, label, first_seen, last_seen)
+         VALUES ('n1', 'domain', 'example.com', 'example.com', @t, @t)`,
+      )
+      .run({ t });
+    sqlite
+      .prepare(
+        `INSERT INTO observations (node_id, scan_id, tool, severity, data, observed_at)
+         VALUES ('n1', 's1', 'subfinder', NULL, '{}', @t)`,
+      )
+      .run({ t });
+  }
+  sqlite.close();
+  return path;
+}
+
 export function counts(db: Db) {
   const count = (table: string) =>
     (db.$client.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
@@ -94,7 +138,7 @@ export function snapshot(db: Db) {
     nodes: all('SELECT * FROM nodes ORDER BY id'),
     edges: all('SELECT * FROM edges ORDER BY id'),
     observations: all(
-      `SELECT o.node_id, s.file_hash, o.tool, o.severity, o.data, o.observed_at
+      `SELECT o.node_id, s.file_hash, o.tool, o.role, o.severity, o.data, o.observed_at
        FROM observations o JOIN scans s ON s.id = o.scan_id ORDER BY o.node_id, s.file_hash`,
     ),
   };

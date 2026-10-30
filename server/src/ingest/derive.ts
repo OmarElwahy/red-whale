@@ -1,10 +1,11 @@
 // Derived node state (docs/architecture.md §4–5). Pure: everything is recomputed from the node's
 // full observation set, so the result doesn't depend on the order files were ingested in.
-import { SEVERITIES, type Confidence, type Severity } from '@redwhale/shared';
+import { SEVERITIES, type Confidence, type ObservationRole, type Severity } from '@redwhale/shared';
 
 export interface ObservationInput {
   scanId: string;
   tool: string;
+  role: ObservationRole;
   severity: Severity | null;
   data: Record<string, unknown>;
   observedAt: string;
@@ -40,7 +41,9 @@ export function deriveNodeState(observations: readonly ObservationInput[], curre
   const last = sorted.at(-1);
   if (!first || !last) throw new Error('deriveNodeState needs at least one observation');
 
-  const sourceCount = new Set(sorted.map((o) => o.tool)).size;
+  // Only findings count: a tool that merely names the node as a parent doesn't corroborate it.
+  // Parent rows still count as sightings for first/last seen.
+  const sourceCount = new Set(sorted.filter((o) => o.role === 'finding').map((o) => o.tool)).size;
   let severity: Severity | null = null;
   let data: Record<string, unknown> = {};
   for (const o of sorted) {

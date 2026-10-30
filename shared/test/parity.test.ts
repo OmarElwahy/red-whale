@@ -46,6 +46,24 @@ describe.skipIf(!python)('parity with tools/validate_output.py', () => {
     expect({ python: pythonAccepts(path), zod: zodAccepts(path) }).toEqual({ python: false, zod: false });
   });
 
+  test('prints ✓/✗ and non-ASCII values on a cp1252 console (the Windows default)', () => {
+    const [exe = '', ...args] = python ?? [];
+    const run = (file: string) =>
+      spawnSync(exe, [...args, VALIDATOR, file], {
+        encoding: 'utf8',
+        env: { ...process.env, PYTHONIOENCODING: 'cp1252', PYTHONUTF8: '0' },
+      });
+
+    const ok = run(join(EXAMPLES_DIR, 'nmap.example.json'));
+    expect({ status: ok.status, stderr: ok.stderr }).toEqual({ status: 0, stderr: '' });
+    expect(ok.stdout).toContain('✓');
+
+    const bad = run(join(INVALID_DIR, 'url-host-non-ascii.json'));
+    expect({ status: bad.status, stderr: bad.stderr }).toEqual({ status: 1, stderr: '' });
+    expect(bad.stdout).toContain('✗');
+    expect(bad.stdout).toContain('bücher.example.com');
+  });
+
   describe('edge cases', () => {
     const dir = mkdtempSync(join(tmpdir(), 'redwhale-parity-'));
     afterAll(() => {
@@ -81,6 +99,54 @@ describe.skipIf(!python)('parity with tools/validate_output.py', () => {
       const path = join(dir, `${name}.json`);
       writeFileSync(path, JSON.stringify(make()));
       expect(zodAccepts(path)).toBe(pythonAccepts(path));
+    });
+
+    // URL hosts: Python's url_host_parses() must accept exactly what WHATWG `new URL()` accepts.
+    const BS = '\\';
+    const urls: [string, boolean][] = [
+      ['http://a b.example.com/', false],
+      ['http://a<b.example.com/', false],
+      ['http://a^b.example.com/', false],
+      ['http://a|b.example.com/', false],
+      ['http://example.com:99999/', false],
+      ['http://example.com:65535/', true],
+      ['http://example.com:00080/', true],
+      ['http://@/', false],
+      ['http://user@/', false],
+      ['http://user@example.com/', true],
+      ['http://a@b@example.com/', true],
+      [`http://example.com${BS}x:99999`, true],
+      ['http://a\tb.example.com/', true],
+      ['http://1.2.3.256/', false],
+      ['http://1.2.3.4.5/', false],
+      ['http://1.2.3/', true],
+      ['http://999/', true],
+      ['http://4294967296/', false],
+      ['http://0x7f.1/', true],
+      ['http://0x100.1.1.1/', false],
+      ['http://010.1.1.1/', true],
+      ['http://08.1.1.1/', false],
+      ['http://a.123/', false],
+      ['http://a.08/', false],
+      ['http://example.0x1f/', false],
+      ['http://a.0x/', false],
+      ['http://a.1./', false],
+      ['http://0x1g.example.com/', true],
+      ['http://09.example.com/', true],
+      ['http://xn--bcher-kva.example.com/', true],
+      ['http://xn--zz.example.com/', true],
+      ['http://*.example.com/', true],
+      ['http://a_b.example.com/', true],
+      ['http://a!b.example.com/', true],
+      ['http://./', true],
+      ['http://a..b/', true],
+      ['http://example.com./', true],
+    ];
+
+    test.each(urls)('url %j: accepted = %s by both', (value, accepted) => {
+      const path = join(dir, `url-${String(urls.findIndex(([v]) => v === value))}.json`);
+      writeFileSync(path, JSON.stringify(finding('url', value)()));
+      expect({ python: pythonAccepts(path), zod: zodAccepts(path) }).toEqual({ python: accepted, zod: accepted });
     });
   });
 });

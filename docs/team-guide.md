@@ -79,6 +79,13 @@ Run it: `python3 tools/subfinder_runner.py example.com > output/subfinder_exampl
 
 - Only use the node types and relations listed in `docs/contract.md`. Need a new one? Ask the team leader.
 - Values must follow the formats in the contract (lowercase hosts, `ip:port/tcp` for ports, full URLs ...).
+- Non-ASCII hostnames (domains, subdomains, URL hosts) must be punycode. Convert with one line:
+  `host.encode('idna').decode()` (e.g. `bücher.example.com` → `xn--bcher-kva.example.com`). Never percent-encode a host.
+- IPv6 ports go in brackets: `[2001:db8::1]:443/tcp`.
+- Technologies are `name` or `name/version`, e.g. `nginx/1.18.0` (case doesn't matter; one finding per technology).
+- Write CVE IDs in uppercase: `CVE-2021-41773`.
+- Naming a node only as a `parent` doesn't count as your tool finding it. If your tool really found it, report it
+  as a finding too.
 - Never put real passwords, tokens or keys in the output. Mask them: `AKIA****WXYZ`.
 - Don't create IDs. Don't add fields outside `type`, `value`, `parent`, `relation`, `severity`, `data`.
 - Only scan targets you are allowed to test (your own lab, or targets with written permission).

@@ -5,6 +5,7 @@ import {
   nodePatchSchema,
   type Confidence,
   type NodeType,
+  type ObservationRole,
   type Relation,
   type Severity,
 } from '@redwhale/shared';
@@ -46,6 +47,7 @@ interface ObservationRow {
   scan_id: string;
   tool: string;
   command: string;
+  role: ObservationRole;
   severity: Severity | null;
   data: string;
   observed_at: string;
@@ -71,7 +73,7 @@ export function nodeDetail(db: Db, id: string) {
 
   const observationRows = db.$client
     .prepare(
-      `SELECT o.scan_id, o.tool, s.command, o.severity, o.data, o.observed_at
+      `SELECT o.scan_id, o.tool, s.command, o.role, o.severity, o.data, o.observed_at
        FROM observations o JOIN scans s ON s.id = o.scan_id
        WHERE o.node_id = ?
        ORDER BY o.observed_at, o.tool, o.scan_id`,
@@ -115,6 +117,7 @@ export function nodeDetail(db: Db, id: string) {
       scanId: o.scan_id,
       tool: o.tool,
       command: o.command,
+      role: o.role,
       severity: o.severity,
       data: jsonObject(o.data),
       observedAt: o.observed_at,

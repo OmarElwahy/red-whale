@@ -2,6 +2,7 @@
 import {
   CONFIDENCE_LEVELS,
   NODE_TYPES,
+  OBSERVATION_ROLES,
   RELATION_TYPES,
   SCAN_STATUSES,
   SEVERITIES,
@@ -118,6 +119,8 @@ export const observations = sqliteTable(
       .references(() => scans.id),
     /** Copied from scans.tool so confidence is a COUNT(DISTINCT tool) over this table alone. */
     tool: text('tool').notNull(),
+    /** `finding` if the scan reported the node; `parent` if it only named it as a parent. Only findings count toward confidence. */
+    role: text('role', { enum: OBSERVATION_ROLES }).notNull(),
     severity: text('severity', { enum: SEVERITIES }),
     data: text('data', { mode: 'json' }).$type<Record<string, unknown>>().notNull(),
     /** The scan's finished_at. */
@@ -127,5 +130,6 @@ export const observations = sqliteTable(
     uniqueIndex('observations_node_scan_uq').on(t.nodeId, t.scanId),
     index('observations_scan_idx').on(t.scanId),
     check('observations_severity_ck', oneOf(t.severity, SEVERITIES)),
+    check('observations_role_ck', oneOf(t.role, OBSERVATION_ROLES)),
   ],
 );

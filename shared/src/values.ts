@@ -8,6 +8,9 @@ const EMAIL_RE = /^[a-z0-9._%+'-]+@([a-z0-9-]+\.)+[a-z]{2,63}$/;
 const SHA256_RE = /^[0-9a-f]{64}$/;
 const URL_RE = /^(https?):\/\/([^/:?#]+)(:\d{1,5})?([/?#].*)?$/;
 export const PORT_RE = /^(.+):(\d{1,5})\/(tcp|udp)$/;
+const NON_ASCII_RE = /[^\p{ASCII}]/u;
+
+const NON_ASCII_HOST = "non-ASCII host: convert it to punycode, e.g. host.encode('idna').decode()";
 
 /** Same acceptance as Python's ipaddress.ip_address(): strict dotted-quad IPv4, or IPv6 (zone IDs allowed). */
 export function isIp(value: string): boolean {
@@ -38,6 +41,7 @@ export function checkValue(type: NodeType, value: unknown): string | null {
         return 'wildcards like *.example.com are not allowed; skip them or put them in data';
       }
       if (value.includes(':')) return 'must not contain a port';
+      if (NON_ASCII_RE.test(value)) return NON_ASCII_HOST;
       if (!HOST_RE.test(value)) return 'is not a valid hostname';
       return null;
     case 'ip':
@@ -56,6 +60,12 @@ export function checkValue(type: NodeType, value: unknown): string | null {
       if (!m) return 'must be a full URL starting with http:// or https://';
       const host = m[2] ?? '';
       if (host !== host.toLowerCase()) return 'host part of the URL must be lowercase';
+      if (NON_ASCII_RE.test(host)) return NON_ASCII_HOST;
+      if (host.includes('%')) return 'host part of the URL must not be percent-encoded';
+      // The same parse normalization does at ingest; Python mirrors it in url_host_parses().
+      if (!URL.canParse(value)) {
+        return "URL can't be parsed: check the host and port (e.g. a space in the host, or a port above 65535)";
+      }
       return null;
     }
     case 'email':

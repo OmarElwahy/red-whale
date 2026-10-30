@@ -1,6 +1,6 @@
 // `pnpm ingest <file.json> [--db path]`: load one tool-output file into the workspace database.
 import { readFileSync } from 'node:fs';
-import { DEFAULT_DB_PATH, openDb } from '../db/client';
+import { DEFAULT_DB_PATH, OutdatedDatabaseError, openDb, type Db } from '../db/client';
 import { ingestText } from '../ingest/ingest';
 
 export interface CliIo {
@@ -34,7 +34,7 @@ function parseArgs(argv: readonly string[]): Args {
   return { ok: true, file, db };
 }
 
-/** Returns the exit code: 0 ingested or already ingested, 1 rejected, 2 usage / unreadable file. */
+/** Returns the exit code: 0 ingested or already ingested, 1 rejected, 2 usage / unreadable file / outdated database. */
 export function runIngestCli(argv: readonly string[], io: CliIo, env: NodeJS.ProcessEnv = process.env): number {
   const args = parseArgs(argv);
   if (!args.ok) {
@@ -51,7 +51,14 @@ export function runIngestCli(argv: readonly string[], io: CliIo, env: NodeJS.Pro
     return 2;
   }
 
-  const db = openDb(args.db ?? env.REDWHALE_DB ?? DEFAULT_DB_PATH);
+  let db: Db;
+  try {
+    db = openDb(args.db ?? env.REDWHALE_DB ?? DEFAULT_DB_PATH);
+  } catch (e) {
+    if (!(e instanceof OutdatedDatabaseError)) throw e;
+    io.err(e.message);
+    return 2;
+  }
   try {
     const result = ingestText(db, text);
     switch (result.status) {

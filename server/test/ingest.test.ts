@@ -53,20 +53,19 @@ describe('example files', () => {
     expect(results.map((r) => r.created.nodes)).toEqual([4, 4, 1, 2]);
   });
 
-  test('confidence after all four: api, dev and nginx are corroborated', () => {
+  test('confidence after all four: only nginx is corroborated (nmap and httpx name api/dev only as parents)', () => {
     const db = freshDb();
     ingestAll(db);
     const rows = db.$client
       .prepare('SELECT label, confidence, source_count FROM nodes WHERE confidence = ? ORDER BY label')
       .all('corroborated');
-    expect(rows).toEqual([
-      { label: 'api.example.com', confidence: 'corroborated', source_count: 3 },
-      { label: 'dev.example.com', confidence: 'corroborated', source_count: 2 },
-      { label: 'nginx/1.18.0', confidence: 'corroborated', source_count: 2 },
-    ]);
+    expect(rows).toEqual([{ label: 'nginx/1.18.0', confidence: 'corroborated', source_count: 2 }]);
     expect(db.$client.prepare("SELECT COUNT(*) AS n FROM nodes WHERE confidence = 'discovered'").get()).toEqual({
-      n: 8,
+      n: 10,
     });
+    const sources = db.$client.prepare('SELECT source_count FROM nodes WHERE label = ?');
+    expect(sources.get('api.example.com')).toEqual({ source_count: 1 });
+    expect(sources.get('dev.example.com')).toEqual({ source_count: 1 });
   });
 
   test('severity: only the nuclei finding has one', () => {
@@ -182,6 +181,54 @@ describe('idempotency', () => {
   });
 });
 
+describe('parent references', () => {
+  /** A file from `tool` reporting one subdomain under example.com, which it names only as the parent. */
+  function childOfDomain(tool: string, subdomain: string): Doc {
+    return baseDoc({
+      tool,
+      findings: [
+        {
+          type: 'subdomain',
+          value: subdomain,
+          parent: { type: 'domain', value: 'example.com' },
+          relation: 'has_subdomain',
+        },
+      ],
+    });
+  }
+
+  function observationRoles(db: Db, label: string) {
+    return db.$client
+      .prepare(
+        'SELECT o.tool, o.role FROM observations o JOIN nodes n ON n.id = o.node_id WHERE n.label = ? ORDER BY o.tool',
+      )
+      .all(label);
+  }
+
+  test('a node that tools only reference as a parent stays discovered', () => {
+    const db = freshDb();
+    expectIngested(ingestDocument(db, childOfDomain('subfinder', 'api.example.com')));
+    expectIngested(ingestDocument(db, childOfDomain('amass', 'dev.example.com')));
+
+    expect(nodeByLabel(db, 'example.com')).toMatchObject({ source_count: 0, confidence: 'discovered' });
+    // Provenance is kept: both tools' references are there, as parent rows.
+    expect(observationRoles(db, 'example.com')).toEqual([
+      { tool: 'amass', role: 'parent' },
+      { tool: 'subfinder', role: 'parent' },
+    ]);
+  });
+
+  test('only tools that report the node as a finding corroborate it', () => {
+    const db = freshDb();
+    expectIngested(ingestDocument(db, childOfDomain('subfinder', 'api.example.com')));
+    expectIngested(ingestDocument(db, baseDoc({ tool: 'whois', findings: [{ type: 'domain', value: 'example.com' }] })));
+    expect(nodeByLabel(db, 'example.com')).toMatchObject({ source_count: 1, confidence: 'discovered' });
+
+    expectIngested(ingestDocument(db, baseDoc({ tool: 'crtsh', findings: [{ type: 'domain', value: 'example.com' }] })));
+    expect(nodeByLabel(db, 'example.com')).toMatchObject({ source_count: 2, confidence: 'corroborated' });
+  });
+});
+
 describe('recomputing derived fields', () => {
   function nmapAt(finishedAt: string, version: string): Doc {
     const doc = exampleDoc('nmap');
@@ -271,7 +318,7 @@ describe('rejected files leave the database untouched', () => {
     if (result.status === 'invalid') expect(result.errors[0]).toMatch(/^not valid JSON: /);
   });
 
-  test('a value that fails normalization rejects the whole file', () => {
+  test('an unparseable URL host rejects the whole file', () => {
     const db = freshDb();
     const doc = baseDoc({
       findings: [
@@ -285,7 +332,10 @@ describe('rejected files leave the database untouched', () => {
       ],
     });
     const result = ingestDocument(db, doc);
-    expect(result).toEqual({ status: 'invalid', errors: [expect.stringMatching(/^findings\[1\]\.value: /)] });
+    expect(result).toEqual({
+      status: 'invalid',
+      errors: [expect.stringMatching(/^findings\[1\]\.value: .*URL can't be parsed/)],
+    });
     expect(counts(db)).toEqual({ scans: 0, nodes: 0, edges: 0, observations: 0 });
   });
 

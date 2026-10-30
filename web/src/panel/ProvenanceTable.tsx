@@ -45,6 +45,14 @@ export function ProvenanceTable({ observations }: { observations: readonly Obser
                     <span aria-hidden>{expanded ? '▾' : '▸'}</span>
                     {o.tool}
                   </button>
+                  {o.role === 'parent' && (
+                    <span
+                      className="text-muted-foreground block pl-3"
+                      title="Only named as the parent of a finding; doesn't count toward confidence"
+                    >
+                      as parent
+                    </span>
+                  )}
                   {o.severity && <span className="text-muted-foreground block pl-3">{o.severity}</span>}
                 </td>
                 <td className="truncate py-1 pr-2 font-mono" title={o.command}>

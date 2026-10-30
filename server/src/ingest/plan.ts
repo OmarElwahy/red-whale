@@ -7,6 +7,7 @@ import {
   normalize,
   type ContractFile,
   type NodeType,
+  type ObservationRole,
   type Relation,
   type Severity,
 } from '@redwhale/shared';
@@ -26,9 +27,13 @@ export interface PlannedEdge {
   relation: Relation;
 }
 
-/** One per node per file: repeated findings are merged (data in file order, highest severity). */
+/**
+ * One per node per file: repeated findings are merged (data in file order, highest severity).
+ * The role is `finding` if the file reports the node anywhere as a finding, else `parent`.
+ */
 export interface PlannedObservation {
   nodeId: string;
+  role: ObservationRole;
   severity: Severity | null;
   data: Record<string, unknown>;
 }
@@ -61,10 +66,11 @@ export function planIngest(file: ContractFile): PlanResult {
     return id;
   }
 
-  function observe(id: string, data: Record<string, unknown>, severity: Severity | null) {
+  function observe(id: string, role: ObservationRole, data: Record<string, unknown>, severity: Severity | null) {
     const prev = plan.observations.get(id);
     plan.observations.set(id, {
       nodeId: id,
+      role: prev?.role === 'finding' ? 'finding' : role,
       severity: maxSeverity(prev?.severity ?? null, severity),
       data: { ...prev?.data, ...data },
     });
@@ -73,12 +79,12 @@ export function planIngest(file: ContractFile): PlanResult {
   file.findings.forEach((f, i) => {
     const where = `findings[${String(i)}]`;
     const childId = addNode(f.type, f.value, `${where}.value`);
-    if (childId) observe(childId, f.data ?? {}, f.severity ?? null);
+    if (childId) observe(childId, 'finding', f.data ?? {}, f.severity ?? null);
 
     if (f.parent == null || f.relation == null) return;
-    // A parent reference counts as that tool observing the parent (decisions log, 2026-10-29).
+    // A parent reference is kept as provenance, but doesn't count toward confidence (decisions log, 2026-10-30).
     const parentId = addNode(f.parent.type, f.parent.value, `${where}.parent.value`);
-    if (parentId) observe(parentId, {}, null);
+    if (parentId) observe(parentId, 'parent', {}, null);
 
     if (childId && parentId) {
       const id = edgeId(parentId, f.relation, childId);

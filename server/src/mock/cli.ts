@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CONFIDENCE_LEVELS, checkValue, validateContract } from '@redwhale/shared';
 import type { CliIo } from '../cli/ingest';
-import { DEFAULT_DB_PATH, openDb } from '../db/client';
+import { DEFAULT_DB_PATH, OutdatedDatabaseError, openDb, type Db } from '../db/client';
 import { ingestText } from '../ingest/ingest';
 import { MAX_SUBDOMAINS, MOCK_DEFAULTS, generateMock, mockFileText, type MockOptions } from './generate';
 import { findPython, validateWithPython } from './python';
@@ -144,7 +144,14 @@ export function runMockCli(argv: readonly string[], io: CliIo, env: NodeJS.Proce
   if (!args.ingest) return 0;
 
   const dbPath = args.db ?? env.REDWHALE_DB ?? DEFAULT_DB_PATH;
-  const db = openDb(dbPath);
+  let db: Db;
+  try {
+    db = openDb(dbPath);
+  } catch (e) {
+    if (!(e instanceof OutdatedDatabaseError)) throw e;
+    io.err(e.message);
+    return 1;
+  }
   try {
     for (const f of files) {
       const result = ingestText(db, f.text);

@@ -1,8 +1,10 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, expect, test } from 'vitest';
-import { openDb, type Db } from '../src/db/client';
+import Database from 'better-sqlite3';
+import { afterEach, describe, expect, test } from 'vitest';
+import { DEFAULT_DB_PATH, OutdatedDatabaseError, openDb, type Db } from '../src/db/client';
+import { schema0000Db } from './helpers';
 
 const opened: Db[] = [];
 const tempDirs: string[] = [];
@@ -60,7 +62,7 @@ test('running migrations on an existing database is a no-op', () => {
 
   const second = open(path);
   const migrations = second.$client.prepare('SELECT COUNT(*) AS n FROM __drizzle_migrations').get();
-  expect(migrations).toEqual({ n: 1 });
+  expect(migrations).toEqual({ n: 2 });
   expect(second.$client.prepare('SELECT COUNT(*) AS n FROM nodes').get()).toEqual({ n: 1 });
 });
 
@@ -110,4 +112,48 @@ test('CHECK rejects an unknown edge relation; foreign keys reject dangling edges
   expect(() => insertEdge.run('e2', 'a', 'missing', 'has_subdomain')).toThrow(/FOREIGN KEY constraint failed/);
   expect(() => insertEdge.run('e3', 'a', 'b', 'has_subdomain')).not.toThrow();
   expect(() => insertEdge.run('e4', 'a', 'b', 'has_subdomain')).toThrow(/UNIQUE constraint failed/);
+});
+
+describe('a database from before a breaking migration', () => {
+  test('with observations: refused with a clear message, and left untouched', () => {
+    const path = schema0000Db(true);
+    expect(() => open(path)).toThrow(OutdatedDatabaseError);
+    expect(() => open(path)).toThrow(
+      `Database is from an older schema. Delete ${path} and run pnpm mock (or re-ingest your files).`,
+    );
+
+    const raw = new Database(path, { readonly: true });
+    expect(raw.prepare('SELECT COUNT(*) AS n FROM __drizzle_migrations').get()).toEqual({ n: 1 });
+    expect(raw.prepare('SELECT COUNT(*) AS n FROM observations').get()).toEqual({ n: 1 });
+    raw.close();
+  });
+
+  test('empty: migrates normally', () => {
+    const db = open(schema0000Db(false));
+    expect(db.$client.prepare('SELECT COUNT(*) AS n FROM __drizzle_migrations').get()).toEqual({ n: 2 });
+    const columns = db.$client.prepare<[], { name: string }>("SELECT name FROM pragma_table_info('observations')").all();
+    expect(columns.map((c) => c.name)).toContain('role');
+  });
+
+  test('the message names the default database as data/redwhale.db', () => {
+    expect(new OutdatedDatabaseError(DEFAULT_DB_PATH).message).toBe(
+      'Database is from an older schema. Delete data/redwhale.db and run pnpm mock (or re-ingest your files).',
+    );
+  });
+});
+
+test('observations.role only accepts finding or parent', () => {
+  const db = open();
+  insertNode(db);
+  db.$client
+    .prepare(
+      `INSERT INTO scans (id, tool, target, command, status, errors, started_at, finished_at, ingested_at, file_hash, raw)
+       VALUES ('s1', 't', 'x', 'c', 'success', '[]', 'a', 'b', 'c', 'h', '{}')`,
+    )
+    .run();
+  const insert = db.$client.prepare(
+    "INSERT INTO observations (node_id, scan_id, tool, role, data, observed_at) VALUES ('n1', 's1', 't', ?, '{}', 'x')",
+  );
+  expect(() => insert.run('owner')).toThrow(/CHECK constraint failed/);
+  expect(() => insert.run('parent')).not.toThrow();
 });

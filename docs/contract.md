@@ -78,16 +78,29 @@ python3 tools/validate_output.py my_output.json
 | `domain` | Lowercase registrable domain, no scheme, no trailing dot | `example.com` |
 | `subdomain` | Lowercase FQDN, no scheme, no port, no trailing dot | `api.example.com` |
 | `ip` | IPv4 or IPv6, no port | `93.184.216.34` |
-| `port` | `ip:port/protocol`, protocol is `tcp` or `udp` | `93.184.216.34:443/tcp` |
-| `url` | Full URL with scheme, lowercase host | `https://api.example.com/v1/login` |
-| `technology` | `Name` or `Name/version` | `nginx/1.18.0` |
-| `vulnerability` | Template/check ID or CVE ID | `CVE-2021-41773` |
+| `port` | `ip:port/protocol`, protocol is `tcp` or `udp`. IPv6 goes in brackets | `93.184.216.34:443/tcp`, `[2001:db8::1]:443/tcp` |
+| `url` | Full `http`/`https` URL; host lowercase ASCII, no `%`, and must parse as a URL (no spaces, port ≤ 65535) | `https://api.example.com/v1/login` |
+| `technology` | `name` or `name/version` | `nginx/1.18.0` |
+| `vulnerability` | Template/check ID or CVE ID (write CVE IDs in uppercase) | `CVE-2021-41773` |
 | `email` | Lowercase email address | `admin@example.com` |
 | `secret` | Short description, never the full secret | `AWS access key in /static/app.js` |
 | `certificate` | SHA-256 fingerprint, lowercase hex | `3a7bd3e2...` |
 | `leak` | Breach or source name | `LinkedIn-2016` |
 
 Wildcard entries like `*.example.com` are **not** subdomains. Skip them or put them in `data`.
+
+**Hostnames are ASCII.** Internationalized names in `domain`, `subdomain` and URL hosts must be sent as punycode
+(`xn--…`); otherwise the validator says `non-ASCII host: convert it to punycode, e.g. host.encode('idna').decode()`.
+A URL path may contain any characters.
+
+**How the server treats values** (so you know what merges):
+- `port` on IPv6: unbracketed input (`2001:db8::1:443/tcp`) is accepted and stored bracketed (`[2001:db8::1]:443/tcp`).
+  `::ffff:1.2.3.4` is stored as `1.2.3.4`.
+- `technology` is matched without case (`Nginx/1.18.0` and `nginx/1.18.0` are one node; the first spelling is the label).
+  Put the version after a `/`, not in a separate finding.
+- `vulnerability` CVE IDs are uppercased (`cve-2021-41773` → `CVE-2021-41773`); other IDs are kept as-is.
+- A node you only name as a `parent` is recorded, but it does not count as your tool finding it. To count, report it
+  as a finding of its own.
 
 **Secrets:** never put a full secret, password, or token in `value` or `data`. Store a masked
 preview at most, e.g. `"preview": "AKIA****WXYZ"`.

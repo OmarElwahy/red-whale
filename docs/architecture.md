@@ -39,6 +39,8 @@ Additional rules (see decisions log, 2026-10-29):
 - Ports on IPv6 are bracketed: `[2001:db8::1]:443/tcp`. Unbracketed input (`2001:db8::1:443/tcp`) is
   accepted by the validator and converted. Protocol is lowercased; leading zeros in the port number are dropped.
 - URLs are serialized with WHATWG `URL` (so `https://a.com` → `https://a.com/`); path and query keep their case.
+- URL hosts must be ASCII (punycode, `xn--…`) with no `%`, and must parse with WHATWG `URL`; both validators
+  enforce this (Python mirrors the WHATWG host rules in `url_host_parses()`), so normalization never sees a URL it can't parse.
 - `technology` is lowercased for the ID (`Nginx/1.18.0` = `nginx/1.18.0`); the node label keeps the original text.
 - `vulnerability` CVE IDs are uppercased (`cve-2021-41773` → `CVE-2021-41773`); other IDs are left as-is.
 - `certificate` fingerprints are lowercased and colons removed.
@@ -63,16 +65,25 @@ Indexes: `type`, `severity`, `confidence`, `tag`.
 Unique: (`source_id`, `relation`, `target_id`). Indexes on `source_id`, `target_id`.
 
 **observations** — provenance: every time any tool reported a node, as a finding **or as a parent**
-`id` · `node_id` → nodes · `scan_id` → scans · `tool` · `severity` (nullable) · `data` (json, this tool's details;
-`{}` for a parent-only reference) · `observed_at` (= the scan's `finished_at`)
+`id` · `node_id` → nodes · `scan_id` → scans · `tool` · `role` (`finding` | `parent`) · `severity` (nullable) ·
+`data` (json, this tool's details; `{}` for a parent-only reference) · `observed_at` (= the scan's `finished_at`)
 Unique: (`node_id`, `scan_id`). A node reported several times in one file gets one row: `data` shallow-merged
-in file order, highest `severity`.
+in file order, highest `severity`. `role` is `finding` if the file reports the node as a finding anywhere,
+`parent` if it only names it as some finding's parent.
 
 All timestamps are stored as TEXT in `Date#toISOString()` form (`YYYY-MM-DDTHH:MM:SS.sssZ`) so they sort as text.
 Enum columns have CHECK constraints.
 
-Confidence rule: after each ingest, recompute `source_count = COUNT(DISTINCT tool)` for touched nodes;
-`1 → discovered`, `≥2 → corroborated`; `verified` is only set by the analyst and never downgraded automatically.
+Confidence rule: after each ingest, recompute `source_count = COUNT(DISTINCT tool)` over the node's **finding** rows
+for touched nodes; `0 or 1 → discovered`, `≥2 → corroborated`; `verified` is only set by the analyst and never
+downgraded automatically. Parent rows are kept as provenance and count as sightings (`first_seen`/`last_seen`,
+the `tool` filter), but never toward `source_count`, so a node that tools only name as a parent stays `discovered`
+with `source_count` 0.
+
+Schema changes: until there is real engagement data, migrations don't backfill. A migration that can't carry old
+rows forward is listed in `BREAKING_MIGRATIONS` (`server/src/db/client.ts`), and `openDb` refuses to run it on a
+database that already holds observations ("Database is from an older schema. Delete data/redwhale.db and run
+pnpm mock (or re-ingest your files).").
 
 ## 5. Ingest pipeline
 
@@ -210,9 +221,9 @@ diffing between scans · reports · CVE monitoring · local LLM scoring · JS an
 | 2026-10-29 | Extra normalization rules in §3: IPv4-mapped → IPv4, bracketed IPv6 ports, lowercase technology, uppercase CVE IDs |
 | 2026-10-29 | Zod errors use the validator's rules and wording, prefixed with a path (`findings[3].value: …`), not identical text |
 | 2026-10-29 | TypeScript pinned to 6.0.x: typescript-eslint 8.72 does not support TS 7 yet |
-| 2026-10-29 | Known validator gaps, accepted: (1) Python rejects `"contract_version": 1.0` but JS can't tell `1.0` from `1`; (2) Python's `fromisoformat` accepts more timestamp shapes than the documented `YYYY-MM-DDTHH:MM:SS[.frac]Z`, which is all Zod accepts; (3) a URL host the regex allows but WHATWG `URL` can't parse (e.g. containing a space) passes validation but fails normalization at ingest |
+| 2026-10-29 | Known validator gaps, accepted: (1) Python rejects `"contract_version": 1.0` but JS can't tell `1.0` from `1`; (2) Python's `fromisoformat` accepts more timestamp shapes than the documented `YYYY-MM-DDTHH:MM:SS[.frac]Z`, which is all Zod accepts; (3) a URL host the regex allows but WHATWG `URL` can't parse (e.g. containing a space) passes validation but fails normalization at ingest (closed 2026-10-30, see below) |
 | 2026-10-29 | Phase 2 schema: added `observations.severity` (needed to compute max severity) and `scans.raw` (full provenance) |
-| 2026-10-29 | A parent reference counts as an observation by that tool, so it can corroborate the node |
+| 2026-10-29 | A parent reference counts as an observation by that tool, so it can corroborate the node (superseded 2026-10-30: parent rows no longer corroborate) |
 | 2026-10-29 | `file_hash` is over canonical JSON, not raw bytes, so CRLF/reindented copies are duplicates |
 | 2026-10-29 | pnpm 12 native builds are allowed via `allowBuilds` in `pnpm-workspace.yaml` (better-sqlite3, esbuild) |
 | 2026-10-30 | Aggregation keeps nodes visible by **effective severity** (worst finding below them), not only their own; `minSeverity` filters on it too |
@@ -231,3 +242,7 @@ diffing between scans · reports · CVE monitoring · local LLM scoring · JS an
 | 2026-10-30 | Phase 4 focus = 1 hop, faded elsewhere, Esc or a background click clears it; the N-hop focus mode is Phase 5 step 1 |
 | 2026-10-30 | Only dragged nodes get saved positions (debounced `PUT /layout`, aggregates left out); positions from fcose runs are not saved |
 | 2026-10-30 | React component tests run in a separate `web-dom` Vitest project (jsdom + Testing Library); the rest of `web/` tests stay in Node |
+| 2026-10-30 | `observations.role` (`finding` \| `parent`): parent references stay as observations (provenance, first/last seen, `tool` filter, `byTool` stats) but only finding rows count toward `source_count`/confidence. A node tools only name as a parent stays `discovered` with `source_count` 0. **Supersedes** the 2026-10-29 "parent reference counts as an observation by that tool" entry |
+| 2026-10-30 | No backfills for schema changes until there is real engagement data (only mock and example files exist, and both regenerate). Migration `0001_observation_role` adds the column without one; `openDb` refuses a database with observations from before a breaking migration: "Database is from an older schema. Delete data/redwhale.db and run pnpm mock (or re-ingest your files)." |
+| 2026-10-30 | URL hosts must be ASCII with no `%`; non-ASCII names are sent as punycode (`xn--…`). Error: "non-ASCII host: convert it to punycode, e.g. host.encode('idna').decode()" (also for `domain`/`subdomain`). Both validators also reject URLs WHATWG `URL` can't parse (space or `<>[]^\|` in the host, port > 65535, a host ending in a number that isn't valid IPv4); Python mirrors the WHATWG host parser. Closes validator gap (3) from 2026-10-29 |
+| 2026-10-30 | `POST /api/ingest` with no `Origin` header (a script, e.g. Python `requests`) is accepted; only a foreign `Origin` is refused. Covered by an explicit test |

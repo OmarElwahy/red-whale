@@ -6,6 +6,7 @@ function obs(overrides: Partial<ObservationInput> = {}): ObservationInput {
   return {
     scanId: 's1',
     tool: 'subfinder',
+    role: 'finding',
     severity: null,
     data: {},
     observedAt: '2026-10-29T10:00:00.000Z',
@@ -26,6 +27,26 @@ describe('confidence', () => {
   test('two tools are corroborated', () => {
     const state = deriveNodeState([obs({ tool: 'subfinder' }), obs({ scanId: 's2', tool: 'nmap' })], 'discovered');
     expect(state).toMatchObject({ sourceCount: 2, confidence: 'corroborated' });
+  });
+
+  test('parent references do not count toward source_count or confidence', () => {
+    const asParent = [obs({ tool: 'subfinder', role: 'parent' }), obs({ scanId: 's2', tool: 'nmap', role: 'parent' })];
+    expect(deriveNodeState(asParent, 'discovered')).toMatchObject({ sourceCount: 0, confidence: 'discovered' });
+
+    const oneFinding = [obs({ tool: 'subfinder' }), obs({ scanId: 's2', tool: 'nmap', role: 'parent' })];
+    expect(deriveNodeState(oneFinding, 'discovered')).toMatchObject({ sourceCount: 1, confidence: 'discovered' });
+  });
+
+  test('parent references still count as sightings for first/last seen', () => {
+    const list = [
+      obs({ scanId: 'a', role: 'parent', observedAt: '2026-10-28T10:00:00.000Z' }),
+      obs({ scanId: 'b', observedAt: '2026-10-29T10:00:00.000Z' }),
+      obs({ scanId: 'c', role: 'parent', observedAt: '2026-10-30T10:00:00.000Z' }),
+    ];
+    expect(deriveNodeState(list, 'discovered')).toMatchObject({
+      firstSeen: '2026-10-28T10:00:00.000Z',
+      lastSeen: '2026-10-30T10:00:00.000Z',
+    });
   });
 
   test('a corroborated node can drop back to discovered (e.g. its observations shrank)', () => {

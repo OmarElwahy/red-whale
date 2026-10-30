@@ -57,5 +57,9 @@ export type ScanStatus = (typeof SCAN_STATUSES)[number];
 export const CONFIDENCE_LEVELS = ['discovered', 'corroborated', 'verified'] as const;
 export type Confidence = (typeof CONFIDENCE_LEVELS)[number];
 
+/** Why a scan observed a node: it reported it as a finding, or only named it as a finding's parent. */
+export const OBSERVATION_ROLES = ['finding', 'parent'] as const;
+export type ObservationRole = (typeof OBSERVATION_ROLES)[number];
+
 export const TAGS = ['interesting', 'checked', 'ignored'] as const;
 export type Tag = (typeof TAGS)[number];

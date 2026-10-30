@@ -146,7 +146,9 @@ function NodePanel({ target, group, onAction }: SidePanelProps & { target: Graph
           <Field label="Confidence">
             <span className="capitalize">{node.confidence}</span>{' '}
             <span className="text-muted-foreground">
-              ({node.sourceCount} {node.sourceCount === 1 ? 'tool' : 'tools'})
+              {node.sourceCount === 0
+                ? '(only referenced as a parent)'
+                : `(${String(node.sourceCount)} ${node.sourceCount === 1 ? 'tool' : 'tools'})`}
             </span>
           </Field>
           <Field label="First seen">{formatTime(node.firstSeen)}</Field>

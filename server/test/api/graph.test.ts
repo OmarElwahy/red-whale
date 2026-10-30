@@ -94,7 +94,7 @@ describe('GET /api/graph', () => {
     test('confidence', async () => {
       const api = await examples();
       const g = body(await api.get('/api/graph?confidence=corroborated'), 200, graphResponseSchema);
-      expect(labels(g)).toEqual(expect.arrayContaining(['api.example.com', 'dev.example.com', 'nginx/1.18.0']));
+      expect(labels(g)).toEqual(['nginx/1.18.0']);
       for (const n of g.nodes) expect(n).toMatchObject({ confidence: 'corroborated' });
     });
 

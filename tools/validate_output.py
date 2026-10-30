@@ -53,6 +53,10 @@ SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 URL_RE = re.compile(r"^(https?)://([^/:?#]+)(:\d{1,5})?([/?#].*)?$")
 PORT_RE = re.compile(r"^(.+):(\d{1,5})/(tcp|udp)$")
 
+NON_ASCII_HOST = "non-ASCII host: convert it to punycode, e.g. host.encode('idna').decode()"
+# WHATWG forbidden host code points left after the authority is split on / \ ? # @ :
+URL_FORBIDDEN_HOST = set(" <>[]^|\x7f") | {chr(c) for c in range(0x20)}
+
 
 def parse_time(s):
     if not isinstance(s, str) or not s.endswith("Z"):
@@ -69,6 +73,47 @@ def is_ip(s):
         return True
     except ValueError:
         return False
+
+
+def ipv4_number(s):
+    """WHATWG IPv4 number parser: decimal, 0x hex or 0-prefixed octal. None on failure."""
+    if not s:
+        return None
+    radix = 10
+    if len(s) >= 2 and s[:2] in ("0x", "0X"):
+        s, radix = s[2:], 16
+    elif len(s) >= 2 and s[0] == "0":
+        s, radix = s[1:], 8
+    if not s:
+        return 0
+    digits = {10: "0123456789", 16: "0123456789abcdefABCDEF", 8: "01234567"}[radix]
+    if any(c not in digits for c in s):
+        return None
+    return int(s, radix)
+
+
+def url_host_parses(value):
+    """True if WHATWG URL parsing (JS `new URL()`, used by normalization at ingest) accepts this URL.
+    Only for values that already matched URL_RE with a lowercase ASCII host and no '%' in it."""
+    value = re.sub(r"[\t\n\r]", "", value)  # WHATWG strips these anywhere in the URL
+    authority = re.split(r"[/\\?#]", value.split("://", 1)[1], maxsplit=1)[0]
+    host, _, port = authority.rpartition("@")[2].partition(":")
+    if port and int(port) > 65535:
+        return False
+    if not host or any(c in URL_FORBIDDEN_HOST for c in host):
+        return False
+
+    # A host whose last label is a number must be a valid IPv4 address (1.2.3.4, 0x7f.1, 999, ...).
+    parts = host.split(".")
+    if parts[-1] == "" and len(parts) > 1:
+        parts.pop()
+    last = parts[-1]
+    if not (re.fullmatch(r"[0-9]+", last) or ipv4_number(last) is not None):
+        return True
+    numbers = [ipv4_number(p) for p in parts]
+    if len(numbers) > 4 or None in numbers or any(n > 255 for n in numbers[:-1]):
+        return False
+    return numbers[-1] < 256 ** (5 - len(numbers))
 
 
 def check_value(ntype, value):
@@ -89,6 +134,8 @@ def check_value(ntype, value):
             return "wildcards like *.example.com are not allowed; skip them or put them in data"
         if ":" in value:
             return "must not contain a port"
+        if not value.isascii():
+            return NON_ASCII_HOST
         if not HOST_RE.match(value):
             return "is not a valid hostname"
     elif ntype == "ip":
@@ -110,6 +157,12 @@ def check_value(ntype, value):
         host = m.group(2)
         if host != host.lower():
             return "host part of the URL must be lowercase"
+        if not host.isascii():
+            return NON_ASCII_HOST
+        if "%" in host:
+            return "host part of the URL must not be percent-encoded"
+        if not url_host_parses(value):
+            return "URL can't be parsed: check the host and port (e.g. a space in the host, or a port above 65535)"
     elif ntype == "email":
         if not EMAIL_RE.match(value):
             return "must be a valid lowercase email address"
@@ -258,4 +311,6 @@ def main(paths):
 
 
 if __name__ == "__main__":
+    # Windows consoles default to cp1252, which can't print ✓/✗ or non-ASCII values.
+    sys.stdout.reconfigure(encoding="utf-8")
     sys.exit(main(sys.argv[1:]))

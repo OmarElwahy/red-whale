@@ -28,8 +28,8 @@ describe('GET /api/nodes/:id', () => {
       id,
       type: 'subdomain',
       value: 'api.example.com',
-      confidence: 'corroborated',
-      sourceCount: 3,
+      confidence: 'discovered',
+      sourceCount: 1,
       effectiveSeverity: null,
       notes: '',
     });
@@ -38,7 +38,12 @@ describe('GET /api/nodes/:id', () => {
       ['out', 'resolves_to', '93.184.216.34'],
       ['out', 'serves', 'https://api.example.com/'],
     ]);
-    expect(d.observations.map((o) => o.tool)).toEqual(['subfinder', 'nmap', 'httpx']);
+    // nmap and httpx only name it as a parent: kept as provenance, but they don't corroborate it.
+    expect(d.observations.map((o) => [o.tool, o.role])).toEqual([
+      ['subfinder', 'finding'],
+      ['nmap', 'parent'],
+      ['httpx', 'parent'],
+    ]);
     expect(d.observations[0]).toMatchObject({ command: 'subfinder -d example.com -oJ -silent', data: { source: 'crtsh' } });
   });
 
@@ -88,7 +93,7 @@ describe('PATCH /api/nodes/:id', () => {
     const rerun = { ...exampleDoc('subfinder'), command: 'subfinder -d example.com -all', finished_at: '2026-10-30T10:01:12Z' };
     expect((await api.send('POST', '/api/ingest', rerun)).statusCode).toBe(201);
     const after = body(await api.get(`/api/nodes/${id}`), 200, nodeDetailResponseSchema);
-    expect(after.node).toMatchObject({ confidence: 'verified', sourceCount: 3 });
+    expect(after.node).toMatchObject({ confidence: 'verified', sourceCount: 1 });
     expect(after.observations).toHaveLength(4);
   });
 

@@ -1,7 +1,16 @@
 // Zod schemas for the HTTP API (docs/architecture.md §6–7): query strings, request bodies and responses.
 // The server parses every input with these; tests parse every response with them.
 import { z } from 'zod';
-import { CONFIDENCE_LEVELS, NODE_TYPES, RELATIONS, RELATION_TYPES, SCAN_STATUSES, SEVERITIES, TAGS } from './enums';
+import {
+  CONFIDENCE_LEVELS,
+  NODE_TYPES,
+  OBSERVATION_ROLES,
+  RELATIONS,
+  RELATION_TYPES,
+  SCAN_STATUSES,
+  SEVERITIES,
+  TAGS,
+} from './enums';
 import type { NodeType, Relation } from './enums';
 
 // --- aggregate IDs ---------------------------------------------------------------------------------
@@ -251,6 +260,7 @@ export const nodeDetailResponseSchema = z.strictObject({
       scanId: z.string(),
       tool: z.string(),
       command: z.string(),
+      role: z.enum(OBSERVATION_ROLES),
       severity,
       data: z.record(z.string(), z.unknown()),
       observedAt: timestamp,
@@ -327,6 +337,7 @@ export const exportResponseSchema = z.strictObject({
       nodeId: z.string(),
       scanId: z.string(),
       tool: z.string(),
+      role: z.enum(OBSERVATION_ROLES),
       severity,
       data: z.record(z.string(), z.unknown()),
       observedAt: timestamp,

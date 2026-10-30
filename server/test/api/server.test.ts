@@ -32,6 +32,17 @@ describe('localhost only', () => {
     expect(ours.statusCode).toBe(200);
   });
 
+  test('POST /api/ingest with no Origin (a script, e.g. Python requests) is accepted', async () => {
+    const api = await testApi();
+    const res = await api.app.inject({
+      method: 'POST',
+      url: '/api/ingest',
+      payload: exampleDoc('nmap'),
+      headers: { host: HOST, 'content-type': 'application/json', 'user-agent': 'python-requests/2.32.3' },
+    });
+    expect(res.statusCode).toBe(201);
+  });
+
   test('a port the app was built for is accepted', async () => {
     const api = await testApi({ port: 5000 });
     expect((await api.request({ method: 'GET', url: '/api/stats', headers: { host: 'localhost:5000' } })).statusCode).toBe(200);
