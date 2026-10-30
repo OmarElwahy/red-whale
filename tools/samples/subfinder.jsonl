@@ -1,0 +1,6 @@
+{"host":"api.example.com","input":"example.com","source":"crtsh"}
+{"host":"DEV.example.com.","input":"example.com","source":"alienvault"}
+{"host":"*.example.com","input":"example.com","source":"crtsh"}
+{"host":"mail.example.com","input":"example.com","source":"hackertarget"}
+{"host":"api.example.com","input":"example.com","source":"virustotal"}
+

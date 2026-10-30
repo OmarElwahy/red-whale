@@ -1,0 +1,25 @@
+{
+  "contract_version": 1,
+  "tool": "nuclei",
+  "tool_version": "3.3.5",
+  "target": "https://dev.example.com",
+  "command": "nuclei -u https://dev.example.com -jsonl -severity medium,high,critical",
+  "started_at": "2026-10-29T10:10:00Z",
+  "finished_at": "2026-10-29T10:12:30Z",
+  "status": "success",
+  "errors": [],
+  "findings": [
+    {
+      "type": "url", "value": "https://dev.example.com/.git/config",
+      "parent": { "type": "subdomain", "value": "dev.example.com" },
+      "relation": "serves"
+    },
+    {
+      "type": "vulnerability", "value": "git-config-exposure",
+      "parent": { "type": "url", "value": "https://dev.example.com/.git/config" },
+      "relation": "has_vulnerability",
+      "severity": "medium",
+      "data": { "template_id": "git-config", "matcher": "status-and-body" }
+    }
+  ]
+}

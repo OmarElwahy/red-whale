@@ -1,0 +1,36 @@
+{
+  "contract_version": 1,
+  "tool": "httpx",
+  "tool_version": "1.6.9",
+  "target": "api.example.com",
+  "command": "httpx -u api.example.com -json -title -tech-detect -status-code",
+  "started_at": "2026-10-29T10:08:00Z",
+  "finished_at": "2026-10-29T10:08:04Z",
+  "status": "success",
+  "errors": [],
+  "findings": [
+    {
+      "type": "url",
+      "value": "https://api.example.com/",
+      "parent": {
+        "type": "subdomain",
+        "value": "api.example.com"
+      },
+      "relation": "serves",
+      "data": {
+        "status_code": 200,
+        "title": "API Gateway",
+        "content_length": 1532
+      }
+    },
+    {
+      "type": "technology",
+      "value": "nginx/1.18.0",
+      "parent": {
+        "type": "url",
+        "value": "https://api.example.com/"
+      },
+      "relation": "uses_technology"
+    }
+  ]
+}

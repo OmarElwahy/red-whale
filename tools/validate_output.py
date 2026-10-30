@@ -231,6 +231,9 @@ def validate(doc):
 
 
 def main(paths):
+    # Windows consoles (cp1252) can't print ✓/✗; print '?' instead of crashing.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="replace")
     if not paths:
         print(__doc__.strip())
         return 2
