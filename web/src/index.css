@@ -66,3 +66,39 @@
     @apply bg-background text-foreground font-sans antialiased;
   }
 }
+
+/* Notes preview (react-markdown output). No typography plugin: just enough to read headings, lists and code. */
+@layer components {
+  .markdown > * + * {
+    @apply mt-2;
+  }
+  .markdown h1,
+  .markdown h2,
+  .markdown h3 {
+    @apply font-semibold;
+  }
+  .markdown h1 {
+    @apply text-base;
+  }
+  .markdown ul {
+    @apply list-disc pl-5;
+  }
+  .markdown ol {
+    @apply list-decimal pl-5;
+  }
+  .markdown a {
+    @apply text-sky-400 underline;
+  }
+  .markdown code {
+    @apply bg-muted rounded px-1 font-mono text-xs;
+  }
+  .markdown pre {
+    @apply bg-background overflow-auto rounded-md border p-2;
+  }
+  .markdown pre code {
+    @apply bg-transparent p-0;
+  }
+  .markdown blockquote {
+    @apply text-muted-foreground border-l-2 pl-3;
+  }
+}

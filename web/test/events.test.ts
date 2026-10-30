@@ -1,0 +1,141 @@
+import type { Core } from 'cytoscape';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { toElements } from '../src/graph/elements';
+import { FADED, applyFocus, bindGraphEvents, syncSelection, type GraphHandlers } from '../src/graph/events';
+import { aggregate, edge, headless, node } from './fixtures';
+
+const AGG = 'agg:0123456789abcdef:has_subdomain:subdomain';
+
+function setup() {
+  const cy = headless();
+  cy.add(
+    toElements({
+      nodes: [node('a', { type: 'domain' }), node('b'), node('c'), node('d'), aggregate({ id: AGG })],
+      edges: [edge('a', 'b'), edge('a', 'c'), edge('c', 'd'), edge('a', AGG)],
+    }),
+  );
+  return cy;
+}
+
+function spies() {
+  return {
+    onSelect: vi.fn<GraphHandlers['onSelect']>(),
+    onExpand: vi.fn<GraphHandlers['onExpand']>(),
+    onContextMenu: vi.fn<GraphHandlers['onContextMenu']>(),
+    onMoved: vi.fn<GraphHandlers['onMoved']>(),
+  };
+}
+
+describe('bindGraphEvents', () => {
+  let cy: Core;
+  let h: ReturnType<typeof spies>;
+  let unbind: () => void;
+  beforeEach(() => {
+    cy = setup();
+    h = spies();
+    unbind = bindGraphEvents(cy, () => h);
+  });
+  afterEach(() => {
+    cy.destroy();
+  });
+
+  test('clicking a node selects it; clicking the background clears the selection', () => {
+    cy.getElementById('b').emit('tap');
+    cy.emit('tap');
+    expect(h.onSelect.mock.calls).toEqual([['b'], [null]]);
+  });
+
+  test('double-clicking an aggregate expands it', () => {
+    cy.getElementById(AGG).emit('dbltap');
+    expect(h.onExpand).toHaveBeenCalledWith(AGG);
+  });
+
+  test('double-clicking an ordinary node does not expand anything', () => {
+    cy.getElementById('b').emit('dbltap');
+    expect(h.onExpand).not.toHaveBeenCalled();
+  });
+
+  test('right-click opens the menu at the rendered position of the click', () => {
+    cy.getElementById('c').emit({ type: 'cxttap', renderedPosition: { x: 120, y: 45 } } as never);
+    expect(h.onContextMenu).toHaveBeenCalledWith({ id: 'c', x: 120, y: 45 });
+  });
+
+  test('the end of a drag reports where the node is now', () => {
+    const d = cy.getElementById('d');
+    d.position({ x: 310, y: -42 });
+    d.emit('dragfree');
+    expect(h.onMoved).toHaveBeenCalledWith([{ id: 'd', x: 310, y: -42 }]);
+  });
+
+  test('the latest handlers are used without rebinding', () => {
+    const next = spies();
+    h = next;
+    cy.getElementById('b').emit('tap');
+    expect(next.onSelect).toHaveBeenCalledWith('b');
+  });
+
+  test('unbinding stops all callbacks', () => {
+    unbind();
+    cy.getElementById('b').emit('tap');
+    cy.getElementById(AGG).emit('dbltap');
+    cy.getElementById('d').emit('dragfree');
+    expect(h.onSelect).not.toHaveBeenCalled();
+    expect(h.onExpand).not.toHaveBeenCalled();
+    expect(h.onMoved).not.toHaveBeenCalled();
+  });
+});
+
+describe('applyFocus', () => {
+  const faded = (cy: Core) =>
+    cy
+      .elements(`.${FADED}`)
+      .map((e) => e.id())
+      .sort();
+
+  test('fades everything outside the node and its direct neighbors', () => {
+    const cy = setup();
+    const bright = applyFocus(cy, 'c');
+    expect(
+      bright
+        ?.nodes()
+        .map((n) => n.id())
+        .sort(),
+    ).toEqual(['a', 'c', 'd']);
+    expect(faded(cy)).toEqual(['a->b', `a->${AGG}`, AGG, 'b'].sort());
+  });
+
+  test('moving focus re-fades, and null clears it', () => {
+    const cy = setup();
+    applyFocus(cy, 'c');
+    applyFocus(cy, 'b');
+    expect(faded(cy)).toEqual(['a->c', `a->${AGG}`, AGG, 'c', 'c->d', 'd'].sort());
+    expect(applyFocus(cy, null)).toBeNull();
+    expect(faded(cy)).toEqual([]);
+  });
+
+  test('focus on a node that is not on the canvas clears it', () => {
+    const cy = setup();
+    applyFocus(cy, 'c');
+    expect(applyFocus(cy, 'gone')).toBeNull();
+    expect(faded(cy)).toEqual([]);
+  });
+
+  test('faded elements are drawn faint and ignore the mouse', () => {
+    const cy = setup();
+    applyFocus(cy, 'c');
+    const b = cy.getElementById('b');
+    expect(Number(b.style('opacity'))).toBeLessThan(0.2);
+    expect(b.style('events')).toBe('no');
+  });
+});
+
+describe('syncSelection', () => {
+  test('selects exactly the given node, or nothing', () => {
+    const cy = setup();
+    cy.getElementById('b').select();
+    syncSelection(cy, 'c');
+    expect(cy.$(':selected').map((e) => e.id())).toEqual(['c']);
+    syncSelection(cy, null);
+    expect(cy.$(':selected').length).toBe(0);
+  });
+});

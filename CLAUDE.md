@@ -22,10 +22,10 @@ Read these before starting any task:
 | Validation | Zod, in `shared/`. Validate at every boundary (ingest, API input, API output in tests) |
 | Server | Fastify + `@fastify/websocket` |
 | Database | SQLite via better-sqlite3 + Drizzle ORM. One `.db` file per workspace, default `./data/redwhale.db` |
-| Frontend | Vite + React + Cytoscape.js (+ `cytoscape-fcose`, `cytoscape-expand-collapse`) |
+| Frontend | Vite + React + Cytoscape.js (+ `cytoscape-fcose`; aggregates expand through the API, not `cytoscape-expand-collapse`) |
 | UI state | Zustand. Server data via TanStack Query. Table view via TanStack Table |
 | Styling | Tailwind + shadcn/ui |
-| Tests | Vitest everywhere |
+| Tests | Vitest everywhere; React components with jsdom + Testing Library (`web/test/*.test.tsx`) |
 
 ## Repo layout
 

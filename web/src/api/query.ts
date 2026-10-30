@@ -24,4 +24,7 @@ export function withParams(path: string, params: URLSearchParams): string {
 export const queryKeys = {
   all: ['api'] as const,
   graph: (filters: GraphFilters) => ['api', 'graph', graphSearchParams(filters).toString()] as const,
+  expand: (aggregateId: string, page: number) => ['api', 'expand', aggregateId, page] as const,
+  neighbors: (nodeId: string) => ['api', 'neighbors', nodeId] as const,
+  node: (id: string) => ['api', 'node', id] as const,
 };

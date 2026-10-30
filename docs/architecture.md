@@ -224,3 +224,10 @@ diffing between scans · reports · CVE monitoring · local LLM scoring · JS an
 | 2026-10-30 | Graph fill color = the node's **own** severity (aggregates: `maxSeverity`); `effectiveSeverity` is kept for muting in Phase 5 |
 | 2026-10-30 | Node types are shown by shape only for now (no icons); `interesting` = fuchsia outline, so it never clashes with a severity fill or the confidence border |
 | 2026-10-30 | shadcn/ui files are written by hand from the upstream source (no `shadcn init`), with system fonts only: no remote font or CDN imports |
+| 2026-10-30 | No `cytoscape-expand-collapse`: it collapses compound nodes client-side, but aggregates are built and paged by the server (§7). The UI merges expand pages into the canvas itself (`web/src/graph/compose.ts`) |
+| 2026-10-30 | The UI loads aggregates 100 members per page and keeps the canvas under 2,000 elements: "load more" / "expand neighbors" are disabled at the limit, and anything that would cross it is skipped |
+| 2026-10-30 | Collapsing a group also drops the neighborhoods expanded from its members; a fully loaded aggregate disappears, and its members' panel/menu offer "collapse group" |
+| 2026-10-30 | Notes are saved explicitly (button / Ctrl+Enter), not on every keystroke, since each PATCH is broadcast. Markdown preview uses `react-markdown` with no raw HTML |
+| 2026-10-30 | Phase 4 focus = 1 hop, faded elsewhere, Esc or a background click clears it; the N-hop focus mode is Phase 5 step 1 |
+| 2026-10-30 | Only dragged nodes get saved positions (debounced `PUT /layout`, aggregates left out); positions from fcose runs are not saved |
+| 2026-10-30 | React component tests run in a separate `web-dom` Vitest project (jsdom + Testing Library); the rest of `web/` tests stay in Node |

@@ -73,6 +73,7 @@ export const COLORS = {
 } as const;
 
 export const IGNORED_OPACITY = 0.3;
+export const FADED_OPACITY = 0.12;
 export const INTERESTING_RING = { width: 3, offset: 3 } as const;
 
 export function graphStylesheet(): StylesheetJson {
@@ -157,5 +158,7 @@ export function graphStylesheet(): StylesheetJson {
       selector: 'edge:selected',
       style: { 'line-color': COLORS.selected, 'target-arrow-color': COLORS.selected, width: 2.5 },
     },
+    // Focus mode: outside the focused neighborhood. Last, so it wins over the `ignored` opacity.
+    { selector: '.faded', style: { opacity: FADED_OPACITY, events: 'no' } },
   ];
 }

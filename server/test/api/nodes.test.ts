@@ -152,6 +152,20 @@ describe('PUT /api/layout', () => {
     expect(body(await api.get(`/api/nodes/${known}`), 200, nodeDetailResponseSchema).node.posX).toBeNull();
   });
 
+  test('an aggregate ID is not a node: the batch is rejected (the UI leaves aggregates out)', async () => {
+    const api = await examples();
+    const known = idOf(api.db, 'example.com');
+    const aggId = `agg:${known}:has_subdomain:subdomain`;
+    const res = await api.send('PUT', '/api/layout', {
+      positions: [
+        { id: known, x: 1, y: 1 },
+        { id: aggId, x: 2, y: 2 },
+      ],
+    });
+    error(res, 400, `unknown node '${aggId}'`);
+    expect(body(await api.get(`/api/nodes/${known}`), 200, nodeDetailResponseSchema).node.posX).toBeNull();
+  });
+
   test('an empty list is fine', async () => {
     const api = await examples();
     expect(body(await api.send('PUT', '/api/layout', { positions: [] }), 200, layoutResponseSchema)).toEqual({ updated: 0 });

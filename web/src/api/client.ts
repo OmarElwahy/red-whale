@@ -46,6 +46,29 @@ export async function getJson<S extends z.ZodType>(
 ): Promise<z.output<S>> {
   const doFetch = options.fetch ?? fetch;
   const res = await doFetch(path, { headers: { accept: 'application/json' }, signal: options.signal });
+  return parseResponse(res, path, schema);
+}
+
+/** PATCH or PUT a JSON body and parse the answer with `schema`. `keepalive` lets the request outlive the page. */
+export async function sendJson<S extends z.ZodType>(
+  method: 'PATCH' | 'PUT',
+  path: string,
+  payload: unknown,
+  schema: S,
+  options: { fetch?: Fetch; keepalive?: boolean } = {},
+): Promise<z.output<S>> {
+  const doFetch = options.fetch ?? fetch;
+  const res = await doFetch(path, {
+    method,
+    headers: { accept: 'application/json', 'content-type': 'application/json' },
+    body: JSON.stringify(payload),
+    keepalive: options.keepalive,
+  });
+  return parseResponse(res, path, schema);
+}
+
+/** A parsed body, or ApiError for an HTTP error, or ResponseShapeError for a 2xx that breaks the schema. */
+async function parseResponse<S extends z.ZodType>(res: Response, path: string, schema: S): Promise<z.output<S>> {
   const body = await readJson(res);
   if (!res.ok) {
     const err = errorResponseSchema.safeParse(body);

@@ -1,6 +1,6 @@
-import { graphResponseSchema } from '@redwhale/shared';
+import { graphResponseSchema, layoutResponseSchema } from '@redwhale/shared';
 import { describe, expect, test } from 'vitest';
-import { ApiError, getJson, ResponseShapeError, type Fetch } from '../src/api/client';
+import { ApiError, getJson, ResponseShapeError, sendJson, type Fetch } from '../src/api/client';
 import { graphSearchParams, queryKeys, withParams } from '../src/api/query';
 import { node } from './fixtures';
 
@@ -64,5 +64,51 @@ describe('query params', () => {
 
   test('equal filters give equal query keys regardless of key order', () => {
     expect(queryKeys.graph({ q: 'x', types: ['ip'] })).toEqual(queryKeys.graph({ types: ['ip'], q: 'x' }));
+  });
+});
+
+describe('sendJson', () => {
+  function recordingFetch(status: number, body: unknown): { fetch: Fetch; requests: { url: string; init: RequestInit | undefined }[] } {
+    const requests: { url: string; init: RequestInit | undefined }[] = [];
+    return {
+      requests,
+      fetch: (url, init) => {
+        requests.push({ url, init });
+        return Promise.resolve(new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }));
+      },
+    };
+  }
+
+  test('sends the method, a JSON body and content type, and parses the answer', async () => {
+    const { fetch, requests } = recordingFetch(200, { updated: 1 });
+    const positions = [{ id: 'a', x: 1, y: 2 }];
+    await expect(sendJson('PUT', '/api/layout', { positions }, layoutResponseSchema, { fetch })).resolves.toEqual({ updated: 1 });
+    expect(requests).toHaveLength(1);
+    const init = requests[0]?.init;
+    expect(init?.method).toBe('PUT');
+    expect(init?.headers).toMatchObject({ 'content-type': 'application/json' });
+    expect(JSON.parse(init?.body as string)).toEqual({ positions });
+  });
+
+  test('keepalive is passed through, so a save can outlive the page', async () => {
+    const { fetch, requests } = recordingFetch(200, { updated: 0 });
+    await sendJson('PUT', '/api/layout', { positions: [] }, layoutResponseSchema, { fetch, keepalive: true });
+    expect(requests[0]?.init?.keepalive).toBe(true);
+  });
+
+  test('an API error becomes an ApiError with its issues', async () => {
+    const { fetch } = recordingFetch(400, { error: 'unknown node IDs; nothing was saved', issues: ["unknown node 'x'"] });
+    const err: unknown = await sendJson('PUT', '/api/layout', { positions: [] }, layoutResponseSchema, { fetch }).catch(
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err).toMatchObject({ status: 400, issues: ["unknown node 'x'"] });
+  });
+
+  test('a 200 that breaks the schema is a ResponseShapeError', async () => {
+    const { fetch } = recordingFetch(200, { updated: 'all' });
+    await expect(sendJson('PATCH', '/api/nodes/a', { tag: null }, layoutResponseSchema, { fetch })).rejects.toBeInstanceOf(
+      ResponseShapeError,
+    );
   });
 });
