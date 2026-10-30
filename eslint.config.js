@@ -1,12 +1,13 @@
 import js from '@eslint/js';
 import { defineConfig, globalIgnores } from 'eslint/config';
+import reactHooks from 'eslint-plugin-react-hooks';
 import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default defineConfig(
   globalIgnores(['**/node_modules/', '**/dist/', 'data/', 'output/', 'archive/']),
   {
-    files: ['**/*.{ts,js}'],
+    files: ['**/*.{ts,tsx,js}'],
     extends: [js.configs.recommended, tseslint.configs.strictTypeChecked],
     languageOptions: {
       globals: globals.node,
@@ -28,6 +29,11 @@ export default defineConfig(
         { patterns: [{ group: ['node:*'], message: 'shared/src runs in the browser too.' }] },
       ],
     },
+  },
+  {
+    files: ['web/src/**/*.{ts,tsx}'],
+    extends: [reactHooks.configs.flat.recommended],
+    languageOptions: { globals: globals.browser },
   },
   {
     files: ['**/*.js'],

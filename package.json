@@ -13,12 +13,15 @@
     "lint": "eslint .",
     "ingest": "tsx server/src/cli/run-ingest.ts",
     "mock": "tsx scripts/mock.ts",
-    "dev:server": "tsx watch server/src/cli/run-server.ts"
+    "dev": "pnpm run \"/^dev:(server|web)$/\"",
+    "dev:server": "tsx watch server/src/cli/run-server.ts",
+    "dev:web": "pnpm --filter @redwhale/web dev"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
     "@types/node": "24.19.2",
     "eslint": "10.13.0",
+    "eslint-plugin-react-hooks": "7.1.1",
     "globals": "17.13.0",
     "tsx": "4.23.15",
     "typescript": "6.0.3",

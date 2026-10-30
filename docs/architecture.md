@@ -221,3 +221,6 @@ diffing between scans · reports · CVE monitoring · local LLM scoring · JS an
 | 2026-10-30 | No node deletion: the `ignored` tag + `excludeTag` filter hides nodes (provenance is never dropped) |
 | 2026-10-30 | API rejects foreign `Host`/`Origin` headers (403) in addition to binding 127.0.0.1 |
 | 2026-10-30 | Mock data: `northwind.example`, IPs from 198.18.0.0/15, seed 1337, 7 fake tools; generator in `server/src/mock/` |
+| 2026-10-30 | Graph fill color = the node's **own** severity (aggregates: `maxSeverity`); `effectiveSeverity` is kept for muting in Phase 5 |
+| 2026-10-30 | Node types are shown by shape only for now (no icons); `interesting` = fuchsia outline, so it never clashes with a severity fill or the confidence border |
+| 2026-10-30 | shadcn/ui files are written by hand from the upstream source (no `shadcn init`), with system fonts only: no remote font or CDN imports |
