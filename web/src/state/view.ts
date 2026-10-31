@@ -1,6 +1,6 @@
 // What the analyst is looking at (Zustand): the graph filters, plus view-only settings. `filters` has the
 // API's own type and only ever holds values GET /api/graph accepts, so it maps 1:1 to the query string
-// (api/query.ts). `mute` and `hops` never reach the API. The whole view round-trips through the URL (url.ts).
+// (api/query.ts). `mute`, `hops` and `layout` never reach the API. The whole view round-trips through the URL (url.ts).
 import { graphFiltersSchema, type GraphFilters, type Severity } from '@redwhale/shared';
 import { create } from 'zustand';
 import { graphSearchParams } from '@/api/query';
@@ -9,15 +9,20 @@ import { useUi } from './ui';
 export type Hops = 1 | 2 | 3;
 export const HOPS: readonly Hops[] = [1, 2, 3];
 
+/** Force = fcose with saved positions; Tree = top-down hierarchy (graph/tree.ts), never saved. */
+export type LayoutMode = 'force' | 'tree';
+export const LAYOUT_MODES: readonly LayoutMode[] = ['force', 'tree'];
+
 export interface View {
   filters: GraphFilters;
   /** Fade nodes whose effective severity is below medium. */
   mute: boolean;
   /** Focus mode radius. */
   hops: Hops;
+  layout: LayoutMode;
 }
 
-export const defaultView: View = { filters: {}, mute: false, hops: 1 };
+export const defaultView: View = { filters: {}, mute: false, hops: 1, layout: 'force' };
 
 /** Filters that are a set of values (checkbox lists in the sidebar). */
 export type ListFilter = 'types' | 'confidence' | 'tool' | 'tag';
@@ -33,6 +38,7 @@ export interface ViewState extends View {
   setHideIgnored: (on: boolean) => void;
   setMute: (on: boolean) => void;
   setHops: (hops: Hops) => void;
+  setLayout: (layout: LayoutMode) => void;
   resetFilters: () => void;
 }
 
@@ -90,6 +96,9 @@ export const useView = create<ViewState>()((set, get) => {
     },
     setHops: (hops) => {
       set({ hops });
+    },
+    setLayout: (layout) => {
+      set({ layout });
     },
     resetFilters: () => {
       setFilters({});

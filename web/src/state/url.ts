@@ -1,12 +1,14 @@
 // The view in the address bar, so a refresh or a copied link opens the same view. Filters use the API's own
-// param names and format (api/query.ts); `mute=1` and `hops=N` are view-only and never sent to the API.
+// param names and format (api/query.ts); `mute=1`, `hops=N` and `layout=tree` are view-only and never sent
+// to the API.
 import { graphFiltersSchema, type GraphFilters } from '@redwhale/shared';
 import { graphSearchParams } from '@/api/query';
-import { HOPS, defaultView, useView, type Hops, type View } from './view';
+import { HOPS, LAYOUT_MODES, defaultView, useView, type Hops, type LayoutMode, type View } from './view';
 
 const FILTER_KEYS = Object.keys(graphFiltersSchema.shape) as (keyof GraphFilters)[];
 
 const isHops = (n: number): n is Hops => (HOPS as readonly number[]).includes(n);
+const isLayout = (s: string | null): s is LayoutMode => (LAYOUT_MODES as readonly (string | null)[]).includes(s);
 
 /**
  * Reads a view from `location.search`. Each filter is checked on its own with the API schema, so one bad or
@@ -22,10 +24,12 @@ export function viewFromSearch(search: string): View {
     if (graphFiltersSchema.shape[key].safeParse(raw).success) accepted[key] = raw;
   }
   const hops = Number(params.get('hops'));
+  const layout = params.get('layout');
   return {
     filters: graphFiltersSchema.parse(accepted),
     mute: params.get('mute') === '1',
     hops: isHops(hops) ? hops : defaultView.hops,
+    layout: isLayout(layout) ? layout : defaultView.layout,
   };
 }
 
@@ -34,6 +38,7 @@ export function viewToSearch(view: View): string {
   const params = graphSearchParams(view.filters);
   if (view.mute) params.set('mute', '1');
   if (view.hops !== defaultView.hops) params.set('hops', String(view.hops));
+  if (view.layout !== defaultView.layout) params.set('layout', view.layout);
   return params.toString();
 }
 

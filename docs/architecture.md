@@ -167,13 +167,51 @@ aggregates more aggressively and says so in the response (`truncated: true`): it
 
 - **Wrapper:** `web/src/graph/CytoscapeGraph.tsx` creates the `cy` instance once; diffs incoming elements
   (add/remove/update by id) instead of rebuilding.
-- **Layout:** `fcose`; nodes with saved positions are locked to them; new nodes are laid out around them.
+- **Layout modes** (header toggle **Force | Tree**; `web/src/graph/modes.ts`). Switching animates every node to its
+  new place (400 ms, ease-out) and fits the view.
+  - **Force:** `fcose`; nodes with saved positions are locked to them; new nodes are laid out around them, and
+    nothing already on the canvas moves. Only dragged nodes are saved (debounced `PUT /layout`).
+  - **Tree:** a top-down layered hierarchy over the parent edges (domain → subdomain → IP → port → URL →
+    tech/vuln/…), computed by ELK `layered` (`elkjs`, in a Web Worker, loaded the first time Tree is used;
+    `web/src/graph/tree.ts`). It handles DAGs: a shared IP sits below both parents. Roots = nodes with no parent
+    on the canvas (a node only named as a parent is one), all on the top row. Siblings are ordered riskiest
+    first (effective severity; aggregates by `maxSeverity`), then by label, and ELK keeps that order, so the
+    tree is the same on every reload. Aggregates and expanded members are ordinary nodes in the tree.
+  - In Tree mode, anything that changes the tree (live update, expand, "show on graph", filter change, a
+    severity or label change) re-runs the layout and animates there; new nodes grow out of their parent. Only a
+    switch, a filter change and **Re-layout** fit the view. Near the element cap ELK takes a few seconds; the
+    header says "laying out tree…" meanwhile, and only the latest run lands.
+  - Dragging in Tree mode carries the node's whole subtree (descendants via parent edges; a shared node goes with
+    whichever parent moves). Tree positions are **never saved** and never pin anything; entering Tree remembers
+    each node's Force position and going back restores it. **Re-layout** snaps back to the clean tree (so does
+    any re-run). The mode is view-only URL state, `layout=tree`, never sent to the API.
+- **Feel** (nothing changes how the canvas draws mid-gesture):
+  - Cytoscape runs with `textureOnViewport`, `hideEdgesOnViewport`, `hideLabelsOnViewport` and `motionBlur` off:
+    edges and labels stay drawn while panning, zooming and dragging.
+  - **Momentum** (`momentum.ts`, physics in `motion.ts`): a fast pan keeps gliding after release; a node thrown by
+    a fast drag slides on. Release velocity comes from the last 80 ms of pointer movement only (a drag that ends
+    in a pause doesn't fly), is capped at 3,000 px/s, and must be at least 150 px/s to glide; friction is
+    exponential (τ = 325 ms), integrated per frame so the distance doesn't depend on the frame rate; it stops
+    below 20 px/s. Any press on the canvas, any wheel, and any programmatic camera move end a glide at once. A
+    thrown node's position is saved once, where it comes to rest.
+  - **Wheel zoom** (`wheel.ts`): we take the wheel over from Cytoscape (capture listener on the wrapper). Every
+    wheel event moves a target zoom by `exp(-px × 0.0015)` (a ctrl+wheel touchpad pinch by `exp(-px × 0.01)`),
+    so a mouse notch and the same distance of two-finger scroll zoom the same; the view eases to the target
+    (τ = 60 ms) toward the cursor. Touch-screen pinch stays with Cytoscape.
+  - **Labels at low zoom** (`labels.ts`): node and edge labels show only while they'd be at least 8 px on screen
+    (with a little hysteresis). Crossing the threshold fades them through half opacity in 150 ms; at 0 opacity
+    Cytoscape skips them.
+  - `prefers-reduced-motion`: no momentum, no wheel easing, no animated layouts or camera moves.
+  - Dev only: `await redwhale.bench()` in the browser console pans and zooms for 5 s and reports frame times
+    (`redwhale.bench({ zoom: false })` pans only). Measured at 1,887 elements (decisions log, 2026-10-31).
 - **Visual language** (single file `web/src/graph/style.ts`):
   - shape/icon by node type
   - fill color by severity (none, info, low, medium, high, critical)
   - border by confidence: dashed = discovered, solid = corroborated, thick = verified
   - aggregate nodes: larger, with count badge
   - tag `ignored` → faded; `interesting` → highlight ring
+  - edges: arrow toward the child; the relation (`has_subdomain`, `resolves_to`, …) as a label along the edge, on
+    a small canvas-colored background so it reads over other edges
 - **Interactions:** click → side panel (details, provenance table, tag, notes); double-click aggregate →
   expand; right-click → context menu (focus, expand neighbors, copy value, open URL; "run tool" disabled
   until orchestrator exists).
@@ -229,6 +267,17 @@ Each phase ends with passing `pnpm typecheck` and `pnpm test`, and a short demo.
 **Phase 3 — Mock data & API**
 1. `scripts/mock.ts`: generates contract-valid files for a realistic target (1 domain, N subdomains,
    IPs, ports, URLs, tech, a few vulns) from multiple fake tools, so corroboration shows up.
+   Since Phase 5C there are two (`server/src/mock/`); both validate every file with Zod and
+   `tools/validate_output.py`, wipe the workspace, then go through the normal ingest path:
+   - `pnpm mock`: the small **showcase**, `showcase.example` (`showcase.ts`): ~80 nodes from 12 fake tools with every
+     node type, relation, severity (none → critical), confidence (`verified` and the tags/notes are applied with the
+     PATCH route's own `updateNode`) and tag; an IP shared by two subdomains, an IPv6 address, a node only named as
+     a parent, and exactly one aggregate (a JS file with `AGG_THRESHOLD + 3` endpoints). Files in `data/mock/showcase/`.
+   - `pnpm mock:large -- [--subdomains N] [--seed N] [--domain name.example]`: the seeded generator
+     (`generate.ts`, `northwind.example`, seed 1337, 400 subdomains by default) for aggregation and performance
+     testing. Files in `data/mock/large/`.
+   - The wipe refuses a database holding any scan whose target isn't under `.example` (a real file), naming them,
+     unless `--force`. `--db`, `--out`, `--no-ingest`, `--skip-python` work on both.
 2. Fastify server + endpoints in §6, with aggregation (§7). Tests with Fastify `inject`.
 
 **Phase 4 — Graph UI core**
@@ -242,6 +291,8 @@ Each phase ends with passing `pnpm typecheck` and `pnpm test`, and a short demo.
 2. Synced table view.
 3. WebSocket live updates.
 4. Highlights view (all `interesting` nodes), JSON export, PNG export (`cy.png()`).
+5. (5C) Graph feel (edges and labels always drawn, momentum, smooth wheel zoom, edge labels), Force | Tree layout
+   modes, small showcase mock (`pnpm mock`) next to the large one (`pnpm mock:large`).
 
 **Phase 6+ — Later (not now)**
 Orchestrator (Dockerode, containerized tool groups) · scope guard · presets & auto-chaining ·
@@ -300,3 +351,12 @@ diffing between scans · reports · CVE monitoring · local LLM scoring · JS an
 | 2026-10-30 | Live updates refetch every active `api` query on any event (coalesced 200 ms) instead of picking queries by node ID: simpler, and only on-screen queries refetch. A node's own PATCH refetches twice (mutation + event); accepted |
 | 2026-10-30 | Live flash: new nodes the event named (15 s window) and aggregates whose hidden count grew; nodes that only re-render, and expand/neighbor loads, never flash |
 | 2026-10-30 | PNG export = the whole canvas as drawn (fading included), `bg` = canvas color, scale 2 capped at 8,192 px; JSON export = the whole workspace, file names `redwhale-<kind>-<UTC, no colons>` |
+| 2026-10-31 | Phase 5C feel: `textureOnViewport`/`hideEdgesOnViewport`/`hideLabelsOnViewport`/`motionBlur` off, so edges and labels stay drawn mid-gesture. Measured at 1,887 elements (`mock:large --subdomains 260`, aggregation off; headless Chrome, Intel UHD iGPU, 1440×900): pan p50 6.9 ms / p95 7.4 ms; continuous zoom + pan across the label thresholds p50 13.8 ms / p95 20.9 ms. The old hide-while-moving settings measured the same for panning (p95 7.4 ms), so no fallback was needed |
+| 2026-10-31 | Momentum: velocity from the last 80 ms only, capped at 3,000 px/s, glides from 150 px/s, exponential friction τ = 325 ms, stops below 20 px/s; any press, wheel or camera animation stops it. A thrown node is saved once, at rest (`onMoved` moved from `events.ts` to `momentum.ts`) |
+| 2026-10-31 | Wheel zoom is ours, not Cytoscape's (`wheelSensitivity` untouched): zoom proportional to scrolled pixels (mouse = touchpad two-finger scroll; ctrl+wheel pinch faster per pixel), eased toward the cursor. Two-finger scroll stays zoom, as before |
+| 2026-10-31 | Edge labels = the relation as stored (`has_subdomain`), autorotated, on a canvas-colored plate; same readability rule as node labels (≥ 8 px on screen). `min-zoomed-font-size` replaced by a class-stepped fade (half opacity, then hidden, 150 ms). A Cytoscape `transition` fade was measured first and pushed zoom p95 from ~21 ms to ~35 ms at the cap (it restyles every label every frame); the two-step fade costs the same as a hard cut |
+| 2026-10-31 | Tree layout: ELK `layered` via `elkjs` 0.12.0 (0.12.1 was 3 days old), used directly in a Web Worker; not `cytoscape-elk` (pins elkjs 0.9, adds nothing we use) and not dagre (its crossing minimisation reorders siblings; no way to keep riskiest-first). Model order forced (`considerModelOrder` + `forceNodeModelOrder`), default greedy cycle breaking (`MODEL_ORDER` cycle breaking reversed the second parent edge of a shared IP), one layering for all components so every root is on the top row |
+| 2026-10-31 | Tree layout time, measured on the 1,887-element graph: ELK ≈ 4.4 s in the worker (UI stays responsive; header shows "laying out tree…"); dagre 0.85 s on the same graph, but synchronous. The showcase (54 shown nodes) lays out in ~0.3 s. **Open:** whether that's acceptable near the cap |
+| 2026-10-31 | Tree positions are never saved and never pin Force nodes; entering Tree snapshots Force positions, leaving restores them (new nodes get fcose around them). Dragging in Tree carries the subtree; any re-run (live update, expand, Re-layout) snaps manual tree drags back. Layout mode is view-only URL state (`layout=tree`) |
+| 2026-10-31 | `pnpm mock` = small showcase (`showcase.example`, ~80 nodes, every enum value covered; a test reads the shared enums so it can't fall behind); the old generator unchanged as `pnpm mock:large`. Both wipe the workspace first (rows deleted in one transaction, so it works while the dev server holds the file) and refuse if any scan's target isn't under the reserved `.example` TLD, unless `--force`. `--domain` for `mock:large` must therefore end in `.example`. Output in `data/mock/showcase/` and `data/mock/large/` |
+| 2026-10-31 | The PATCH handler's update logic moved to `server/src/graph/update.ts` (`updateNode`), shared by the route and the showcase's `verified`/tag/note annotations |

@@ -22,7 +22,7 @@ Read these before starting any task:
 | Validation | Zod, in `shared/`. Validate at every boundary (ingest, API input, API output in tests) |
 | Server | Fastify + `@fastify/websocket` |
 | Database | SQLite via better-sqlite3 + Drizzle ORM. One `.db` file per workspace, default `./data/redwhale.db` |
-| Frontend | Vite + React + Cytoscape.js (+ `cytoscape-fcose`; aggregates expand through the API, not `cytoscape-expand-collapse`) |
+| Frontend | Vite + React + Cytoscape.js (+ `cytoscape-fcose` for Force, `elkjs` layered in a Web Worker for Tree; aggregates expand through the API, not `cytoscape-expand-collapse`) |
 | UI state | Zustand. Server data via TanStack Query. Table view via TanStack Table |
 | Styling | Tailwind + shadcn/ui (hand-written from upstream source, system fonts only). Notes preview: `react-markdown`, no raw HTML |
 | Tests | Vitest everywhere; React components with jsdom + Testing Library (`web/test/*.test.tsx`) |
@@ -47,7 +47,9 @@ Once scaffolded, these must work from the repo root:
 - `pnpm typecheck` — `tsc --noEmit` across all packages
 - `pnpm lint`
 - `pnpm ingest <file.json>` — load one tool-output file into the DB
-- `pnpm mock -- --subdomains 400` — generate a large fake graph (files in `data/mock/`, ingested into the workspace DB; `--db`, `--seed`, `--no-ingest`)
+- `pnpm mock` — small showcase graph (~80 nodes, every node type/relation/severity/confidence/tag; files in `data/mock/showcase/`)
+- `pnpm mock:large -- --subdomains 400` — large fake graph for aggregation/performance (files in `data/mock/large/`; `--seed`, `--domain x.example`)
+- Both **wipe the workspace DB first** and refuse if it holds a scan not from a mock (target not under `.example`) unless `--force`; both take `--db`, `--out`, `--no-ingest`, `--skip-python`
 - `pnpm dev:server` — API only, on `127.0.0.1:4100` (`REDWHALE_DB` picks the database)
 
 Run `pnpm typecheck` and `pnpm test` after every change, and before saying a task is done.

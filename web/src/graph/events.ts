@@ -10,12 +10,15 @@ export interface GraphHandlers {
   onExpand: (aggregateId: string) => void;
   /** Right-click on a node, at its rendered position inside the container. */
   onContextMenu: (target: { id: string; x: number; y: number }) => void;
-  /** A drag ended. */
+  /**
+   * A dragged node came to rest, after any momentum glide (emitted by graph/momentum.ts via the wrapper, not
+   * here). Not called in Tree mode, whose positions aren't saved.
+   */
   onMoved: (positions: Position[]) => void;
 }
 
 /**
- * Binds the handlers once. `handlers` is read on every event, so the caller can keep the latest callbacks in
+ * Binds the click handlers once (drags are graph/momentum.ts's). `handlers` is read on every event, so the caller can keep the latest callbacks in
  * a ref without rebinding. Returns an unbind function.
  */
 export function bindGraphEvents(cy: Core, handlers: () => GraphHandlers): () => void {
@@ -32,23 +35,16 @@ export function bindGraphEvents(cy: Core, handlers: () => GraphHandlers): () => 
     const { x, y } = e.renderedPosition;
     handlers().onContextMenu({ id: (e.target as NodeSingular).id(), x, y });
   };
-  const onDragEnd = (e: EventObject) => {
-    const node = e.target as NodeSingular;
-    const { x, y } = node.position();
-    handlers().onMoved([{ id: node.id(), x, y }]);
-  };
 
   cy.on('tap', 'node', onTapNode);
   cy.on('tap', onTapCanvas);
   cy.on('dbltap', 'node[kind = "aggregate"]', onDoubleTap);
   cy.on('cxttap', 'node', onRightClick);
-  cy.on('dragfree', 'node', onDragEnd);
   return () => {
     cy.off('tap', 'node', onTapNode);
     cy.off('tap', onTapCanvas);
     cy.off('dbltap', 'node[kind = "aggregate"]', onDoubleTap);
     cy.off('cxttap', 'node', onRightClick);
-    cy.off('dragfree', 'node', onDragEnd);
   };
 }
 

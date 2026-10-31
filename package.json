@@ -13,6 +13,7 @@
     "lint": "eslint .",
     "ingest": "tsx server/src/cli/run-ingest.ts",
     "mock": "tsx scripts/mock.ts",
+    "mock:large": "tsx scripts/mock.ts --large",
     "dev": "pnpm run \"/^dev:(server|web)$/\"",
     "dev:server": "tsx watch server/src/cli/run-server.ts",
     "dev:web": "pnpm --filter @redwhale/web dev"

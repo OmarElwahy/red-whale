@@ -65,3 +65,69 @@ export function layoutAdded(cy: Core, addedIds: readonly string[], savedIds: Rea
   };
   scope.union(scope.edgesWith(scope)).layout(options).run();
 }
+
+export type Position = { x: number; y: number };
+
+/** Layout switches and tree re-runs: how long nodes take to reach their new positions. */
+export const LAYOUT_ANIMATION_MS = 400;
+const FIT_PADDING = 40;
+
+/**
+ * Moves every node to `targets` (nodes not in the map stay put), optionally fitting the view to the result,
+ * as one animation. A duration of 0 jumps (reduced motion). Stops whatever node animation was running first.
+ */
+export function animateTo(
+  cy: Core,
+  targets: ReadonlyMap<string, Position>,
+  { fit, duration }: { fit: boolean; duration: number },
+): void {
+  const nodes = cy.nodes();
+  nodes.stop(true, false);
+  const positions = Object.fromEntries(nodes.map((n) => [n.id(), targets.get(n.id()) ?? { ...n.position() }]));
+  cy.layout({
+    name: 'preset',
+    positions,
+    fit,
+    padding: FIT_PADDING,
+    animate: duration > 0,
+    animationDuration: duration,
+    animationEasing: 'ease-out',
+  }).run();
+}
+
+/**
+ * Where Force mode puts every node, without moving anything on screen: nodes with a remembered position (their
+ * Force position before Tree mode, or a saved one) go back to it, and the rest are laid out by fcose around
+ * them, as after a live update. Computed by placing the nodes, running the (synchronous) layouts, reading the
+ * result, then restoring positions and viewport; the caller animates to the result.
+ */
+export function forceTargets(
+  cy: Core,
+  remembered: ReadonlyMap<string, Position>,
+  pinned: ReadonlySet<string>,
+): Map<string, Position> {
+  const nodes = cy.nodes();
+  const start = new Map(nodes.map((n) => [n.id(), { ...n.position() }]));
+  const viewport = { zoom: cy.zoom(), pan: { ...cy.pan() } };
+
+  const loose: string[] = [];
+  cy.batch(() => {
+    nodes.forEach((n) => {
+      const p = remembered.get(n.id());
+      if (p) n.position(p);
+      else loose.push(n.id());
+    });
+  });
+  if (loose.length === nodes.length) initialLayout(cy, pinned);
+  else if (loose.length > 0) layoutAdded(cy, loose, new Set([...pinned].filter((id) => remembered.has(id))));
+
+  const final = new Map(nodes.map((n) => [n.id(), { ...n.position() }]));
+  cy.batch(() => {
+    nodes.forEach((n) => {
+      const p = start.get(n.id());
+      if (p) n.position(p);
+    });
+  });
+  cy.viewport(viewport);
+  return final;
+}

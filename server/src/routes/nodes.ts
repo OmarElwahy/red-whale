@@ -14,6 +14,7 @@ import type { Db } from '../db/client';
 import { nodes } from '../db/schema';
 import { maxSeverity } from '../ingest/derive';
 import { filteredGraph, nodeComparator } from '../graph/store';
+import { updateNode } from '../graph/update';
 import { HttpError, jsonObject, notFound, parseInput } from '../http';
 import type { RouteContext } from './context';
 
@@ -143,15 +144,7 @@ export function nodeRoutes({ app, db, broadcaster }: RouteContext): void {
   app.patch<{ Params: { id: string } }>('/api/nodes/:id', (req) => {
     const { id } = req.params;
     const body = parseInput(nodePatchSchema, req.body);
-    const set: Partial<typeof nodes.$inferInsert> = {};
-    if (body.tag !== undefined) set.tag = body.tag;
-    if (body.notes !== undefined) set.notes = body.notes;
-    if (body.confidence !== undefined) set.confidence = body.confidence;
-    if (body.posX !== undefined) set.posX = body.posX;
-    if (body.posY !== undefined) set.posY = body.posY;
-
-    const updated = db.update(nodes).set(set).where(eq(nodes.id, id)).returning({ id: nodes.id }).all();
-    if (updated.length === 0) throw notFound(`node ${id}`);
+    if (!updateNode(db, id, body)) throw notFound(`node ${id}`);
     broadcaster.send({ type: 'graph.updated', nodeIds: [id], edgeIds: [] });
     return nodeDetail(db, id);
   });

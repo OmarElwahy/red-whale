@@ -267,6 +267,9 @@ importers:
       cytoscape-fcose:
         specifier: 2.2.0
         version: 2.2.0(cytoscape@3.34.4)
+      elkjs:
+        specifier: 0.12.0
+        version: 0.12.0
       react:
         specifier: 19.3.1
         version: 19.3.1
@@ -1705,6 +1708,9 @@ packages:
 
   electron-to-chromium@1.5.467:
     resolution: {integrity: sha512-Nw9X371rtZmYcBSnEijnCDONILjs93biCZO34juC7MBOmK8E+GFnyD4T/WvyrlJkppul7oxg6TwvtKst9SODTw==}
+
+  elkjs@0.12.0:
+    resolution: {integrity: sha512-YZcKynxVxYoKIOEpywEPwCFdg+BTbxQRNf3pbwdDCvc8O3kQD8bmIwSxKU1eOTVc4Xo+VG9Te+575mlfvOrhEQ==}
 
   end-of-stream@1.4.5:
     resolution: {integrity: sha512-ooEGc6HP26xXq/N+GCGOT0JKCLDGrq2bQUZrQ7gyrJiZANJ/8YDTxTpQBXGMn+WbIQXNVpyWymm7KYVICQnyOg==}
@@ -3857,6 +3863,8 @@ snapshots:
       stream-shift: 1.0.3
 
   electron-to-chromium@1.5.467: {}
+
+  elkjs@0.12.0: {}
 
   end-of-stream@1.4.5:
     dependencies:

@@ -4,7 +4,7 @@ Paste this file into a new chat to continue where we left off. It holds the cont
 other docs. Source of truth for design details is still `docs/architecture.md` (incl. the decisions log),
 `docs/contract.md` and `CLAUDE.md` — attach `docs/architecture.md` too if the question is technical.
 
-_Last updated: 2026-10-30_
+_Last updated: 2026-10-31_
 
 ## Who / what
 
@@ -21,7 +21,7 @@ _Last updated: 2026-10-30_
 
 TypeScript (pinned 6.0.x) · pnpm monorepo `shared/` `server/` `web/` · Zod · Fastify + WebSocket on
 127.0.0.1:4100 · SQLite via better-sqlite3 + Drizzle · Vite + React on 127.0.0.1:5173 · Cytoscape.js + fcose ·
-Zustand · TanStack Query + Table · Tailwind + shadcn/ui · react-markdown · Vitest.
+Zustand · TanStack Query + Table · Tailwind + shadcn/ui · react-markdown · Vitest · elkjs (Tree layout, in a Web Worker).
 Dropped: `cytoscape-expand-collapse` (aggregation is server-side). Docker/Dockerode comes in Phase 6.
 
 ## Status
@@ -35,6 +35,7 @@ Dropped: `cytoscape-expand-collapse` (aggregation is server-side). Docker/Docker
 | — | Review fixes: `observations.role` (parent refs don't corroborate), ASCII/punycode hosts, docs synced | ✅ done |
 | 5A | Filters sidebar, search, URL state, N-hop focus, mute low-risk | ✅ done |
 | 5B | Synced table, WebSocket live updates, Highlights view, JSON/PNG export | ✅ code + tests done; manual browser check pending |
+| 5C | Graph feel (edges/labels always drawn, momentum, smooth zoom, edge labels), Force/Tree layouts, small showcase mock | ✅ code + tests done; manual check pending |
 | 6+ | **Scope guard first**, then Docker orchestrator, presets, auto-chaining, diffing, reports, CVE monitor, local LLM scoring, JS agent | later |
 
 ## How I work with Claude Code
@@ -58,8 +59,20 @@ Dropped: `cytoscape-expand-collapse` (aggregation is server-side). Docker/Docker
 - Table supports `?at=` to jump to the selected node's page.
 - Highlights view ignores graph filters. `/api/nodes` items have no notes, so it got its own `GET /api/highlights`.
 
+## Recent decisions (Phase 5C)
+
+- `pnpm mock` = small showcase (`showcase.example`, ~80 nodes, every type/relation/severity/confidence/tag);
+  the old generator is `pnpm mock:large`. Both wipe the DB first, but refuse if it holds a real scan
+  (target not under `.example`) unless `--force`.
+- Tree layout = ELK layered (keeps riskiest-first sibling order; dagre can't). Tree positions are never saved.
+- Edge labels show the relation; labels fade (two steps) below 8 px on screen; two-finger scroll = zoom.
+- Measured at ~1,900 elements: panning p95 7 ms, zooming p95 21 ms (headless Chrome, Intel iGPU). No edge hiding.
+
 ## Open items to remember
 
+- Tree layout near the 2,000 cap takes ~4.4 s (ELK in a worker, UI stays smooth, header shows progress).
+  dagre would be ~0.85 s but freezes the UI and can't keep sibling order. Decide whether that's acceptable.
+- Re-check the canvas feel in **Firefox** (my browser) with `await redwhale.bench()` on `pnpm mock:large` data.
 - Test teammates' **real** JSON files: validator → `pnpm ingest` → check the graph.
 - Technology names must be exactly `name/version` across all scripts, or corroboration silently fails.
   Maybe add an alias table later (`microsoft-iis` = `iis`).

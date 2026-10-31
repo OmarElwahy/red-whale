@@ -40,7 +40,7 @@ import { SidePanel } from '@/panel/SidePanel';
 import { useLive } from '@/state/live';
 import { useUi, type BottomPanel } from '@/state/ui';
 import { NodeTable } from '@/table/NodeTable';
-import { hasFilters, useView } from '@/state/view';
+import { LAYOUT_MODES, hasFilters, useView, type LayoutMode } from '@/state/view';
 
 type AnyNode = GraphNode | AggregateNode;
 
@@ -99,6 +99,39 @@ function PanelToggle({
   );
 }
 
+/** Force | Tree, plus Re-layout while in Tree mode. View-only: it lives in the URL, never in API params. */
+function LayoutToggle({ layout }: { layout: LayoutMode }) {
+  const { setLayout } = useView.getState();
+  return (
+    <div className="flex items-center gap-1" role="group" aria-label="Layout">
+      <span className="text-muted-foreground mr-1 text-xs">Layout</span>
+      {LAYOUT_MODES.map((m) => (
+        <Button
+          key={m}
+          size="sm"
+          variant={layout === m ? 'secondary' : 'ghost'}
+          aria-pressed={layout === m}
+          onClick={() => {
+            setLayout(m);
+          }}
+        >
+          {m === 'force' ? 'Force' : 'Tree'}
+        </Button>
+      ))}
+      {layout === 'tree' && (
+        <Button
+          size="sm"
+          variant="ghost"
+          title="Snap back to the clean tree (dragged branches move back)"
+          onClick={useUi.getState().relayout}
+        >
+          Re-layout
+        </Button>
+      )}
+    </div>
+  );
+}
+
 function Message({ children }: { children: ReactNode }) {
   return <div className="text-muted-foreground m-auto text-sm">{children}</div>;
 }
@@ -146,6 +179,9 @@ export function App() {
   const filters = useView((s) => s.filters);
   const mute = useView((s) => s.mute);
   const hops = useView((s) => s.hops);
+  const layout = useView((s) => s.layout);
+  const relayoutSeq = useUi((s) => s.relayoutSeq);
+  const [layingOut, setLayingOut] = useState(false);
   useLiveUpdates();
   const liveStatus = useLive((s) => s.status);
   const fresh = useLive((s) => s.fresh);
@@ -339,8 +375,11 @@ export function App() {
         {(graph.isFetching || expansions.isFetching || neighborhoods.isFetching) && (
           <span className="text-muted-foreground text-xs">loading…</span>
         )}
+        {layingOut && layout === 'tree' && <span className="text-muted-foreground text-xs">laying out tree…</span>}
         <div className="ml-auto flex items-center gap-1">
           <LiveIndicator status={liveStatus} />
+          <LayoutToggle layout={layout} />
+          <span className="bg-border mx-1 h-5 w-px" aria-hidden />
           <PanelToggle panel="table" current={bottomPanel}>
             Table
           </PanelToggle>
@@ -376,6 +415,9 @@ export function App() {
                 query={loadedQuery}
                 centerOn={centerOn}
                 fresh={fresh}
+                layout={layout}
+                relayoutSeq={relayoutSeq}
+                onLayoutBusy={setLayingOut}
                 handlers={handlers}
                 className="absolute inset-0"
               />

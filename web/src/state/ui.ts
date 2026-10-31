@@ -37,6 +37,8 @@ export interface UiState {
   centerOn: { id: string; seq: number } | null;
   /** Enter was pressed in search: select and center the first match once the graph for that query is loaded. */
   jumpPending: boolean;
+  /** Bumped by the Re-layout button; the canvas re-runs the tree when it changes. */
+  relayoutSeq: number;
 
   select: (id: string | null) => void;
   focus: (id: string | null) => void;
@@ -58,6 +60,8 @@ export interface UiState {
   center: (id: string) => void;
   requestJump: () => void;
   clearJump: () => void;
+  /** Tree mode: snap back to the clean tree (bumps `relayoutSeq`). */
+  relayout: () => void;
   /**
    * Filters changed: expand pages, neighborhoods and reveals were loaded under the old ones, so drop them, and
    * focus. The table goes back to page 1.
@@ -77,6 +81,7 @@ export const initialUiState = {
   menu: null,
   centerOn: null,
   jumpPending: false,
+  relayoutSeq: 0,
 } satisfies Partial<UiState>;
 
 export const useUi = create<UiState>()((set) => ({
@@ -91,6 +96,9 @@ export const useUi = create<UiState>()((set) => ({
   },
   focus: (id) => {
     set({ focusId: id, menu: null });
+  },
+  relayout: () => {
+    set((s) => ({ relayoutSeq: s.relayoutSeq + 1 }));
   },
   expand: (aggregateId) => {
     set((s) => ({

@@ -68,10 +68,12 @@ describe('filters → GET /api/graph params', () => {
     expect(apiParams()).toBe('');
   });
 
-  test('mute and hops are view-only: they never reach the API', () => {
+  test('mute, hops and layout are view-only: they never reach the API', () => {
     view().setMute(true);
     view().setHops(3);
+    view().setLayout('tree');
     expect(apiParams()).toBe('');
+    expect(Object.keys(graphFiltersSchema.shape)).not.toContain('layout');
     expect(Object.keys(graphFiltersSchema.shape)).not.toContain('mute');
     expect(Object.keys(graphFiltersSchema.shape)).not.toContain('hops');
   });
@@ -88,6 +90,7 @@ describe('filters → GET /api/graph params', () => {
     view().setQuery('dev ');
     view().setMute(true);
     view().setHops(2);
+    view().setLayout('tree');
     expect(useUi.getState().expanded).toHaveLength(1);
   });
 
@@ -97,14 +100,17 @@ describe('filters → GET /api/graph params', () => {
 });
 
 describe('view ↔ URL', () => {
-  test('round-trips filters, mute and hops', () => {
+  test('round-trips filters, mute, hops and layout', () => {
     const v: View = {
       filters: { types: ['subdomain', 'url'], minSeverity: 'medium', excludeTag: ['ignored'], q: 'dev' },
       mute: true,
       hops: 2,
+      layout: 'tree',
     };
     const search = viewToSearch(v);
-    expect(search).toBe('excludeTag=ignored&minSeverity=medium&q=dev&types=subdomain%2Curl&mute=1&hops=2');
+    expect(search).toBe(
+      'excludeTag=ignored&minSeverity=medium&q=dev&types=subdomain%2Curl&mute=1&hops=2&layout=tree',
+    );
     expect(viewFromSearch(`?${search}`)).toEqual(v);
   });
 
@@ -120,11 +126,12 @@ describe('view ↔ URL', () => {
     });
   });
 
-  test('unknown params, bad hops and other mute values are ignored', () => {
-    expect(viewFromSearch('?utm_source=x&hops=7&mute=yes&tag=checked')).toEqual({
+  test('unknown params, bad hops, other mute values and unknown layouts are ignored', () => {
+    expect(viewFromSearch('?utm_source=x&hops=7&mute=yes&tag=checked&layout=radial')).toEqual({
       filters: { tag: ['checked'] },
       mute: false,
       hops: 1,
+      layout: 'force',
     });
   });
 

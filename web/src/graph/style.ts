@@ -67,12 +67,19 @@ export const COLORS = {
   border: '#cbd5e1', // slate-300
   label: '#e2e8f0', // slate-200
   edge: '#475569', // slate-600
+  edgeLabel: '#94a3b8', // slate-400
   /** Ring for `interesting`: fuchsia, so it never blends with a severity fill. */
   interesting: '#e879f9', // fuchsia-400
   selected: '#f8fafc', // slate-50
   /** Halo on nodes a live update just added. */
   fresh: '#22d3ee', // cyan-400
 } as const;
+
+/** Label font sizes in px at zoom 1. Labels fade out below an on-screen size (graph/labels.ts). */
+export const NODE_FONT_PX = 10;
+export const EDGE_FONT_PX = 8;
+/** How long labels take to fade in or out when the zoom crosses the readability threshold (graph/labels.ts). */
+export const LABEL_FADE_MS = 150;
 
 export const IGNORED_OPACITY = 0.3;
 export const SEARCH_PATH_OPACITY = 0.45;
@@ -93,14 +100,13 @@ export function graphStylesheet(): StylesheetJson {
         'border-style': CONFIDENCE_BORDER.discovered.style,
         label: 'data(label)',
         color: COLORS.label,
-        'font-size': 10,
+        'font-size': NODE_FONT_PX,
         'text-valign': 'bottom',
         'text-margin-y': 4,
         'text-wrap': 'ellipsis',
         'text-max-width': '140px',
         'text-outline-color': COLORS.canvas,
         'text-outline-width': 2,
-        'min-zoomed-font-size': 8,
       },
     },
     ...NODE_TYPES.map((type) => ({
@@ -161,12 +167,24 @@ export function graphStylesheet(): StylesheetJson {
         'target-arrow-shape': 'triangle',
         'arrow-scale': 0.8,
         'curve-style': 'bezier',
+        // The relation, along the edge, on a small canvas-colored plate so it reads over other edges.
+        label: 'data(relation)',
+        'font-size': EDGE_FONT_PX,
+        color: COLORS.edgeLabel,
+        'text-rotation': 'autorotate',
+        'text-background-color': COLORS.canvas,
+        'text-background-opacity': 0.85,
+        'text-background-padding': '2px',
+        'text-background-shape': 'roundrectangle',
       },
     },
     {
       selector: 'edge:selected',
       style: { 'line-color': COLORS.selected, 'target-arrow-color': COLORS.selected, width: 2.5 },
     },
+    // Labels too small to read at this zoom (graph/labels.ts): stepped out, then skipped by the renderer.
+    { selector: '.label-fade-1', style: { 'text-opacity': 0.5 } },
+    { selector: '.label-hidden', style: { 'text-opacity': 0 } },
     // Search: nodes kept only as the path up to a match. Still clickable.
     { selector: '.search-path', style: { opacity: SEARCH_PATH_OPACITY } },
     // "Mute low-risk": after the path, so a low-risk path node is as faint as any other low-risk node.

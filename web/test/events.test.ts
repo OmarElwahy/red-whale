@@ -60,11 +60,9 @@ describe('bindGraphEvents', () => {
     expect(h.onContextMenu).toHaveBeenCalledWith({ id: 'c', x: 120, y: 45 });
   });
 
-  test('the end of a drag reports where the node is now', () => {
-    const d = cy.getElementById('d');
-    d.position({ x: 310, y: -42 });
-    d.emit('dragfree');
-    expect(h.onMoved).toHaveBeenCalledWith([{ id: 'd', x: 310, y: -42 }]);
+  test('the end of a drag is left to graph/momentum.ts (it reports the resting position)', () => {
+    cy.getElementById('d').emit('dragfree');
+    expect(h.onMoved).not.toHaveBeenCalled();
   });
 
   test('the latest handlers are used without rebinding', () => {
@@ -78,10 +76,8 @@ describe('bindGraphEvents', () => {
     unbind();
     cy.getElementById('b').emit('tap');
     cy.getElementById(AGG).emit('dbltap');
-    cy.getElementById('d').emit('dragfree');
     expect(h.onSelect).not.toHaveBeenCalled();
     expect(h.onExpand).not.toHaveBeenCalled();
-    expect(h.onMoved).not.toHaveBeenCalled();
   });
 });
 

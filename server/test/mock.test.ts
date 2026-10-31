@@ -7,7 +7,7 @@ import { runMockCli } from '../src/mock/cli';
 import { MOCK_DEFAULTS, generateMock, mockFileText, type MockOptions } from '../src/mock/generate';
 import { findPython, validateWithPython } from '../src/mock/python';
 import { counts, freshDb, tempDir } from './helpers';
-import type { Db } from '../src/db/client';
+import { openDb, type Db } from '../src/db/client';
 
 const options = (overrides: Partial<MockOptions> = {}): MockOptions => ({ ...MOCK_DEFAULTS, ...overrides });
 const texts = (o: MockOptions) => generateMock(o).map(mockFileText);
@@ -23,7 +23,7 @@ function query<T>(db: Db, sql: string, ...params: unknown[]): T[] {
 function run(argv: string[]) {
   const out: string[] = [];
   const err: string[] = [];
-  const code = runMockCli(argv, { out: (l) => out.push(l), err: (l) => err.push(l) }, {});
+  const code = runMockCli('large', argv, { out: (l) => out.push(l), err: (l) => err.push(l) }, {});
   return { code, out, err };
 }
 
@@ -139,7 +139,7 @@ describe('after ingest', () => {
 });
 
 describe('CLI', () => {
-  test('writes, validates and ingests; a second run is all duplicates', () => {
+  test('writes, validates and ingests; a second run wipes and ends with the same graph', () => {
     const dir = tempDir();
     const db = join(dir, 'mock.db');
     const argv = ['--', '--subdomains', '20', '--out', join(dir, 'out'), '--db', db, '--skip-python'];
@@ -148,11 +148,26 @@ describe('CLI', () => {
     expect(readdirSync(join(dir, 'out')).sort()).toEqual(
       ['amass', 'dnsx', 'httpx', 'naabu', 'nmap', 'nuclei', 'subfinder'].map((t) => `${t}.json`),
     );
-    expect(first.out.at(-1)).toMatch(/: \d+ nodes \(\d+ discovered, \d+ corroborated, 0 verified\)$/);
+    expect(first.out.some((l) => l.startsWith('Wiped'))).toBe(false);
+    const summary = first.out.at(-1);
+    expect(summary).toMatch(/: \d+ nodes \(\d+ discovered, \d+ corroborated, 0 verified\)$/);
 
     const second = run(argv);
     expect(second.code).toBe(0);
-    expect(second.out.filter((l) => l.endsWith('already ingested'))).toHaveLength(7);
+    expect(second.out).toContain(`Wiped ${db} (7 scans)`);
+    expect(second.out.filter((l) => l.endsWith('already ingested'))).toEqual([]);
+    expect(second.out.at(-1)).toBe(summary);
+  });
+
+  test('a different --subdomains run replaces the previous one instead of adding to it', () => {
+    const dir = tempDir();
+    const db = join(dir, 'mock.db');
+    const common = ['--out', join(dir, 'out'), '--db', db, '--skip-python'];
+    expect(run(['--subdomains', '40', ...common]).code).toBe(0);
+    expect(run(['--subdomains', '10', ...common]).code).toBe(0);
+    const open = openDb(db);
+    expect(query<{ n: number }>(open, "SELECT COUNT(*) AS n FROM nodes WHERE type = 'subdomain'")).toEqual([{ n: 10 }]);
+    open.$client.close();
   });
 
   test('the files on disk are exactly the generated text', () => {
@@ -183,6 +198,7 @@ describe('CLI', () => {
     [['--subdomains'], '--subdomains needs a value'],
     [['--seed', '1.5'], '--seed must be an integer from 0 to 4294967295'],
     [['--domain', 'Not A Domain'], "--domain 'Not A Domain' must be lowercase"],
+    [['--domain', 'acme.com'], "--domain 'acme.com' must end in .example (mock data never uses real names)"],
     [['--fresh'], "unknown option '--fresh'"],
   ])('%j exits 2', (argv, message) => {
     const result = run(argv);
