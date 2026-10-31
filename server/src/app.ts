@@ -8,6 +8,7 @@ import type { RouteContext } from './routes/context';
 import { dataRoutes } from './routes/data';
 import { graphRoutes } from './routes/graph';
 import { nodeRoutes } from './routes/nodes';
+import { scopeRoutes } from './routes/scope';
 import { Broadcaster } from './ws';
 
 export const DEFAULT_PORT = 4100;
@@ -78,6 +79,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   graphRoutes(ctx);
   nodeRoutes(ctx);
   dataRoutes(ctx);
+  scopeRoutes(ctx);
   app.get('/api/ws', { websocket: true }, (socket) => {
     broadcaster.add(socket);
   });

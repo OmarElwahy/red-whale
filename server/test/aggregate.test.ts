@@ -28,6 +28,7 @@ function node(type: NodeType, value: string, extra: { severity?: Severity; tag?:
     confidence: 'discovered',
     sourceCount: 1,
     tag: extra.tag ?? null,
+    inScope: 'out',
     posX: null,
     posY: null,
     firstSeen: T,

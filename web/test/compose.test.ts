@@ -219,6 +219,7 @@ describe('reveals ("Show on graph")', () => {
     const T = '2026-10-30T00:00:00.000Z';
     const detail = nodeDetailResponseSchema.parse({
       node: { ...node('m7'), data: { a: 1 }, notes: 'some notes' },
+      scope: { decision: 'in', reason: 'test scope', rule: null },
       edges: [
         { id: 'e-in', relation: 'has_subdomain', direction: 'in', other: ref(P, 'domain', 'example.com'), firstSeen: T, lastSeen: T },
         { id: 'e-out', relation: 'resolves_to', direction: 'out', other: ref('ip1', 'ip', '198.18.0.1'), firstSeen: T, lastSeen: T },

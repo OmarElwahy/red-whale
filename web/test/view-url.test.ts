@@ -114,6 +114,14 @@ describe('view ↔ URL', () => {
     expect(viewFromSearch(`?${search}`)).toEqual(v);
   });
 
+  test('round-trips the scope filter (n/a included)', () => {
+    const v: View = { ...defaultView, filters: { scope: ['out', 'n/a'] } };
+    const search = viewToSearch(v);
+    expect(search).toBe('scope=out%2Cn%2Fa');
+    expect(viewFromSearch(`?${search}`)).toEqual(v);
+    expect(viewFromSearch('?scope=maybe&q=x').filters).toEqual({ q: 'x' });
+  });
+
   test('the default view is an empty query string', () => {
     expect(viewToSearch(defaultView)).toBe('');
     expect(viewFromSearch('')).toEqual(defaultView);

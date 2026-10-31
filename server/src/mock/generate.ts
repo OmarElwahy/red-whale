@@ -1,12 +1,20 @@
 // Mock recon data (docs/architecture.md §9, Phase 3.1): contract-valid files for one fake target,
 // reported by several fake tools that overlap, so ingest produces both discovered and corroborated nodes.
 // Pure and seeded: the same options always produce byte-identical files.
-import type { ContractFile, Finding, NodeType, Relation, Severity } from '@redwhale/shared';
+import type { ContractFile, Finding, NodeType, Relation, ScopeAction, ScopeKind, Severity } from '@redwhale/shared';
 
 export interface MockOptions {
   subdomains: number;
   seed: number;
   domain: string;
+}
+
+/** A scope rule a mock seeds after the wipe (through the same addRule as POST /api/scope/rules). */
+export interface MockScopeRule {
+  kind: ScopeKind;
+  value: string;
+  action: ScopeAction;
+  note: string;
 }
 
 export const MOCK_DEFAULTS: MockOptions = { subdomains: 400, seed: 1337, domain: 'northwind.example' };
@@ -84,6 +92,19 @@ function subdomainNames(rng: Rng, domain: string, count: number): string[] {
     else if (rng.chance(0.05)) names.add(`${word}-${String(++fallback)}`);
   }
   return [...names].map((n) => `${n}.${domain}`);
+}
+
+/**
+ * The large mock's scope: the domain and its subdomains in, admin excluded, and only the first 31 mock IPs in
+ * (198.18.0.0/27; the default run uses ~80), so many in-scope subdomains resolve to an IP that is out of scope.
+ */
+export function largeScope(domain: string): MockScopeRule[] {
+  return [
+    { kind: 'domain', value: domain, action: 'include', note: 'Apex' },
+    { kind: 'wildcard', value: `*.${domain}`, action: 'include', note: 'Every subdomain' },
+    { kind: 'domain', value: `admin.${domain}`, action: 'exclude', note: 'Production admin panel: hands off' },
+    { kind: 'cidr', value: '198.18.0.0/27', action: 'include', note: 'The client-owned hosting range' },
+  ];
 }
 
 /** The i-th address in 198.18.0.0/15 (reserved for benchmarking; never a real host), skipping .0 and .255. */

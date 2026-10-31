@@ -12,6 +12,11 @@ const NON_ASCII_RE = /[^\p{ASCII}]/u;
 
 const NON_ASCII_HOST = "non-ASCII host: convert it to punycode, e.g. host.encode('idna').decode()";
 
+/** A lowercase ASCII hostname with at least two labels, as the contract accepts for `domain`/`subdomain`. */
+export function isHostname(value: string): boolean {
+  return HOST_RE.test(value);
+}
+
 /** Same acceptance as Python's ipaddress.ip_address(): strict dotted-quad IPv4, or IPv6 (zone IDs allowed). */
 export function isIp(value: string): boolean {
   return ipaddr.IPv4.isValidFourPartDecimal(value) || ipaddr.IPv6.isValid(value);

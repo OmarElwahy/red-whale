@@ -2,6 +2,7 @@
 // so /graph, /graph/expand, /graph/neighbors and /nodes all filter and sort the same way.
 import {
   CONFIDENCE_LEVELS,
+  compileScope,
   NODE_TYPES,
   SEVERITIES,
   matchesQuery,
@@ -14,6 +15,7 @@ import {
 import { asc, sql } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { edges, nodes, observations } from '../db/schema';
+import { currentScope } from '../scope/store';
 
 export interface Graph {
   nodes: GraphNode[];
@@ -56,7 +58,7 @@ export function effectiveSeverities(
   return result;
 }
 
-/** The whole graph, with effective severity filled in. */
+/** The whole graph, with effective severity and the passive-mode scope decision filled in. */
 export function loadGraph(db: Db): Graph {
   const nodeRows = db
     .select({
@@ -82,10 +84,13 @@ export function loadGraph(db: Db): Graph {
     .orderBy(asc(edges.id))
     .all();
   const effective = effectiveSeverities(nodeRows, edgeRows);
+  // Computed on every read, never stored: a rule change applies to the next request.
+  const scope = compileScope(currentScope(db));
   return {
     nodes: nodeRows.map(({ firstSeen, lastSeen, ...n }) => ({
       ...n,
       effectiveSeverity: effective.get(n.id) ?? null,
+      inScope: scope.check(n.type, n.value, 'passive').decision,
       firstSeen,
       lastSeen,
     })),
@@ -140,7 +145,7 @@ export function applyFilters(
   seenByTool: Set<string> | null,
   { searchPaths = false }: FilterOptions = {},
 ): Graph {
-  const { types, minSeverity, confidence, tag, excludeTag, q } = filters;
+  const { types, minSeverity, confidence, tag, excludeTag, scope, q } = filters;
   const min = minSeverity ? severityRank(minSeverity) : null;
 
   const candidates = graph.nodes.filter(
@@ -150,7 +155,8 @@ export function applyFilters(
       (!confidence || confidence.includes(n.confidence)) &&
       (!seenByTool || seenByTool.has(n.id)) &&
       (!tag || (n.tag !== null && tag.includes(n.tag))) &&
-      (!excludeTag || n.tag === null || !excludeTag.includes(n.tag)),
+      (!excludeTag || n.tag === null || !excludeTag.includes(n.tag)) &&
+      (!scope || scope.includes(n.inScope)),
   );
   let kept = candidates;
   if (q !== undefined) {

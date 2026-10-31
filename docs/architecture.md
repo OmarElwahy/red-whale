@@ -17,7 +17,7 @@ Later the orchestrator just becomes another producer of the same JSON.
 
 | Package | Contains |
 |---|---|
-| `shared/` | Zod schemas for the tool-output contract and API responses; `normalize.ts` (value normalization); `nodeId.ts` (deterministic IDs); shared enums (node types, relations, severities, confidence, tags) |
+| `shared/` | Zod schemas for the tool-output contract and API responses; `normalize.ts` (value normalization); `nodeId.ts` (deterministic IDs); `scope.ts` (scope rules and `checkScope`, §10); shared enums (node types, relations, severities, confidence, tags) |
 | `server/` | Fastify app bound to `127.0.0.1:4100`; Drizzle schema + migrations; ingest pipeline; graph query + aggregation; WebSocket broadcaster; CLI entry for `ingest` and `mock` |
 | `web/` | Vite + React app on `127.0.0.1:5173`, proxying `/api` to the server |
 
@@ -71,6 +71,16 @@ Unique: (`node_id`, `scan_id`). A node reported several times in one file gets o
 in file order, highest `severity`. `role` is `finding` if the file reports the node as a finding anywhere,
 `parent` if it only names it as some finding's parent.
 
+**scope_rules** — what tools may be pointed at (§10). Never deleted: removing sets `removed_at`.
+`id` (integer) · `kind` (`domain` | `wildcard` | `ip` | `cidr`) · `value` (normalized) · `action` (`include` | `exclude`) ·
+`note` · `created_at` · `removed_at` (nullable). Partial unique index on (`kind`, `value`, `action`) where `removed_at IS NULL`.
+
+**scope_log** — every scope decision asked for: the UI's test box (`check`) and every `authorize()` call (`run`)
+`id` · `source` (`check` | `run`) · `target_type` · `target_value` (as asked) · `mode` (`passive` | `active`) ·
+`decision` (`in` | `out` | `n/a`) · `rule_id` → scope_rules (nullable) · `reason` · `at`. Index on (`source`, `at`).
+
+**scope_settings** — one row (`id = 1`, CHECK), created by the migration: `passive_only` (default on) · `updated_at`.
+
 All timestamps are stored as TEXT in `Date#toISOString()` form (`YYYY-MM-DDTHH:MM:SS.sssZ`) so they sort as text.
 Enum columns have CHECK constraints.
 
@@ -104,7 +114,7 @@ ingest order. "Newer" means a later `observed_at`, not a later ingest. Only `lab
 
 | Method & path | Purpose |
 |---|---|
-| `GET /graph?types=&minSeverity=&confidence=&tool=&tag=&excludeTag=&q=` | Filtered graph, **aggregated** (see §7) |
+| `GET /graph?types=&minSeverity=&confidence=&tool=&tag=&excludeTag=&scope=&q=` | Filtered graph, **aggregated** (see §7) |
 | `GET /graph/expand/:aggregateId?…filters&page=&pageSize=` | Members of an aggregate node (paged, riskiest first) |
 | `GET /graph/neighbors/:nodeId?depth=1` | Neighborhood for focus mode / expanding a node |
 | `GET /nodes/:id` | Node detail + edges + all observations (provenance) |
@@ -112,17 +122,28 @@ ingest order. "Newer" means a later `observed_at`, not a later ingest. Only `lab
 | `PUT /layout` | Bulk-save node positions |
 | `GET /nodes?…&page=&sort=&at=` | Paged flat list for the table view |
 | `GET /highlights` | Every `interesting` node with its notes, riskiest first (not filtered, not paged) |
-| `GET /stats` | Workspace counts by type, severity, confidence, tag, tool (dashboard / filter badges); not filtered |
+| `GET /stats` | Workspace counts by type, severity, confidence, tag, scope decision, tool (dashboard / filter badges); not filtered |
 | `GET /scans` | Ingested scans |
 | `POST /ingest` | Upload one tool-output JSON |
 | `GET /export?format=json` | Full graph export (CSV/GraphML later) |
-| `WS /ws` (i.e. `/api/ws`) | Push events: `graph.updated`, `scan.ingested` |
+| `GET /scope/rules?removed=1` | Active scope rules, oldest first (`removed=1` adds removed ones) |
+| `POST /scope/rules` | Add a rule `{ kind, value, action, note? }`: 201 normalized rule, 400 refused (says why), 409 an active twin |
+| `PATCH /scope/rules/:id` | `{ note?, removed?: true }`; removing is one-way (add the rule again to restore) |
+| `GET /scope/check?type=&value=&mode=` | The decision against the current scope; **not logged** (a GET must not write) |
+| `POST /scope/check` | Same body/answer, **logged** as `check`: the UI's "test a target" box, on submit only |
+| `GET /scope/log?source=&page=&pageSize=` | Decision log, newest first; `source` defaults to `run` (`run,check` adds the test box) |
+| `GET /scope/settings`, `PATCH /scope/settings` | `{ passiveOnly }` |
+| `WS /ws` (i.e. `/api/ws`) | Push events: `graph.updated`, `scan.ingested`, `scope.changed` |
 
 Request and response shapes are the Zod schemas in `shared/src/api.ts`. Details:
 - **Filters** (shared by `/graph`, `/graph/expand`, `/nodes`): `types`, `confidence`, `tool`, `tag`, `excludeTag`
   take comma-separated lists (or repeated params); `q` is a case-insensitive substring of value or label;
   `minSeverity` compares **effective severity** (§7), so the path from the root down to a finding stays in the result.
   Filters select nodes; edges are kept when both ends are kept. Unknown params are a 400.
+- **Scope:** every node carries `inScope` (`in` | `out` | `n/a`), its passive-mode decision (§10), computed on every
+  read from the current rules, never stored. `scope=in,out,n/a` filters on it like any other node filter (so with
+  `scope=out` an out-of-scope subdomain whose apex is in scope is parentless, and lands in `agg:root:subdomain`).
+  `GET /nodes/:id` adds `scope: { decision, reason, rule }`. Rule and setting changes broadcast `scope.changed`.
 - **Search paths:** on `/graph` and `/graph/expand`, `q` keeps the matches **plus their ancestors** (walking up parent
   edges), so results show their path to the root. Only ancestors that pass the other filters are kept; a filtered-out
   parent ends the path. `/nodes` lists the matches only. The rule itself is `matchesQuery` in `shared/src/api.ts`, so the
@@ -210,6 +231,10 @@ aggregates more aggressively and says so in the response (`truncated: true`): it
   - border by confidence: dashed = discovered, solid = corroborated, thick = verified
   - aggregate nodes: larger, with count badge
   - tag `ignored` → faded; `interesting` → highlight ring
+  - out of scope (`inScope = out`) → thin, semi-transparent diagonal stripes over the fill (`OUT_OF_SCOPE_HATCH`, an SVG
+    `background-image`): the severity color reads between them, and it uses none of the other channels (fill,
+    confidence border, `interesting` outline, selection/fresh underlay). The stripes scale with the node, so the marker
+    shows at every zoom (a corner badge would vanish zoomed out). `in` and `n/a` are drawn as before
   - edges: arrow toward the child; the relation (`has_subdomain`, `resolves_to`, …) as a label along the edge, on
     a small canvas-colored background so it reads over other edges
 - **Interactions:** click → side panel (details, provenance table, tag, notes); double-click aggregate →
@@ -227,7 +252,15 @@ aggregates more aggressively and says so in the response (`truncated: true`): it
   them, plus view-only `mute=1` and `hops=N`, which never reach the API. Bad values are dropped one by one.
 - **Mute low-risk:** fades nodes whose effective severity is below medium (aggregates by `maxSeverity`), and edges
   touching them; a quiet parent above a serious finding stays bright.
-- **Bottom panel:** toggled from the header, under the canvas: **Table** or **Highlights**.
+- **Bottom panel:** toggled from the header, under the canvas: **Table**, **Highlights** or **Scope**.
+- **Scope** (`web/src/scope/ScopePanel.tsx`, §10): the header chip shows the active rule count and "passive" while
+  passive-only is on (amber dot when there is no include rule). The panel has the rules (add with the server's
+  normalized value or its refusal; edit a note; remove with a second confirming click; "show removed" lists the
+  history), the passive-only switch, a "test a target" box (type, mode, value; `POST /scope/check` on Enter or the
+  button only, never per keystroke) and the log (runs by default, "include checks" adds the test box's entries, paged).
+  With no include rule a banner under the header says nothing is in scope and opens the panel. The filter sidebar
+  has a Scope group (in scope / out of scope / not targetable, workspace totals), and the side panel a Scope section
+  (decision, reason, deciding rule and its note).
 - **Table view** (`web/src/table/`): TanStack Table (v9) over `GET /nodes` with the graph's filters, 50 per page,
   sorted on the server (click a header; shift-click adds a column). Clicking a row selects the node and centers on it
   if it's on the canvas. When the selection changes (e.g. a graph click), the table turns to the page that holds it
@@ -294,15 +327,83 @@ Each phase ends with passing `pnpm typecheck` and `pnpm test`, and a short demo.
 5. (5C) Graph feel (edges and labels always drawn, momentum, smooth wheel zoom, edge labels), Force | Tree layout
    modes, small showcase mock (`pnpm mock`) next to the large one (`pnpm mock:large`).
 
-**Phase 6+ — Later (not now)**
-Orchestrator (Dockerode, containerized tool groups) · scope guard · presets & auto-chaining ·
-diffing between scans · reports · CVE monitoring · local LLM scoring · JS analysis agent.
+**Phase 6 — Running tools**
+1. (6A) **Scope guard** (§10): `checkScope` in `shared/`, `scope_rules`/`scope_log`/`scope_settings`, `authorize()` as
+   the only producer of `ScopedTarget`, the dockerode/child_process lint guard, the scope API, `inScope` on every node
+   and the `scope` filter, the Scope panel, banner and out-of-scope hatch. Both mocks seed a scope. No tool runs yet.
+2. (6B) Orchestrator: Dockerode in `server/src/runner/docker.ts` (the one file allowed to import it), containerized
+   tool groups; every run takes a `ScopedTarget` from `authorize()` called right before it, and `assertScoped()`s it.
+3. (6C) Presets & auto-chaining; redirect-following tools re-check scope on every hop (decisions log, 2026-10-31).
+
+**Phase 7+ — Later (not now)**
+Diffing between scans · reports · CVE monitoring · local LLM scoring · JS analysis agent.
 
 **Later improvements (logged, not scheduled)**
 - Filter-aware `/stats` (counts that follow the active filters, i.e. faceted counts). Today the sidebar shows
   workspace totals.
+- Scope rules and settings in `GET /export` (today the export has each node's `inScope`, not the rules behind it).
+- A `scope.logged` WS event, so other tabs' log panels refresh when a run is authorized (6B).
 
-## 10. Decisions log
+## 10. Scope guard
+
+Goal: **no code path can run a tool against a target without passing the guard.** Phase 6A builds only the guard,
+its storage, API and UI; nothing runs tools yet.
+
+**Rules** (`shared/src/scope.ts`). Kinds: `domain` (exact), `wildcard` (`*.example.com`), `ip`, `cidr`; each an `include` or
+an `exclude`. `normalizeScopeRule(kind, action, value)` validates and canonicalizes, and a refusal says why:
+- Hostnames: IDNA → punycode via WHATWG `URL` (`normalizeHostname` in `normalize.ts`; `Bücher.example` →
+  `xn--bcher-kva.example`), lowercase, no trailing dot; a port, path, scheme or `@` is refused, not dropped.
+- Wildcards: exactly one leading `*.`. An **include** whose base is a public suffix is refused (Public Suffix List,
+  ICANN and private sections, bundled with `tldts`, no network): `*.com`, `*.co.uk`, `*.com.eg`, `*.github.io`.
+  Excludes may cover a whole TLD (`*.gov`).
+- IPs: strict dotted-quad or IPv6, no zone ID; IPv6 compressed (RFC 5952); IPv4-mapped (`::ffff:a.b.c.d`) → IPv4.
+- CIDRs: host bits must be zero (`10.0.0.5/8` → "did you mean 10.0.0.0/8?"); `::ffff:a.b.c.d/≥96` becomes the IPv4
+  range, a shorter mapped prefix is refused. An **include** may be at most /8 (IPv4) or /32 (IPv6); `0.0.0.0/0` and
+  `::/0` included are refused outright, with no override. Excludes can be any size.
+
+**`checkScope(type, value, mode, { rules, passiveOnly })` → `{ decision, rule?, reason }`.** Pure; `compileScope`
+prepares the rules once for checking a whole graph. In order:
+1. Not targetable (technology, vulnerability, email, secret, certificate, leak) → `n/a`.
+2. Resolve: domain/subdomain → the hostname; ip → the IP; port → its IP; url → its host (an IP literal, incl.
+   `[v6]` and WHATWG-canonicalized forms like `0xcb.0.113.7`, goes to IP rules). A value that doesn't parse → `out`
+   ("can't check an invalid …"): it fails closed.
+3. A matching **exclude** → `out`, with that rule. Exclude always wins.
+4. `active` while passive-only is on → `out`.
+5. A matching **include** → `in`, with that rule.
+6. Otherwise `out` (default deny). An empty scope, or one with only excludes, allows nothing.
+
+Matching: domain rules exactly; wildcards on whole labels at any depth (`*.example.com` matches `a.b.example.com`,
+never `example.com`, `evilexample.com` or `a.example.com.evil.com`). Hostnames only meet domain/wildcard rules and
+IPs only ip/cidr rules, of the same family: **a domain in scope never puts its IPs in scope** (a CDN address is
+someone else's machine), and the reason says so. A port is judged by its IP in both modes; the modes differ only by
+passive-only.
+
+**`authorize(db, target, mode)`** (`server/src/scope/authorize.ts`) is the only producer of `ScopedTarget`. It reads the
+current rules and setting, logs the decision as `run` (allowed or not), and returns `{ ok: true, target }` only for
+`in` (`n/a` is refused). The target's `value` is the canonical text that was judged (`canonicalTarget`), so it is
+exactly what a tool may run against. Three locks against forging one:
+- Type: the brand is keyed by a `unique symbol` that isn't exported; an object literal can't produce it
+  (`@ts-expect-error` test, checked by `pnpm typecheck`).
+- Lint: `as ScopedTarget` / `<ScopedTarget>` are errors outside `authorize.ts`.
+- Runtime: issued targets live in a module-private `WeakSet`; `assertScoped()` (which the runner must call) rejects
+  casts, copies and spreads.
+`recordCheck()` is the test box's path: the same decision, logged as `check`, no `ScopedTarget`.
+
+**Who may run things** (`eslint.config.js`, proven by `server/test/guard.test.ts`): `dockerode`/`docker-modem` may be
+imported (statically, `import()` or `require`) only by `server/src/runner/docker.ts`, which doesn't exist until 6B;
+`node:child_process` only under `server/src/runner/`, by `server/src/mock/python.ts` (the team validator) and in tests.
+The test also scans every source file for `dockerode`, so `pnpm test` catches it even without `pnpm lint`.
+
+**Storage and API:** tables in §4, routes in §6. Rules are never deleted (the log still points at removed ones);
+the only exception is the mock wipe (a disposable mock workspace, behind the same `--force` guard as its scans).
+Ingest never rejects out-of-scope findings: tools may report anything; scope decides what they may be pointed at.
+
+**Mocks:** `pnpm mock` seeds `showcase.example` + `*.showcase.example`, excludes `dev.showcase.example`, includes
+`198.18.0.0/28`, `198.18.0.30` and `2001:db8::25`; `api` and `app` resolve to `198.18.0.20`, which stays out (the CDN
+case). `pnpm mock:large` includes the domain + wildcard and `198.18.0.0/27`, excludes `admin.<domain>`. Passive-only
+stays on.
+
+## 11. Decisions log
 
 | Date | Decision |
 |---|---|
@@ -360,3 +461,13 @@ diffing between scans · reports · CVE monitoring · local LLM scoring · JS an
 | 2026-10-31 | Tree positions are never saved and never pin Force nodes; entering Tree snapshots Force positions, leaving restores them (new nodes get fcose around them). Dragging in Tree carries the subtree; any re-run (live update, expand, Re-layout) snaps manual tree drags back. Layout mode is view-only URL state (`layout=tree`) |
 | 2026-10-31 | `pnpm mock` = small showcase (`showcase.example`, ~80 nodes, every enum value covered; a test reads the shared enums so it can't fall behind); the old generator unchanged as `pnpm mock:large`. Both wipe the workspace first (rows deleted in one transaction, so it works while the dev server holds the file) and refuse if any scan's target isn't under the reserved `.example` TLD, unless `--force`. `--domain` for `mock:large` must therefore end in `.example`. Output in `data/mock/showcase/` and `data/mock/large/` |
 | 2026-10-31 | The PATCH handler's update logic moved to `server/src/graph/update.ts` (`updateNode`), shared by the route and the showcase's `verified`/tag/note annotations |
+| 2026-10-31 | Phase 6A scope guard (§10): default deny; rule kinds domain / wildcard / ip / cidr, include or exclude; **exclude always wins**; `*.example.com` never matches `example.com`. Hostnames meet only domain/wildcard rules and IPs only ip/cidr rules, so a domain in scope never puts its IPs in scope. Non-targetable types (technology, vulnerability, email, secret, certificate, leak) are `n/a`. An unparseable value is `out` (fails closed) |
+| 2026-10-31 | A port is judged by its IP in **both** modes (so the graph can mark it); passive and active differ only by the passive-only setting (default on: every active check is `out`) |
+| 2026-10-31 | Broad includes are refused with no override: include CIDRs at most /8 (IPv4) or /32 (IPv6), so `0.0.0.0/0`/`::/0` too; wildcard includes on a Public Suffix List entry (`*.com`, `*.co.uk`, `*.com.eg`, `*.github.io`). The PSL comes from `tldts` 7.4.18 (bundled, no network; 7.4.19 was 11 days old). Excludes can be any size. CIDRs with host bits set are refused with the network suggested, not silently masked |
+| 2026-10-31 | `authorize()` is the only producer of the branded `ScopedTarget` (type brand on an unexported `unique symbol` + lint ban on casts + a runtime `WeakSet` checked by `assertScoped()`). It logs every call as `run`. The runner (6B) must call it **immediately before** each run, never reuse an earlier target |
+| 2026-10-31 | Only `server/src/runner/docker.ts` may import `dockerode`/`docker-modem` (static, `import()`, `require`); `node:child_process` only under `server/src/runner/`, in `server/src/mock/python.ts` and tests. Enforced by ESLint and proven by `server/test/guard.test.ts`, which also scans the sources for `dockerode` |
+| 2026-10-31 | Checks are logged too, with `scope_log.source` = `check` \| `run`: a record of every target anyone tested, and the log can be demoed before the runner exists. `POST /scope/check` logs (the UI's test box, on Enter/button only, never per keystroke); `GET /scope/check` doesn't, because a GET must not write (an `<img>` on any page can send one with no `Origin`). The log panel shows `run` by default with an "include checks" toggle |
+| 2026-10-31 | Scope rules are soft-deleted (`removed_at`), removing is one-way (add again to restore) and kind/value/action never change, so the log's `rule_id` always points at what decided. The mock wipe is the one place scope rows are deleted (log, rules; passive-only back on) |
+| 2026-10-31 | `inScope` is computed on every read (passive mode), never stored; `scope=` is one more node filter on `/graph`, `/graph/expand`, `/nodes`; `/stats` has `byScope`. Ingest never rejects out-of-scope findings. Migration `0002_scope` adds tables only (plus the settings row), so it is not breaking and needs no backfill |
+| 2026-10-31 | Out-of-scope marker: a diagonal hatch over the fill (stripes 1.6/24 of the node wide, every 5/24, canvas color at 0.55 opacity). Chosen over a corner badge because it stays visible at any zoom; checked by screenshot at every severity and at zoom 2.4, 0.7 and 0.35 (at 0.35 it reads as a darker tint on the dark none/info fills). Cost, A/B in one headless-Chrome session at 1,887 elements (`mock:large --subdomains 260`, aggregation off, 76 of 647 nodes out of scope): hatch as shipped ≈ no hatch after warm-up (pan+zoom p95 136 vs 136 ms), every node hatched ≈ +60 % p95. **Open:** that session's baseline was ~50 ms p50, far off the 7 ms measured earlier the same day (the machine was busy), so re-run `await redwhale.bench()` in Firefox before relying on it |
+| 2026-10-31 | **For 6C:** tools that follow redirects (httpx `-follow-redirects`, crawlers, nuclei with redirects) must re-check scope on **every hop**, not just the first URL. A hop that leaves scope ends that chain and is logged; the tool must not fetch it. Same for any host a tool discovers and then contacts on its own |

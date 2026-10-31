@@ -9,6 +9,9 @@ import {
   CONFIDENCE_BORDER,
   IGNORED_OPACITY,
   NODE_SIZE,
+  OUT_OF_SCOPE_HATCH,
+  OUT_OF_SCOPE_IMAGE,
+  hatchSvg,
   SEVERITY_COLOR,
   SEVERITY_KEYS,
   SHAPE_BY_TYPE,
@@ -103,6 +106,42 @@ describe('computed styles on a Cytoscape instance', () => {
     expect(Number.parseFloat(get('x').style('outline-width') as string)).toBeGreaterThan(0);
     expect(get('x').style('border-width')).toBe(px(CONFIDENCE_BORDER.verified.width));
     expect(Number.parseFloat(get('y').style('outline-width') as string)).toBe(0);
+  });
+
+  test('out-of-scope nodes are hatched; in-scope and not-targetable nodes are not', () => {
+    const get = put(node('o', { inScope: 'out' }), node('i', { inScope: 'in' }), node('n', { inScope: 'n/a' }));
+    expect(get('o').style('background-image')).toBe(OUT_OF_SCOPE_IMAGE);
+    for (const id of ['i', 'n']) expect(get(id).style('background-image')).toBe('none');
+  });
+
+  test.each(SEVERITY_KEYS)('the hatch leaves the %s fill, the confidence border and the interesting ring alone', (s) => {
+    const severity = s === 'none' ? null : s;
+    const get = put(
+      node('o', { severity, inScope: 'out', tag: 'interesting', confidence: 'verified' }),
+      node('i', { severity, inScope: 'in', tag: 'interesting', confidence: 'verified' }),
+    );
+    for (const prop of ['background-color', 'border-width', 'border-style', 'border-color', 'outline-color', 'outline-width', 'opacity']) {
+      expect(get('o').style(prop), prop).toBe(get('i').style(prop));
+    }
+    expect(get('o').style('background-color')).toBe(rgb(SEVERITY_COLOR[s]));
+  });
+
+  test('a scope change restyles a node already on the canvas', () => {
+    const get = put(node('x', { inScope: 'in' }));
+    const current = new Map(toElements({ nodes: [node('x', { inScope: 'in' })], edges: [] }).map((e) => [e.data.id, e]));
+    const diff = diffElements(current, toElements({ nodes: [node('x', { inScope: 'out' })], edges: [] }));
+    expect(diff.update).toHaveLength(1);
+    applyDiff(cy, diff);
+    expect(get('x').style('background-image')).toBe(OUT_OF_SCOPE_IMAGE);
+  });
+
+  test('the stripes are thin and see-through, so the fill reads between them', () => {
+    expect(OUT_OF_SCOPE_HATCH.opacity).toBeLessThanOrEqual(0.6);
+    expect(OUT_OF_SCOPE_HATCH.width / OUT_OF_SCOPE_HATCH.spacing).toBeLessThan(0.4);
+    const svg = hatchSvg();
+    expect(svg).toContain(`stroke-opacity="${String(OUT_OF_SCOPE_HATCH.opacity)}"`);
+    expect(svg.match(/<line /g)?.length).toBeGreaterThan(8);
+    expect(OUT_OF_SCOPE_IMAGE.startsWith('data:image/svg+xml;utf8,')).toBe(true);
   });
 
   test('selecting a node keeps its severity color', () => {

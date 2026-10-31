@@ -16,6 +16,25 @@ function normalizeHost(value: string): string {
   return value.toLowerCase().replace(/\.+$/, '');
 }
 
+/**
+ * A hostname typed by a person (scope rules, the "test a target" box): IDNA to punycode (`Bücher.example` →
+ * `xn--bcher-kva.example`), lowercase, no trailing dot. Uses WHATWG `URL`, which exists in Node and the browser.
+ * Doesn't check the result is a valid hostname; WHATWG turns some numeric names into IPv4 (`0x7f.1` → `127.0.0.1`),
+ * so callers validate what comes back. Node values don't go through this (they're ASCII by contract).
+ */
+export function normalizeHostname(value: string): string {
+  const v = value.trim();
+  // `http://` + host would quietly drop a port, path, credentials or query; refuse them instead.
+  if (v === '' || /[\s/\\:@?#[\]%]/.test(v)) throw new NormalizeError(`not a hostname: '${value}'`);
+  let host: string;
+  try {
+    host = new URL(`http://${v}`).hostname;
+  } catch {
+    throw new NormalizeError(`not a hostname: '${value}'`);
+  }
+  return normalizeHost(host);
+}
+
 /** Canonical IP text. IPv6 is compressed per RFC 5952; IPv4-mapped IPv6 becomes plain IPv4. */
 export function normalizeIp(value: string): string {
   const v = stripBrackets(value.trim());

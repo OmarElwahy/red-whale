@@ -118,6 +118,39 @@ export function schema0000Db(withData: boolean): string {
   return path;
 }
 
+/** A database migrated only up to 0001_observation_role (before the scope tables), holding one ingested node. */
+export function schema0001Db(): string {
+  const dir = tempDir();
+  const source = join(REPO_ROOT, 'server/drizzle');
+  const migrations = join(dir, 'drizzle');
+  mkdirSync(join(migrations, 'meta'), { recursive: true });
+  for (const f of ['0000_init.sql', '0001_observation_role.sql']) copyFileSync(join(source, f), join(migrations, f));
+  const journal = JSON.parse(readFileSync(join(source, 'meta/_journal.json'), 'utf8')) as { entries: unknown[] };
+  writeFileSync(join(migrations, 'meta/_journal.json'), JSON.stringify({ ...journal, entries: journal.entries.slice(0, 2) }));
+
+  const path = join(dir, 'old.db');
+  const sqlite = new Database(path);
+  migrate(drizzle(sqlite), { migrationsFolder: migrations });
+  const t = '2026-10-29T10:00:00.000Z';
+  sqlite
+    .prepare(
+      `INSERT INTO scans (id, tool, target, command, status, errors, started_at, finished_at, ingested_at, file_hash, raw)
+       VALUES ('s1', 'subfinder', 'example.com', 'subfinder', 'success', '[]', @t, @t, @t, 'h1', '{}')`,
+    )
+    .run({ t });
+  sqlite
+    .prepare(`INSERT INTO nodes (id, type, value, label, first_seen, last_seen) VALUES ('n1', 'domain', 'example.com', 'example.com', @t, @t)`)
+    .run({ t });
+  sqlite
+    .prepare(
+      `INSERT INTO observations (node_id, scan_id, tool, role, severity, data, observed_at)
+       VALUES ('n1', 's1', 'subfinder', 'finding', NULL, '{}', @t)`,
+    )
+    .run({ t });
+  sqlite.close();
+  return path;
+}
+
 export function counts(db: Db) {
   const count = (table: string) =>
     (db.$client.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;

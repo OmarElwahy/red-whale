@@ -7,6 +7,7 @@ import type {
   GraphResponse,
   NodeType,
   Relation,
+  ScopeDecision,
   Severity,
   Tag,
 } from '@redwhale/shared';
@@ -26,6 +27,8 @@ export interface NodeData {
   confidence: Confidence;
   sourceCount: number;
   tag: Tag | null;
+  /** Passive-mode scope decision; `out` draws the hatch (style.ts). */
+  inScope: ScopeDecision;
 }
 
 export interface AggregateData {
@@ -79,6 +82,7 @@ function nodeElement(n: GraphNode): NodeElement {
       confidence: n.confidence,
       sourceCount: n.sourceCount,
       tag: n.tag,
+      inScope: n.inScope,
     },
   };
   if (n.posX !== null && n.posY !== null) el.position = { x: n.posX, y: n.posY };

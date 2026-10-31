@@ -1,5 +1,6 @@
 // GET /api/nodes, GET/PATCH /api/nodes/:id, PUT /api/layout (docs/architecture.md §6).
 import {
+  compileScope,
   layoutBodySchema,
   nodeListQuerySchema,
   nodePatchSchema,
@@ -13,6 +14,7 @@ import { eq, sql } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { nodes } from '../db/schema';
 import { maxSeverity } from '../ingest/derive';
+import { currentScope } from '../scope/store';
 import { filteredGraph, nodeComparator } from '../graph/store';
 import { updateNode } from '../graph/update';
 import { HttpError, jsonObject, notFound, parseInput } from '../http';
@@ -81,6 +83,8 @@ export function nodeDetail(db: Db, id: string) {
     )
     .all(id) as ObservationRow[];
 
+  const scope = compileScope(currentScope(db)).check(row.type, row.value, 'passive');
+
   return {
     node: {
       id: row.id,
@@ -92,6 +96,7 @@ export function nodeDetail(db: Db, id: string) {
       confidence: row.confidence,
       sourceCount: row.sourceCount,
       tag: row.tag,
+      inScope: scope.decision,
       posX: row.posX,
       posY: row.posY,
       firstSeen: row.firstSeen,
@@ -99,6 +104,7 @@ export function nodeDetail(db: Db, id: string) {
       data: row.data,
       notes: row.notes,
     },
+    scope: { decision: scope.decision, reason: scope.reason, rule: scope.rule ?? null },
     edges: edgeRows.map((e) => ({
       id: e.id,
       relation: e.relation,

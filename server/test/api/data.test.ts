@@ -4,6 +4,7 @@ import {
   CONFIDENCE_LEVELS,
   NODE_TYPES,
   SEVERITIES,
+  SCOPE_DECISIONS,
   TAGS,
   exportResponseSchema,
   graphResponseSchema,
@@ -28,6 +29,7 @@ describe('GET /api/stats', () => {
       bySeverity: zeros([...SEVERITIES, 'none']),
       byConfidence: zeros(CONFIDENCE_LEVELS),
       byTag: zeros([...TAGS, 'none']),
+      byScope: zeros(SCOPE_DECISIONS),
       byTool: {},
     });
   });

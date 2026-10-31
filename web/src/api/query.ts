@@ -35,4 +35,9 @@ export const queryKeys = {
   stats: ['api', 'stats'] as const,
   /** Not filtered: every `interesting` node. */
   highlights: ['api', 'highlights'] as const,
+  /** Under 'api' like everything else, so a `scope.changed` event (or any other) refetches them. */
+  scopeRules: (includeRemoved: boolean) => ['api', 'scope', 'rules', includeRemoved] as const,
+  scopeSettings: ['api', 'scope', 'settings'] as const,
+  scopeLog: (sources: string, page: number) => ['api', 'scope', 'log', sources, page] as const,
+  scopeLogAll: ['api', 'scope', 'log'] as const,
 };

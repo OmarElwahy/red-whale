@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, test } from 'vitest';
 import { DEFAULT_DB_PATH, OutdatedDatabaseError, openDb, type Db } from '../src/db/client';
-import { schema0000Db } from './helpers';
+import { schema0000Db, schema0001Db } from './helpers';
 
 const opened: Db[] = [];
 const tempDirs: string[] = [];
@@ -62,7 +62,7 @@ test('running migrations on an existing database is a no-op', () => {
 
   const second = open(path);
   const migrations = second.$client.prepare('SELECT COUNT(*) AS n FROM __drizzle_migrations').get();
-  expect(migrations).toEqual({ n: 2 });
+  expect(migrations).toEqual({ n: 3 });
   expect(second.$client.prepare('SELECT COUNT(*) AS n FROM nodes').get()).toEqual({ n: 1 });
 });
 
@@ -130,7 +130,7 @@ describe('a database from before a breaking migration', () => {
 
   test('empty: migrates normally', () => {
     const db = open(schema0000Db(false));
-    expect(db.$client.prepare('SELECT COUNT(*) AS n FROM __drizzle_migrations').get()).toEqual({ n: 2 });
+    expect(db.$client.prepare('SELECT COUNT(*) AS n FROM __drizzle_migrations').get()).toEqual({ n: 3 });
     const columns = db.$client.prepare<[], { name: string }>("SELECT name FROM pragma_table_info('observations')").all();
     expect(columns.map((c) => c.name)).toContain('role');
   });
@@ -156,4 +156,45 @@ test('observations.role only accepts finding or parent', () => {
   );
   expect(() => insert.run('owner')).toThrow(/CHECK constraint failed/);
   expect(() => insert.run('parent')).not.toThrow();
+});
+
+describe('scope tables (0002_scope)', () => {
+  test('an existing database with data upgrades: new tables only, nothing refused, data kept', () => {
+    const db = open(schema0001Db());
+    expect(db.$client.prepare('SELECT COUNT(*) AS n FROM observations').get()).toEqual({ n: 1 });
+    expect(names(db, 'table')).toEqual(expect.arrayContaining(['scope_rules', 'scope_log', 'scope_settings']));
+    expect(db.$client.prepare('SELECT id, passive_only FROM scope_settings').all()).toEqual([{ id: 1, passive_only: 1 }]);
+  });
+
+  test('a fresh database starts passive-only, with one settings row that can not be duplicated', () => {
+    const db = open();
+    const row = db.$client.prepare<[], { passive_only: number; updated_at: string }>('SELECT * FROM scope_settings').get();
+    expect(row?.passive_only).toBe(1);
+    expect(row?.updated_at).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
+    expect(() => db.$client.prepare("INSERT INTO scope_settings VALUES (2, 0, 'x')").run()).toThrow(/CHECK constraint failed/);
+  });
+
+  test('CHECK constraints and the active-rule unique index', () => {
+    const db = open();
+    const insert = db.$client.prepare(
+      "INSERT INTO scope_rules (kind, value, action, created_at, removed_at) VALUES (?, ?, ?, 'now', ?)",
+    );
+    expect(() => insert.run('regex', 'x', 'include', null)).toThrow(/CHECK constraint failed/);
+    expect(() => insert.run('domain', 'x.com', 'allow', null)).toThrow(/CHECK constraint failed/);
+    insert.run('domain', 'a.com', 'include', null);
+    expect(() => insert.run('domain', 'a.com', 'include', null)).toThrow(/UNIQUE constraint failed/);
+    // Removed rows don't count, and the same value as an exclude is another rule.
+    insert.run('domain', 'b.com', 'include', 'then');
+    insert.run('domain', 'b.com', 'include', null);
+    insert.run('domain', 'a.com', 'exclude', null);
+
+    const log = db.$client.prepare(
+      "INSERT INTO scope_log (source, target_type, target_value, mode, decision, rule_id, reason, at) VALUES (?, 'ip', '1.2.3.4', ?, ?, ?, 'r', 'now')",
+    );
+    expect(() => log.run('audit', 'passive', 'in', null)).toThrow(/CHECK constraint failed/);
+    expect(() => log.run('check', 'loud', 'in', null)).toThrow(/CHECK constraint failed/);
+    expect(() => log.run('check', 'passive', 'maybe', null)).toThrow(/CHECK constraint failed/);
+    expect(() => log.run('run', 'passive', 'out', 999)).toThrow(/FOREIGN KEY constraint failed/);
+    expect(() => log.run('run', 'passive', 'n/a', 1)).not.toThrow();
+  });
 });

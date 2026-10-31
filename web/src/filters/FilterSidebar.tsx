@@ -3,6 +3,7 @@
 import {
   CONFIDENCE_LEVELS,
   NODE_TYPES,
+  SCOPE_DECISIONS,
   SEVERITIES,
   TAGS,
   type Severity,
@@ -13,6 +14,9 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { HOPS, hasFilters, isHideIgnored, useView, type ListFilter, type ListValue } from '@/state/view';
 import { SearchBox } from './SearchBox';
+
+/** Passive-mode decision, as the graph marks it. */
+const SCOPE_FILTER_LABEL: Record<string, string> = { in: 'in scope', out: 'out of scope', 'n/a': 'not targetable' };
 
 const TOTAL_HINT = 'Workspace total: doesn’t change with filters';
 
@@ -65,11 +69,14 @@ function CheckList<K extends ListFilter>({
   filter,
   options,
   counts,
+  labels,
 }: {
   title: string;
   filter: K;
   options: readonly ListValue<K>[];
   counts: Partial<Record<string, number>> | undefined;
+  /** Display text per option, when the value itself isn't clear enough. */
+  labels?: Partial<Record<string, string>>;
 }) {
   const selected = useView((s) => s.filters[filter]) as readonly ListValue<K>[] | undefined;
   const toggle = useView((s) => s.toggle);
@@ -85,7 +92,7 @@ function CheckList<K extends ListFilter>({
           }}
           count={counts === undefined ? undefined : (counts[value] ?? 0)}
         >
-          {value}
+          {labels?.[value] ?? value}
         </Choice>
       ))}
     </Group>
@@ -203,6 +210,7 @@ export function FilterSidebar({ stats, className }: { stats: StatsResponse | und
       <CheckList title="Confidence" filter="confidence" options={CONFIDENCE_LEVELS} counts={stats?.byConfidence} />
       <CheckList title="Tool" filter="tool" options={tools} counts={stats?.byTool} />
       <CheckList title="Tag" filter="tag" options={TAGS} counts={stats?.byTag} />
+      <CheckList title="Scope" filter="scope" options={SCOPE_DECISIONS} counts={stats?.byScope} labels={SCOPE_FILTER_LABEL} />
     </aside>
   );
 }

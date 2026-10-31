@@ -4,7 +4,7 @@ import { aggregate, edge, node } from './fixtures';
 
 describe('toElements', () => {
   test('graph nodes: null severity becomes "none", the rest is carried over', () => {
-    const [el] = toElements({ nodes: [node('a', { effectiveSeverity: 'medium', tag: 'checked' })], edges: [] });
+    const [el] = toElements({ nodes: [node('a', { effectiveSeverity: 'medium', tag: 'checked', inScope: 'out' })], edges: [] });
     expect(el).toEqual({
       group: 'nodes',
       data: {
@@ -18,6 +18,7 @@ describe('toElements', () => {
         confidence: 'discovered',
         sourceCount: 1,
         tag: 'checked',
+        inScope: 'out',
       },
     });
   });

@@ -5,6 +5,11 @@ import {
   OBSERVATION_ROLES,
   RELATION_TYPES,
   SCAN_STATUSES,
+  SCOPE_ACTIONS,
+  SCOPE_DECISIONS,
+  SCOPE_KINDS,
+  SCOPE_MODES,
+  SCOPE_SOURCES,
   SEVERITIES,
   TAGS,
 } from '@redwhale/shared';
@@ -132,4 +137,64 @@ export const observations = sqliteTable(
     check('observations_severity_ck', oneOf(t.severity, SEVERITIES)),
     check('observations_role_ck', oneOf(t.role, OBSERVATION_ROLES)),
   ],
+);
+
+// --- scope guard (docs/architecture.md §10) ---------------------------------------------------------
+
+/** What tools may be pointed at. Rules are never deleted: removing one sets `removed_at` (the log points at it). */
+export const scopeRules = sqliteTable(
+  'scope_rules',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    kind: text('kind', { enum: SCOPE_KINDS }).notNull(),
+    /** Normalized with normalizeScopeRule (shared/src/scope.ts). */
+    value: text('value').notNull(),
+    action: text('action', { enum: SCOPE_ACTIONS }).notNull(),
+    note: text('note').notNull().default(''),
+    createdAt: text('created_at').notNull(),
+    removedAt: text('removed_at'),
+  },
+  (t) => [
+    // One active rule per (kind, value, action); a removed one can be added again.
+    uniqueIndex('scope_rules_active_uq')
+      .on(t.kind, t.value, t.action)
+      .where(sql`${t.removedAt} IS NULL`),
+    check('scope_rules_kind_ck', oneOf(t.kind, SCOPE_KINDS)),
+    check('scope_rules_action_ck', oneOf(t.action, SCOPE_ACTIONS)),
+  ],
+);
+
+/** Every scope decision anyone asked for: the test box (`check`) and everything authorize() let run or refused (`run`). */
+export const scopeLog = sqliteTable(
+  'scope_log',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    source: text('source', { enum: SCOPE_SOURCES }).notNull(),
+    targetType: text('target_type', { enum: NODE_TYPES }).notNull(),
+    /** As it was asked, before normalization. */
+    targetValue: text('target_value').notNull(),
+    mode: text('mode', { enum: SCOPE_MODES }).notNull(),
+    decision: text('decision', { enum: SCOPE_DECISIONS }).notNull(),
+    ruleId: integer('rule_id').references(() => scopeRules.id),
+    reason: text('reason').notNull(),
+    at: text('at').notNull(),
+  },
+  (t) => [
+    index('scope_log_source_at_idx').on(t.source, t.at),
+    check('scope_log_source_ck', oneOf(t.source, SCOPE_SOURCES)),
+    check('scope_log_target_type_ck', oneOf(t.targetType, NODE_TYPES)),
+    check('scope_log_mode_ck', oneOf(t.mode, SCOPE_MODES)),
+    check('scope_log_decision_ck', oneOf(t.decision, SCOPE_DECISIONS)),
+  ],
+);
+
+/** One row (id = 1), created by the migration. */
+export const scopeSettings = sqliteTable(
+  'scope_settings',
+  {
+    id: integer('id').primaryKey(),
+    passiveOnly: integer('passive_only', { mode: 'boolean' }).notNull().default(true),
+    updatedAt: text('updated_at').notNull(),
+  },
+  (t) => [check('scope_settings_single_row_ck', sql`${t.id} = 1`)],
 );

@@ -2,7 +2,9 @@
 import {
   CONFIDENCE_LEVELS,
   NODE_TYPES,
+  SCOPE_DECISIONS,
   SEVERITIES,
+  compileScope,
   TAGS,
   exportQuerySchema,
   highlightsQuerySchema,
@@ -14,6 +16,7 @@ import { edges, nodes, observations, scans } from '../db/schema';
 import { loadGraph, riskFirst } from '../graph/store';
 import { ingestDocument } from '../ingest/ingest';
 import { HttpError, parseInput } from '../http';
+import { currentScope } from '../scope/store';
 import type { RouteContext } from './context';
 
 function countBy<K extends string>(keys: readonly K[], rows: { key: string | null; n: number }[], nullKey?: K) {
@@ -33,6 +36,12 @@ function stats(db: Db): StatsResponse {
     }[];
   const count = (table: string) =>
     (db.$client.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
+  // Scope decisions aren't stored (they follow the rules), so count them from the node values.
+  const scope = compileScope(currentScope(db));
+  const byScope = countBy(SCOPE_DECISIONS, []);
+  for (const n of db.select({ type: nodes.type, value: nodes.value }).from(nodes).all()) {
+    byScope[scope.check(n.type, n.value, 'passive').decision] += 1;
+  }
   const toolRows = db.$client
     .prepare('SELECT tool AS key, COUNT(DISTINCT node_id) AS n FROM observations GROUP BY tool ORDER BY tool')
     .all() as { key: string; n: number }[];
@@ -43,6 +52,7 @@ function stats(db: Db): StatsResponse {
     bySeverity: countBy([...SEVERITIES, 'none'], group('severity'), 'none'),
     byConfidence: countBy(CONFIDENCE_LEVELS, group('confidence')),
     byTag: countBy([...TAGS, 'none'], group('tag'), 'none'),
+    byScope,
     byTool: Object.fromEntries(toolRows.map((r) => [r.key, r.n])),
   };
 }

@@ -23,6 +23,7 @@ export function node(id: string, over: Partial<GraphNode> = {}): GraphNode {
     confidence: 'discovered',
     sourceCount: 1,
     tag: null,
+    inScope: 'in',
     posX: null,
     posY: null,
     firstSeen: T,

@@ -24,6 +24,7 @@ const stats = statsResponseSchema.parse({
   bySeverity: { info: 3, low: 4, medium: 2, high: 1, critical: 1, none: 509 },
   byConfidence: { discovered: 400, corroborated: 119, verified: 1 },
   byTag: { interesting: 2, checked: 3, ignored: 6, none: 509 },
+  byScope: { in: 300, out: 200, 'n/a': 20 },
   byTool: { httpx: 40, nuclei: 5, subfinder: 412 },
 });
 
@@ -51,6 +52,15 @@ describe('FilterSidebar', () => {
     expect(high.closest('label')?.querySelector('[title]')?.getAttribute('title')).toMatch(
       /1 node with their own severity = high .*keeps the nodes above each finding/,
     );
+  });
+
+  test('the scope filter lists in / out / not targetable with their totals', () => {
+    render(<FilterSidebar stats={stats} />);
+    const scope = group('Scope');
+    expect(scope.getByLabelText(/out of scope/).closest('label')?.textContent).toContain('200');
+    fireEvent.click(scope.getByLabelText(/out of scope/));
+    fireEvent.click(scope.getByLabelText(/not targetable/));
+    expect(view().filters).toEqual({ scope: ['out', 'n/a'] });
   });
 
   test('ticking options writes the API filters', () => {

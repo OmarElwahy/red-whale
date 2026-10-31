@@ -4,6 +4,7 @@ import type { AggregateNode, GraphNode, Tag } from '@redwhale/shared';
 import { useId, type ReactNode } from 'react';
 import { useNodeDetail, usePatchNode } from '@/api/hooks';
 import { Badge } from '@/components/ui/badge';
+import { RuleText, ScopeDecisionValue } from '@/components/ScopeDecision';
 import { SeverityValue } from '@/components/SeverityValue';
 import { Button } from '@/components/ui/button';
 import type { GroupState } from '@/graph/compose';
@@ -180,6 +181,21 @@ function NodePanel({ target, group, reveal, onAction }: SidePanelProps & { targe
             </Button>
           </div>
         )}
+      </Section>
+      <Section title="Scope">
+        <div className="flex flex-col gap-1 text-xs">
+          <ScopeDecisionValue decision={detail.data.scope.decision} />
+          <p className="text-muted-foreground">{detail.data.scope.reason}</p>
+          {detail.data.scope.rule && (
+            <div className="flex flex-col gap-0.5">
+              <RuleText rule={detail.data.scope.rule} />
+              {detail.data.scope.rule.note !== '' && (
+                <p className="text-muted-foreground">{detail.data.scope.rule.note}</p>
+              )}
+            </div>
+          )}
+          <p className="text-muted-foreground/70 text-[10px]">Passive mode; rules are in the Scope panel.</p>
+        </div>
       </Section>
       {reveal && <RevealSection {...reveal} />}
       <Section title="Tag">

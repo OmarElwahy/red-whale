@@ -81,6 +81,35 @@ export const EDGE_FONT_PX = 8;
 /** How long labels take to fade in or out when the zoom crosses the readability threshold (graph/labels.ts). */
 export const LABEL_FADE_MS = 150;
 
+/**
+ * Out of scope: thin, semi-transparent diagonal stripes drawn over the fill (a background image, under the
+ * border). The severity color still reads between them, and it touches none of the other channels: not the fill,
+ * the confidence border, the `interesting` outline, or the selection/fresh underlay. The stripes scale with the
+ * node, so the marker is there at every zoom (a corner badge would vanish when zoomed out).
+ */
+export const OUT_OF_SCOPE_HATCH = {
+  /** Stripe color: the canvas, so it reads as "cut away" on every fill. */
+  color: COLORS.canvas,
+  opacity: 0.55,
+  /** In the 24-unit tile the image is drawn from (the node's width = 24 units). */
+  width: 1.6,
+  spacing: 5,
+} as const;
+
+/** The hatch as an SVG: 45° stripes across a 24×24 tile, overdrawn so the corners are covered too. */
+export function hatchSvg({ color, opacity, width, spacing } = OUT_OF_SCOPE_HATCH): string {
+  const lines: string[] = [];
+  for (let c = -24; c <= 48; c += spacing) {
+    lines.push(`<line x1="${String(c)}" y1="0" x2="${String(c - 24)}" y2="24"/>`);
+  }
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">` +
+    `<g stroke="${color}" stroke-opacity="${String(opacity)}" stroke-width="${String(width)}">${lines.join('')}</g></svg>`
+  );
+}
+
+export const OUT_OF_SCOPE_IMAGE = `data:image/svg+xml;utf8,${encodeURIComponent(hatchSvg())}`;
+
 export const IGNORED_OPACITY = 0.3;
 export const SEARCH_PATH_OPACITY = 0.45;
 export const MUTED_OPACITY = 0.2;
@@ -135,6 +164,16 @@ export function graphStylesheet(): StylesheetJson {
         'text-wrap': 'wrap',
         'text-max-width': `${String(NODE_SIZE.aggregate * 2)}px`,
         color: COLORS.selected,
+      },
+    },
+    {
+      selector: 'node[inScope = "out"]',
+      style: {
+        'background-image': OUT_OF_SCOPE_IMAGE,
+        'background-fit': 'cover',
+        'background-clip': 'node',
+        'background-image-opacity': 1,
+        'background-image-containment': 'inside',
       },
     },
     { selector: 'node[tag = "ignored"]', style: { opacity: IGNORED_OPACITY } },

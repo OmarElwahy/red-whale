@@ -5,11 +5,12 @@
 // endpoints, one of them risky enough to stay visible). The big generator is `generate.ts` (`pnpm mock:large`).
 //
 // Everything goes through the normal ingest path. The only direct writes are the analyst's annotations
-// (`verified`, tags, notes), which use the PATCH route's own `updateNode`.
+// (`verified`, tags, notes), which use the PATCH route's own `updateNode`, and the scope (SHOWCASE_SCOPE),
+// added with the POST route's own `addRule`.
 import { createHash } from 'node:crypto';
 import type { ContractFile, Finding, NodePatch, NodeType, Relation, Severity } from '@redwhale/shared';
 import { AGG_THRESHOLD } from '../graph/aggregate';
-import type { MockFile } from './generate';
+import type { MockFile, MockScopeRule } from './generate';
 
 export const SHOWCASE_DOMAIN = 'showcase.example';
 const D = SHOWCASE_DOMAIN;
@@ -246,6 +247,26 @@ export function generateShowcase(): MockFile[] {
     ]),
   ];
 }
+
+/**
+ * The engagement's scope, so the graph shows every decision: the apex and every subdomain in, one subdomain
+ * excluded (dev), a CIDR and two single IPs in, and IPs that in-scope subdomains resolve to but that are NOT in
+ * scope (198.18.0.20, the CDN edge api and app share; vpn's 198.18.0.50), so "a domain doesn't grant its IPs"
+ * is visible. passiveOnly stays at its default (on).
+ */
+export const SHOWCASE_SCOPE: readonly MockScopeRule[] = [
+  { kind: 'domain', value: D, action: 'include', note: 'Apex, per the engagement letter' },
+  { kind: 'wildcard', value: `*.${D}`, action: 'include', note: 'Every subdomain the client owns' },
+  {
+    kind: 'domain',
+    value: dev.value,
+    action: 'exclude',
+    note: 'Run by a contractor; not covered by the letter',
+  },
+  { kind: 'cidr', value: '198.18.0.0/28', action: 'include', note: 'Web hosting range (www)' },
+  { kind: 'ip', value: ipMail.value, action: 'include', note: 'Mail server' },
+  { kind: 'ip', value: ipMail6.value, action: 'include', note: 'Mail server, IPv6' },
+];
 
 /** The analyst's annotations, applied after ingest with the PATCH route's `updateNode`. */
 export const SHOWCASE_ANNOTATIONS: readonly (Ref & { patch: NodePatch })[] = [

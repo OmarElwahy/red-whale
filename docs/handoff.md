@@ -22,7 +22,7 @@ _Last updated: 2026-10-31_
 TypeScript (pinned 6.0.x) · pnpm monorepo `shared/` `server/` `web/` · Zod · Fastify + WebSocket on
 127.0.0.1:4100 · SQLite via better-sqlite3 + Drizzle · Vite + React on 127.0.0.1:5173 · Cytoscape.js + fcose ·
 Zustand · TanStack Query + Table · Tailwind + shadcn/ui · react-markdown · Vitest · elkjs (Tree layout, in a Web Worker).
-Dropped: `cytoscape-expand-collapse` (aggregation is server-side). Docker/Dockerode comes in Phase 6.
+Dropped: `cytoscape-expand-collapse` (aggregation is server-side). Docker/Dockerode comes in Phase 6B. Added in 6A: `tldts` (bundled Public Suffix List, for the scope guard).
 
 ## Status
 
@@ -36,7 +36,8 @@ Dropped: `cytoscape-expand-collapse` (aggregation is server-side). Docker/Docker
 | 5A | Filters sidebar, search, URL state, N-hop focus, mute low-risk | ✅ done |
 | 5B | Synced table, WebSocket live updates, Highlights view, JSON/PNG export | ✅ code + tests done; manual browser check pending |
 | 5C | Graph feel (edges/labels always drawn, momentum, smooth zoom, edge labels), Force/Tree layouts, small showcase mock | ✅ code + tests done; manual check pending |
-| 6+ | **Scope guard first**, then Docker orchestrator, presets, auto-chaining, diffing, reports, CVE monitor, local LLM scoring, JS agent | later |
+| 6A | Scope guard: rules + `checkScope`, `authorize()` → `ScopedTarget`, dockerode/child_process lint guard, scope API + log, `inScope` on nodes, Scope panel, banner, out-of-scope hatch, mocks seed a scope | ✅ code + tests done; manual check pending |
+| 6B+ | Docker orchestrator (runner behind `authorize()`), presets, auto-chaining (redirects re-check scope per hop), diffing, reports, CVE monitor, local LLM scoring, JS agent | later |
 
 ## How I work with Claude Code
 
@@ -68,15 +69,31 @@ Dropped: `cytoscape-expand-collapse` (aggregation is server-side). Docker/Docker
 - Edge labels show the relation; labels fade (two steps) below 8 px on screen; two-finger scroll = zoom.
 - Measured at ~1,900 elements: panning p95 7 ms, zooming p95 21 ms (headless Chrome, Intel iGPU). No edge hiding.
 
+## Recent decisions (Phase 6A, scope guard)
+
+- Default deny; exclude always wins; `*.example.com` ≠ `example.com`. A domain in scope **never** puts its IPs in scope
+  (only ip/cidr rules cover IPs). Ports are judged by their IP; URLs by their host. Non-targetable types are `n/a`.
+- Passive-only is on by default: every active check is out until I turn it off.
+- Broad includes refused, no override: CIDR broader than /8 (IPv4) or /32 (IPv6); wildcards on a public suffix
+  (`*.com`, `*.co.uk`, `*.com.eg`) via the bundled Public Suffix List (`tldts`). Excludes any size.
+- Checks are logged too (`source` = check | run). The test box logs only on submit; the log panel shows runs by
+  default with an "include checks" toggle. `GET /scope/check` isn't logged (a GET mustn't write).
+- Out-of-scope marker = thin semi-transparent diagonal hatch over the fill (visible at any zoom).
+- Both mocks wipe and seed a scope; the showcase has an in-scope domain + wildcard, an excluded subdomain (dev),
+  in-scope IP/CIDR, and a CDN-style IP (198.18.0.20) that in-scope subdomains resolve to but is out.
+- For 6C: redirect-following tools must re-check scope on every hop.
+
 ## Open items to remember
 
 - Tree layout near the 2,000 cap takes ~4.4 s (ELK in a worker, UI stays smooth, header shows progress).
   dagre would be ~0.85 s but freezes the UI and can't keep sibling order. Decide whether that's acceptable.
-- Re-check the canvas feel in **Firefox** (my browser) with `await redwhale.bench()` on `pnpm mock:large` data.
+- Re-check the canvas feel in **Firefox** (my browser) with `await redwhale.bench()` on `pnpm mock:large` data, now
+  also with the out-of-scope hatch (6A A/B: shipped hatch ≈ free, every node hatched ≈ +60 % p95; baseline was noisy).
 - Test teammates' **real** JSON files: validator → `pnpm ingest` → check the graph.
 - Technology names must be exactly `name/version` across all scripts, or corroboration silently fails.
   Maybe add an alias table later (`microsoft-iis` = `iis`).
 - Edges have no provenance yet — add edge observations before scan diffing (Phase 6).
-- Phase 6 must start with the **scope guard** so no code path runs a tool without it.
+- 6B runner: call `authorize()` right before each run and `assertScoped()` the target; dockerode only in
+  `server/src/runner/docker.ts` (lint + test already enforce it).
 - After Phase 5: plan the DEPI demo. Best moment = running `pnpm ingest` live and watching the map grow.
   Take screenshots of each milestone for slides.

@@ -1,6 +1,7 @@
 // `pnpm mock` (the small showcase) and `pnpm mock:large` (the big seeded generator): generate mock tool
 // output, validate it twice (Zod and the team's Python validator), wipe the workspace, then ingest it.
 // The wipe refuses to touch a database that holds scans a mock didn't make (real files), unless --force.
+// Both mocks then seed a scope (showcase.ts SHOWCASE_SCOPE, generate.ts largeScope) so every decision shows.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CONFIDENCE_LEVELS, checkValue, nodeId, validateContract } from '@redwhale/shared';
@@ -8,9 +9,18 @@ import type { CliIo } from '../cli/ingest';
 import { DEFAULT_DB_PATH, OutdatedDatabaseError, openDb, type Db } from '../db/client';
 import { updateNode } from '../graph/update';
 import { ingestText } from '../ingest/ingest';
-import { MAX_SUBDOMAINS, MOCK_DEFAULTS, generateMock, mockFileText, type MockFile, type MockOptions } from './generate';
+import { addRule } from '../scope/store';
+import {
+  MAX_SUBDOMAINS,
+  MOCK_DEFAULTS,
+  generateMock,
+  largeScope,
+  mockFileText,
+  type MockFile,
+  type MockOptions,
+} from './generate';
 import { findPython, validateWithPython } from './python';
-import { SHOWCASE_ANNOTATIONS, SHOWCASE_DOMAIN, generateShowcase } from './showcase';
+import { SHOWCASE_ANNOTATIONS, SHOWCASE_DOMAIN, SHOWCASE_SCOPE, generateShowcase } from './showcase';
 
 export type MockKind = 'showcase' | 'large';
 
@@ -55,10 +65,17 @@ export function foreignScans(db: Db): ForeignScan[] {
   return rows.filter((r) => !isMockTarget(r.target));
 }
 
-/** Deletes every scan, node, edge and observation in one transaction. Returns how many scans were removed. */
+/**
+ * Deletes every scan, node, edge and observation, and the whole scope (log, rules, passive-only back to on), in one
+ * transaction. Returns how many scans were removed. The only place scope rules are ever deleted: a mock workspace
+ * is disposable, and the caller refuses a database holding real scans unless --force.
+ */
 export function wipeWorkspace(db: Db): number {
   const sqlite = db.$client;
   return sqlite.transaction(() => {
+    sqlite.prepare('DELETE FROM scope_log').run();
+    sqlite.prepare('DELETE FROM scope_rules').run();
+    sqlite.prepare("UPDATE scope_settings SET passive_only = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')").run();
     sqlite.prepare('DELETE FROM observations').run();
     sqlite.prepare('DELETE FROM edges').run();
     sqlite.prepare('DELETE FROM nodes').run();
@@ -266,6 +283,10 @@ export function runMockCli(
           break;
       }
     }
+
+    const scope = kind === 'showcase' ? SHOWCASE_SCOPE : largeScope(args.domain);
+    for (const rule of scope) addRule(db, rule);
+    io.out(`  scope: ${String(scope.length)} rules (passive-only on)`);
 
     if (kind === 'showcase') {
       for (const a of SHOWCASE_ANNOTATIONS) {

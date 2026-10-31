@@ -1,6 +1,6 @@
 // What the shapes, colors and borders mean. Built from the same tables as the stylesheet (graph/style.ts).
 import { CONFIDENCE_LEVELS, NODE_TYPES } from '@redwhale/shared';
-import { useState, type ReactNode } from 'react';
+import { useId, useState, type ReactNode } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   AGGREGATE_BORDER,
@@ -8,6 +8,7 @@ import {
   CONFIDENCE_BORDER,
   IGNORED_OPACITY,
   MUTED_OPACITY,
+  OUT_OF_SCOPE_HATCH,
   SEARCH_PATH_OPACITY,
   SEVERITY_COLOR,
   SEVERITY_KEYS,
@@ -23,6 +24,8 @@ interface SwatchProps {
   borderStyle?: 'solid' | 'dashed' | 'double';
   borderWidth?: number;
   ring?: boolean;
+  /** The out-of-scope stripes, as style.ts draws them. */
+  hatch?: boolean;
   opacity?: number;
   size?: number;
 }
@@ -33,14 +36,40 @@ function Swatch({
   borderStyle = 'solid',
   borderWidth = 1.5,
   ring = false,
+  hatch = false,
   opacity = 1,
   size = 18,
 }: SwatchProps) {
   const d = SHAPE_PATHS[shape];
+  // useId() may contain characters that break a url(#…) reference.
+  const hatchId = `hatch-${useId().replace(/[^a-zA-Z0-9_-]/g, '')}`;
+  // The node's 24-unit image tile, mapped onto the 2-unit shape box.
+  const unit = 2 / 24;
   return (
     <svg viewBox="-1.6 -1.6 3.2 3.2" width={size} height={size} className="shrink-0" aria-hidden opacity={opacity}>
       {ring && (
         <path d={d} transform="scale(1.45)" fill="none" stroke={COLORS.interesting} strokeWidth={2} vectorEffect="non-scaling-stroke" />
+      )}
+      {hatch && (
+        <defs>
+          <pattern
+            id={hatchId}
+            patternUnits="userSpaceOnUse"
+            width={OUT_OF_SCOPE_HATCH.spacing * unit * Math.SQRT2}
+            height={OUT_OF_SCOPE_HATCH.spacing * unit * Math.SQRT2}
+            patternTransform="rotate(45)"
+          >
+            <line
+              x1={0}
+              y1={0}
+              x2={0}
+              y2={OUT_OF_SCOPE_HATCH.spacing * unit * Math.SQRT2}
+              stroke={OUT_OF_SCOPE_HATCH.color}
+              strokeOpacity={OUT_OF_SCOPE_HATCH.opacity}
+              strokeWidth={OUT_OF_SCOPE_HATCH.width * unit}
+            />
+          </pattern>
+        </defs>
       )}
       <path
         d={d}
@@ -50,6 +79,7 @@ function Swatch({
         strokeDasharray={borderStyle === 'dashed' ? '3 2' : undefined}
         vectorEffect="non-scaling-stroke"
       />
+      {hatch && <path d={d} fill={`url(#${hatchId})`} />}
       {borderStyle === 'double' && (
         <path d={d} transform="scale(0.7)" fill="none" stroke={COLORS.border} strokeWidth={1} vectorEffect="non-scaling-stroke" />
       )}
@@ -123,6 +153,7 @@ export function Legend({ className }: { className?: string }) {
           <Section title="Markers">
             <Row swatch={<Swatch borderStyle={AGGREGATE_BORDER.style} size={22} />}>group (count)</Row>
             <Row swatch={<Swatch ring />}>interesting</Row>
+            <Row swatch={<Swatch hatch fill={SEVERITY_COLOR.high} />}>out of scope</Row>
             <Row swatch={<Swatch opacity={IGNORED_OPACITY} />}>ignored</Row>
             <Row swatch={<Swatch opacity={SEARCH_PATH_OPACITY} />}>search path</Row>
             <Row swatch={<Swatch opacity={MUTED_OPACITY} />}>muted (low-risk)</Row>

@@ -193,6 +193,7 @@ export function revealFrom(detail: {
     confidence: d.confidence,
     sourceCount: d.sourceCount,
     tag: d.tag,
+    inScope: d.inScope,
     posX: d.posX,
     posY: d.posY,
     firstSeen: d.firstSeen,

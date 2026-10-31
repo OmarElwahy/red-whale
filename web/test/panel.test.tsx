@@ -22,6 +22,7 @@ function makeDetail(overrides: Parameters<typeof node>[1] = {}): NodeDetailRespo
   });
   return nodeDetailResponseSchema.parse({
     node: { ...n, data: { status: 200, title: 'Sign in' }, notes: '' },
+    scope: { decision: n.inScope, reason: 'test scope', rule: null },
     edges: [],
     observations: [
       {
@@ -102,6 +103,45 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe('node panel: scope', () => {
+  test('shows the decision, the reason and the deciding rule with its note', async () => {
+    const detail = makeDetail({ inScope: 'out' });
+    api = fakeApi({
+      ...detail,
+      scope: {
+        decision: 'out',
+        reason: 'judged by its host a.example.com: matches exclude domain a.example.com (#4)',
+        rule: {
+          id: 4,
+          kind: 'domain',
+          value: 'a.example.com',
+          action: 'exclude',
+          note: 'Third-party SaaS',
+          createdAt: '2026-10-31T10:00:00.000Z',
+          removedAt: null,
+        },
+      },
+    });
+    vi.stubGlobal('fetch', api.fetch);
+    renderPanel();
+    const scope = within(await screen.findByRole('region', { name: 'Scope' }));
+    expect(scope.getByText('Out of scope')).toBeTruthy();
+    expect(scope.getByText(/matches exclude domain a\.example\.com/)).toBeTruthy();
+    expect(scope.getByText('exclude')).toBeTruthy();
+    expect(scope.getByText('#4')).toBeTruthy();
+    expect(scope.getByText('Third-party SaaS')).toBeTruthy();
+  });
+
+  test('a not-targetable node says so, with no rule', async () => {
+    api = fakeApi({ ...makeDetail({ inScope: 'n/a' }), scope: { decision: 'n/a', reason: "a technology isn't something a tool is pointed at", rule: null } });
+    vi.stubGlobal('fetch', api.fetch);
+    renderPanel();
+    const scope = within(await screen.findByRole('region', { name: 'Scope' }));
+    expect(scope.getByText('Not targetable')).toBeTruthy();
+    expect(scope.queryByText(/^#\d+$/)).toBeNull();
+  });
 });
 
 describe('node panel', () => {

@@ -12,6 +12,7 @@ import {
   TAGS,
 } from './enums';
 import type { NodeType, Relation } from './enums';
+import { SCOPE_ACTIONS, SCOPE_DECISIONS, SCOPE_KINDS, SCOPE_MODES, SCOPE_SOURCES } from './scope';
 
 // --- aggregate IDs ---------------------------------------------------------------------------------
 
@@ -74,6 +75,8 @@ export const graphFiltersSchema = z.strictObject({
   tool: list(z.string().regex(/^[a-z0-9][a-z0-9_.-]*$/, 'tool names are lowercase')).optional(),
   tag: list(z.enum(TAGS)).optional(),
   excludeTag: list(z.enum(TAGS)).optional(),
+  /** Scope decision in passive mode (`inScope` on every node). */
+  scope: list(z.enum(SCOPE_DECISIONS)).optional(),
   /** Case-insensitive substring of value or label. */
   q: z.string().trim().min(1).max(200).optional(),
 });
@@ -185,6 +188,8 @@ export const graphNodeSchema = z.strictObject({
   confidence: z.enum(CONFIDENCE_LEVELS),
   sourceCount: z.number().int().min(0),
   tag: z.enum(TAGS).nullable(),
+  /** The scope decision for this node in passive mode, computed when the graph is read (never stored). */
+  inScope: z.enum(SCOPE_DECISIONS),
   posX: z.number().nullable(),
   posY: z.number().nullable(),
   firstSeen: timestamp,
@@ -245,6 +250,106 @@ export const expandResponseSchema = z.strictObject({
   total: z.number().int(),
 });
 
+// --- scope (docs/architecture.md §10) --------------------------------------------------------------
+
+export const scopeRuleSchema = z.strictObject({
+  id: z.number().int().min(1),
+  kind: z.enum(SCOPE_KINDS),
+  /** Normalized: punycode, lowercase, canonical IP/CIDR text. */
+  value: z.string(),
+  action: z.enum(SCOPE_ACTIONS),
+  note: z.string(),
+  createdAt: timestamp,
+  /** Set when the rule is removed. Removed rules are kept (the log still points at them) and never match. */
+  removedAt: timestamp.nullable(),
+});
+export type ScopeRule = z.infer<typeof scopeRuleSchema>;
+
+export const SCOPE_NOTE_MAX = 1000;
+
+export const scopeRuleCreateSchema = z.strictObject({
+  kind: z.enum(SCOPE_KINDS),
+  /** Normalized and checked by the server (normalizeScopeRule); a refusal is a 400 saying why. */
+  value: z.string().min(1).max(300),
+  action: z.enum(SCOPE_ACTIONS),
+  note: z.string().max(SCOPE_NOTE_MAX).default(''),
+});
+
+/** Kind, value and action never change: remove the rule and add another. Removing is one-way. */
+export const scopeRulePatchSchema = z
+  .strictObject({ note: z.string().max(SCOPE_NOTE_MAX).optional(), removed: z.literal(true).optional() })
+  .refine((body) => Object.keys(body).length > 0, { message: 'nothing to update' });
+
+export const scopeRulesQuerySchema = z.strictObject({
+  /** `1` also lists removed rules. */
+  removed: z.enum(['0', '1']).default('0'),
+});
+
+export const scopeRulesResponseSchema = z.strictObject({ rules: z.array(scopeRuleSchema) });
+
+export const scopeCheckInputSchema = z.strictObject({
+  type: z.enum(NODE_TYPES),
+  value: z.string().trim().min(1).max(2000),
+  mode: z.enum(SCOPE_MODES).default('passive'),
+});
+
+export const scopeResultSchema = z.strictObject({
+  decision: z.enum(SCOPE_DECISIONS),
+  reason: z.string(),
+  /** The rule that decided it, if one did. */
+  rule: scopeRuleSchema.nullable(),
+});
+export type ScopeResultResponse = z.infer<typeof scopeResultSchema>;
+
+export const scopeCheckResponseSchema = scopeResultSchema.extend({
+  type: z.enum(NODE_TYPES),
+  value: z.string(),
+  mode: z.enum(SCOPE_MODES),
+  /** The log row, for POST /scope/check; null for GET (not logged). */
+  logId: z.number().int().nullable(),
+});
+export type ScopeCheckResponse = z.infer<typeof scopeCheckResponseSchema>;
+
+export const SCOPE_LOG_PAGE_SIZE = { default: 50, max: 200 } as const;
+
+export const scopeLogQuerySchema = z.strictObject({
+  page: positiveInt.default(1),
+  pageSize: positiveInt.max(SCOPE_LOG_PAGE_SIZE.max).default(SCOPE_LOG_PAGE_SIZE.default),
+  /** Which entries: `run` (the default) is what was authorized to run; add `check` for the test box. */
+  source: list(z.enum(SCOPE_SOURCES)).prefault('run'),
+});
+
+export const scopeLogEntrySchema = z.strictObject({
+  id: z.number().int(),
+  source: z.enum(SCOPE_SOURCES),
+  targetType: z.enum(NODE_TYPES),
+  /** As it was asked, before normalization. */
+  targetValue: z.string(),
+  mode: z.enum(SCOPE_MODES),
+  decision: z.enum(SCOPE_DECISIONS),
+  /** The deciding rule as it is now (it may have been removed since). */
+  rule: scopeRuleSchema.nullable(),
+  reason: z.string(),
+  at: timestamp,
+});
+export type ScopeLogEntry = z.infer<typeof scopeLogEntrySchema>;
+
+export const scopeLogResponseSchema = z.strictObject({
+  items: z.array(scopeLogEntrySchema),
+  page: z.number().int(),
+  pageSize: z.number().int(),
+  total: z.number().int(),
+});
+
+export const scopeSettingsSchema = z.strictObject({
+  /** On (the default): every active check is out of scope. */
+  passiveOnly: z.boolean(),
+  updatedAt: timestamp,
+});
+export type ScopeSettings = z.infer<typeof scopeSettingsSchema>;
+
+export const scopeSettingsPatchSchema = z.strictObject({ passiveOnly: z.boolean() });
+
 const nodeRef = graphNodeSchema.pick({ id: true, type: true, value: true, label: true, severity: true, confidence: true });
 
 export const nodeDetailSchema = graphNodeSchema.extend({
@@ -255,6 +360,8 @@ export type NodeDetail = z.infer<typeof nodeDetailSchema>;
 
 export const nodeDetailResponseSchema = z.strictObject({
   node: nodeDetailSchema,
+  /** The passive-mode decision behind `node.inScope`, with the rule that made it. */
+  scope: scopeResultSchema,
   edges: z.array(
     z.strictObject({
       id: z.string(),
@@ -309,6 +416,7 @@ export const statsResponseSchema = z.strictObject({
   bySeverity: countsBy([...SEVERITIES, 'none']),
   byConfidence: countsBy(CONFIDENCE_LEVELS),
   byTag: countsBy([...TAGS, 'none']),
+  byScope: countsBy(SCOPE_DECISIONS),
   byTool: z.record(z.string(), z.number().int().min(0)),
 });
 export type StatsResponse = z.infer<typeof statsResponseSchema>;
@@ -371,5 +479,7 @@ export const errorResponseSchema = z.strictObject({
 export const wsEventSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('graph.updated'), nodeIds: z.array(z.string()), edgeIds: z.array(z.string()) }),
   z.strictObject({ type: z.literal('scan.ingested'), scanId: z.string(), tool: z.string() }),
+  /** A scope rule or setting changed: every node's `inScope` may be different. */
+  z.strictObject({ type: z.literal('scope.changed') }),
 ]);
 export type WsEvent = z.infer<typeof wsEventSchema>;

@@ -25,7 +25,7 @@ export interface View {
 export const defaultView: View = { filters: {}, mute: false, hops: 1, layout: 'force' };
 
 /** Filters that are a set of values (checkbox lists in the sidebar). */
-export type ListFilter = 'types' | 'confidence' | 'tool' | 'tag';
+export type ListFilter = 'types' | 'confidence' | 'tool' | 'tag' | 'scope';
 export type ListValue<K extends ListFilter> = NonNullable<GraphFilters[K]>[number];
 
 export interface ViewState extends View {

@@ -7,6 +7,9 @@ import {
   CONFIDENCE_LEVELS,
   NODE_TYPES,
   RELATION_TYPES,
+  SCOPE_ACTIONS,
+  SCOPE_DECISIONS,
+  SCOPE_KINDS,
   SEVERITIES,
   TAGS,
   graphResponseSchema,
@@ -19,7 +22,9 @@ import { openDb, type Db } from '../src/db/client';
 import { foreignScans, isMockTarget, runMockCli, wipeWorkspace, type MockKind } from '../src/mock/cli';
 import { mockFileText } from '../src/mock/generate';
 import { findPython } from '../src/mock/python';
-import { SHOWCASE_DOMAIN, generateShowcase } from '../src/mock/showcase';
+import { SHOWCASE_DOMAIN, SHOWCASE_SCOPE, generateShowcase } from '../src/mock/showcase';
+import { compileScope } from '@redwhale/shared';
+import { currentScope, getSettings, listRules } from '../src/scope/store';
 import { body, testApi } from './api/helpers';
 import { counts, exampleText, tempDir } from './helpers';
 import { ingestText } from '../src/ingest/ingest';
@@ -141,6 +146,95 @@ describe('after pnpm mock', () => {
   });
 });
 
+describe('the showcase scope', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'redwhale-showcase-scope-'));
+  let db: Db;
+  beforeAll(() => {
+    db = showcaseDb(dir);
+  });
+  afterAll(() => {
+    db.$client.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const D = SHOWCASE_DOMAIN;
+  const decide = (type: 'domain' | 'subdomain' | 'ip' | 'port' | 'url' | 'technology', value: string) =>
+    compileScope(currentScope(db)).check(type, value, 'passive');
+
+  test('is seeded through addRule, with passive-only left on', () => {
+    expect(listRules(db).map((r) => [r.kind, r.value, r.action])).toEqual(
+      SHOWCASE_SCOPE.map((r) => [r.kind, r.value, r.action]),
+    );
+    expect(getSettings(db).passiveOnly).toBe(true);
+  });
+
+  test('uses every rule kind and both actions', () => {
+    expect(new Set(SHOWCASE_SCOPE.map((r) => r.kind))).toEqual(new Set(SCOPE_KINDS));
+    expect(new Set(SHOWCASE_SCOPE.map((r) => r.action))).toEqual(new Set(SCOPE_ACTIONS));
+  });
+
+  test('every node is decided, and every decision occurs', () => {
+    const decisions = all<{ type: 'domain'; value: string }>(db, 'SELECT type, value FROM nodes').map(
+      (n) => decide(n.type, n.value).decision,
+    );
+    expect(new Set(decisions)).toEqual(new Set(SCOPE_DECISIONS));
+  });
+
+  test('every case is on the graph', () => {
+    expect(decide('domain', D)).toMatchObject({ decision: 'in', rule: { kind: 'domain' } });
+    expect(decide('subdomain', `api.${D}`)).toMatchObject({ decision: 'in', rule: { kind: 'wildcard' } });
+    expect(decide('subdomain', `dev.${D}`)).toMatchObject({ decision: 'out', rule: { action: 'exclude' } });
+    expect(decide('url', `https://dev.${D}/.git/config`).decision).toBe('out');
+    expect(decide('ip', '198.18.0.10')).toMatchObject({ decision: 'in', rule: { kind: 'cidr' } });
+    expect(decide('url', 'http://198.18.0.10/').decision).toBe('in');
+    expect(decide('ip', '198.18.0.30')).toMatchObject({ decision: 'in', rule: { kind: 'ip' } });
+    expect(decide('ip', '2001:db8::25').decision).toBe('in');
+    expect(decide('technology', 'nginx/1.18.0').decision).toBe('n/a');
+  });
+
+  test('a CDN-style IP: in-scope subdomains resolve to it, but it is out', () => {
+    const cdn = '198.18.0.20';
+    const parents = column(
+      db,
+      `SELECT p.value AS v FROM edges e JOIN nodes p ON p.id = e.source_id JOIN nodes c ON c.id = e.target_id
+       WHERE e.relation = 'resolves_to' AND c.value = '${cdn}' ORDER BY p.value`,
+    );
+    expect(parents).toEqual([`api.${D}`, `app.${D}`]);
+    for (const p of parents) expect(decide('subdomain', p ?? '').decision).toBe('in');
+    const result = decide('ip', cdn);
+    expect(result.decision).toBe('out');
+    expect(result.reason).toMatch(/domain rules never cover IP addresses/);
+    expect(decide('port', `${cdn}:443/tcp`).decision).toBe('out');
+  });
+});
+
+describe('the large mock scope', () => {
+  test('has in, out and n/a nodes, an excluded subdomain, and out-of-scope IPs under in-scope subdomains', () => {
+    const dir = tempDir();
+    const path = join(dir, 'large.db');
+    const result = run('large', ['--subdomains', '400', '--out', join(dir, 'out'), '--db', path, '--skip-python']);
+    expect(result.code, result.err.join('\n')).toBe(0);
+    const db = openDb(path);
+    try {
+      const scope = compileScope(currentScope(db));
+      const nodes = all<{ type: 'ip'; value: string }>(db, 'SELECT type, value FROM nodes');
+      expect(new Set(nodes.map((n) => scope.check(n.type, n.value, 'passive').decision))).toEqual(new Set(SCOPE_DECISIONS));
+      expect(nodes.some((n) => scope.check(n.type, n.value, 'passive').rule?.action === 'exclude')).toBe(true);
+      const resolved = all<{ sub: string; ip: string }>(
+        db,
+        `SELECT p.value AS sub, c.value AS ip FROM edges e JOIN nodes p ON p.id = e.source_id JOIN nodes c ON c.id = e.target_id
+         WHERE e.relation = 'resolves_to' AND p.type = 'subdomain'`,
+      );
+      const split = resolved.filter(
+        (r) => scope.check('subdomain', r.sub, 'passive').decision === 'in' && scope.check('ip', r.ip, 'passive').decision === 'out',
+      );
+      expect(split.length).toBeGreaterThan(0);
+      expect(resolved.some((r) => scope.check('ip', r.ip, 'passive').decision === 'in')).toBe(true);
+    } finally {
+      db.$client.close();
+    }
+  });
+});
+
 describe('wiping the workspace', () => {
   test.each([
     ['showcase.example', true],
@@ -205,6 +299,13 @@ describe('wiping the workspace', () => {
     const db = showcaseDb();
     expect(wipeWorkspace(db)).toBeGreaterThan(0);
     expect(counts(db)).toMatchObject({ scans: 0, nodes: 0, edges: 0, observations: 0 });
+    // The scope goes too (a mock workspace is disposable), and passive-only is back on.
+    db.$client.prepare("UPDATE scope_settings SET passive_only = 0").run();
+    db.$client.prepare("INSERT INTO scope_log (source, target_type, target_value, mode, decision, reason, at) VALUES ('check', 'ip', '1.2.3.4', 'passive', 'out', 'r', 'now')").run();
+    wipeWorkspace(db);
+    expect(all(db, 'SELECT * FROM scope_rules')).toEqual([]);
+    expect(all(db, 'SELECT * FROM scope_log')).toEqual([]);
+    expect(getSettings(db).passiveOnly).toBe(true);
     db.$client.close();
   });
 

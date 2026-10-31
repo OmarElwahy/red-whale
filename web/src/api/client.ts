@@ -49,9 +49,9 @@ export async function getJson<S extends z.ZodType>(
   return parseResponse(res, path, schema);
 }
 
-/** PATCH or PUT a JSON body and parse the answer with `schema`. `keepalive` lets the request outlive the page. */
+/** POST, PATCH or PUT a JSON body and parse the answer with `schema`. `keepalive` lets the request outlive the page. */
 export async function sendJson<S extends z.ZodType>(
-  method: 'PATCH' | 'PUT',
+  method: 'POST' | 'PATCH' | 'PUT',
   path: string,
   payload: unknown,
   schema: S,

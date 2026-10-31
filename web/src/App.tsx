@@ -36,6 +36,8 @@ import { PositionSaver } from '@/graph/positions';
 import { ContextMenu } from '@/menu/ContextMenu';
 import { menuItems, safeHttpUrl, type MenuAction } from '@/menu/items';
 import { HighlightsView } from '@/highlights/HighlightsView';
+import { scopeIsEmpty, useScopeRules, useScopeSettings } from '@/api/scope';
+import { ScopeBanner, ScopePanel } from '@/scope/ScopePanel';
 import { SidePanel } from '@/panel/SidePanel';
 import { useLive } from '@/state/live';
 import { useUi, type BottomPanel } from '@/state/ui';
@@ -96,6 +98,23 @@ function PanelToggle({
     >
       {children}
     </Button>
+  );
+}
+
+/** Header toggle for the Scope panel, with how many rules are active and whether passive-only is on. */
+function ScopeToggle({ current }: { current: BottomPanel | null }) {
+  const rules = useScopeRules();
+  const settings = useScopeSettings();
+  const active = rules.data?.length;
+  const empty = rules.data !== undefined && scopeIsEmpty(rules.data);
+  return (
+    <PanelToggle panel="scope" current={current}>
+      <span className="inline-flex items-center gap-1.5">
+        {empty && <span className="size-2 rounded-full bg-amber-400" aria-hidden />}
+        Scope{active === undefined ? '' : ` (${String(active)})`}
+        {settings.data?.passiveOnly && <span className="text-muted-foreground text-[10px] font-normal">passive</span>}
+      </span>
+    </PanelToggle>
   );
 }
 
@@ -386,6 +405,7 @@ export function App() {
           <PanelToggle panel="highlights" current={bottomPanel}>
             Highlights{highlights.data ? ` (${String(highlights.data.length)})` : ''}
           </PanelToggle>
+          <ScopeToggle current={bottomPanel} />
           <span className="bg-border mx-1 h-5 w-px" aria-hidden />
           <ExportButtons
             png={() => graphRef.current?.png() ?? null}
@@ -393,6 +413,11 @@ export function App() {
           />
         </div>
       </header>
+      <ScopeBanner
+        onOpen={() => {
+          if (bottomPanel !== 'scope') useUi.getState().toggleBottomPanel('scope');
+        }}
+      />
       <main className="flex min-h-0 flex-1">
         <FilterSidebar stats={stats.data} className="w-60 shrink-0" />
         <div className="flex min-w-0 flex-1 flex-col">
@@ -458,6 +483,11 @@ export function App() {
                 }}
                 className="flex-1"
               />
+            </section>
+          )}
+          {bottomPanel === 'scope' && (
+            <section aria-label="Scope" className="flex h-[45%] min-h-48 shrink-0 flex-col border-t">
+              <ScopePanel className="flex-1" />
             </section>
           )}
           {bottomPanel === 'highlights' && (
