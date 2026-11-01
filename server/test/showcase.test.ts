@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   CONFIDENCE_LEVELS,
+  EDGE_CONFIDENCE_LEVELS,
   NODE_TYPES,
   RELATION_TYPES,
   SCOPE_ACTIONS,
@@ -104,6 +105,20 @@ describe('after pnpm mock', () => {
       "SELECT source_count FROM nodes WHERE confidence = 'corroborated'",
     );
     for (const r of corroborated) expect(r.source_count).toBeGreaterThanOrEqual(2);
+  });
+
+  test('covers every edge confidence: an edge from 2+ tools (corroborated) and one from a single tool', () => {
+    expect(new Set(column(db, 'SELECT DISTINCT confidence AS v FROM edges'))).toEqual(new Set(EDGE_CONFIDENCE_LEVELS));
+    const rows = all<{ confidence: string; source_count: number; tools: number }>(
+      db,
+      `SELECT e.confidence, e.source_count, COUNT(DISTINCT o.tool) AS tools
+       FROM edges e JOIN edge_observations o ON o.edge_id = e.id GROUP BY e.id`,
+    );
+    for (const r of rows) {
+      expect(r.source_count).toBe(r.tools);
+      expect(r.confidence).toBe(r.source_count >= 2 ? 'corroborated' : 'discovered');
+    }
+    expect(all(db, 'SELECT id FROM edges WHERE id NOT IN (SELECT edge_id FROM edge_observations)')).toEqual([]);
   });
 
   test('covers every tag; an interesting node has a markdown note', () => {

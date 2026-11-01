@@ -99,6 +99,17 @@ describe('after ingest', () => {
     for (const r of rows) expect(r.n).toBeGreaterThan(20);
   });
 
+  test.each([1, 400])('--subdomains %i: edges reported by two tools and by one', (subdomains) => {
+    const db = freshDb();
+    ingestMock(db, options({ subdomains }));
+    const rows = query<{ confidence: string; source_count: number }>(
+      db,
+      'SELECT DISTINCT confidence, source_count FROM edges ORDER BY confidence, source_count',
+    );
+    expect(rows.map((r) => r.confidence)).toEqual(expect.arrayContaining(['corroborated', 'discovered']));
+    for (const r of rows) expect(r.confidence).toBe(r.source_count >= 2 ? 'corroborated' : 'discovered');
+  });
+
   test('a vulnerability is corroborated by nmap and nuclei', () => {
     const db = freshDb();
     ingestMock(db, options());

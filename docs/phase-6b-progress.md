@@ -15,8 +15,8 @@ corroborated edges). The approved plan is summarized under "Decisions" below.
 | 2 | Derived edge fields (first/last seen, source_count, confidence) + order/idempotency tests | done |
 | 3 | API: `GET /edges/:id`, edge fields on `/nodes/:id` and `/graph`, group-edge tool union, export | done |
 | 4 | UI: edge side panel, thicker corroborated edges | done |
-| 5 | Mock data + coverage test (edge confidence) | in progress |
-| 6 | Docs: architecture.md §4 §5 §6 §8 §9, decisions log, handoff.md | todo |
+| 5 | Mock data + coverage test (edge confidence) | done |
+| 6 | Docs: architecture.md §4 §5 §6 §8 §9, decisions log, handoff.md | in progress |
 
 ## Decisions (made along the way; user may overrule)
 
@@ -81,9 +81,18 @@ corroborated edges). The approved plan is summarized under "Decisions" below.
 - Ends in the panel: a node is picked like a table row (`pick`: select + open path); a group end is selected + centered.
 - Not run in a browser in this session (manual check for the user).
 
+## Notes from step 5
+
+- No generator change needed: subfinder + amass (and others) already report the same edges in both mocks.
+- showcase.test.ts: "covers every edge confidence" (reads `EDGE_CONFIDENCE_LEVELS`; every edge has observations;
+  source_count = distinct tools). mock.test.ts: "edges reported by two tools and by one" for --subdomains 1 and 400.
+
 ## Next action
 
-Step 5: confirm both mocks have ≥1 corroborated and ≥1 single-source edge (subfinder + amass both report
-`has_subdomain`). Extend server/test/showcase.test.ts ("covers every confidence") with
-`SELECT DISTINCT confidence FROM edges` = `EDGE_CONFIDENCE_LEVELS`, and add the same check to
-server/test/mock.test.ts for the large mock. Only touch server/src/mock/*.ts if a test shows a gap.
+Step 6 (docs). architecture.md: §4 (edges columns, `edge_observations` table, edge confidence rule, 0003 breaking),
+§5 (ingest step 3 + edge recompute), §6 (`GET /edges/:id`, edge fields on /nodes/:id and graph/view edges incl.
+`edgeId`/`tools`/`edgeCount`, export `edgeObservations`, tool-filter limit), §8 (edge click/panel, widths, legend),
+§9 renumber (6B edge provenance, 6C orchestrator, 6D presets & auto-chaining, 6E scan diffing; fix "runner (6B)" and
+"For 6C" references in §10 and the decisions log text where they name phases), decisions log rows (2026-11-01).
+handoff.md: Status row for 6B, close the "Edges have no provenance" open item (~line 118), renumbered phases.
+Then: final typecheck/test/lint, commit "6B step 6: docs", push, and give the user the manual checks.
