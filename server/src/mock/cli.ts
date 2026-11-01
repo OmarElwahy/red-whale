@@ -77,6 +77,7 @@ export function wipeWorkspace(db: Db): number {
     sqlite.prepare('DELETE FROM scope_rules').run();
     sqlite.prepare("UPDATE scope_settings SET passive_only = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')").run();
     sqlite.prepare('DELETE FROM observations').run();
+    sqlite.prepare('DELETE FROM edge_observations').run();
     sqlite.prepare('DELETE FROM edges').run();
     sqlite.prepare('DELETE FROM nodes').run();
     return sqlite.prepare('DELETE FROM scans').run().changes;

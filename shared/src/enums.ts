@@ -57,6 +57,10 @@ export type ScanStatus = (typeof SCAN_STATUSES)[number];
 export const CONFIDENCE_LEVELS = ['discovered', 'corroborated', 'verified'] as const;
 export type Confidence = (typeof CONFIDENCE_LEVELS)[number];
 
+/** Edge confidence is only ever computed (1 tool / 2+ tools); there is no analyst-verified edge. */
+export const EDGE_CONFIDENCE_LEVELS = ['discovered', 'corroborated'] as const;
+export type EdgeConfidence = (typeof EDGE_CONFIDENCE_LEVELS)[number];
+
 /** Why a scan observed a node: it reported it as a finding, or only named it as a finding's parent. */
 export const OBSERVATION_ROLES = ['finding', 'parent'] as const;
 export type ObservationRole = (typeof OBSERVATION_ROLES)[number];

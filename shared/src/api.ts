@@ -562,6 +562,7 @@ export const ingestResponseSchema = z.discriminatedUnion('status', [
     edgeIds: z.array(z.string()),
     created: z.strictObject({ nodes: z.number().int(), edges: z.number().int() }),
     observations: z.number().int(),
+    edgeObservations: z.number().int(),
     warnings: z.array(z.string()),
   }),
   z.strictObject({ status: z.literal('duplicate'), scanId: z.string(), warnings: z.array(z.string()) }),

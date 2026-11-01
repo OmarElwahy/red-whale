@@ -15,7 +15,7 @@ test('ingests a valid file and reports counts', () => {
   const result = run([examplePath('nmap'), '--db', db]);
   expect(result.code).toBe(0);
   expect(result.out).toEqual([
-    expect.stringMatching(/as scan [0-9a-f-]{36}: 5 nodes \(5 new\), 4 edges \(4 new\), 5 observations$/),
+    expect.stringMatching(/as scan [0-9a-f-]{36}: 5 nodes \(5 new\), 4 edges \(4 new\), 5 observations, 4 edge observations$/),
   ]);
   expect(result.err).toEqual([]);
 });

@@ -377,3 +377,63 @@ test('lint warnings are returned but do not block ingest', () => {
   expect(result.warnings).toEqual(['findings[0]: vulnerability has no severity']);
   expect(counts(db).nodes).toBe(2);
 });
+
+describe('edge provenance', () => {
+  const sub = (value: string) => ({
+    type: 'subdomain',
+    value,
+    parent: { type: 'domain', value: 'example.com' },
+    relation: 'has_subdomain',
+  });
+  const scanBy = (tool: string, finishedAt: string, findings: Record<string, unknown>[]) =>
+    baseDoc({ tool, command: `${tool} -d example.com`, started_at: finishedAt, finished_at: finishedAt, findings });
+
+  function edgeObservationRows(db: Db) {
+    return db.$client
+      .prepare(
+        `SELECT e.relation, o.tool, o.data, o.observed_at, o.scan_id = s.id AS scan_matches
+         FROM edge_observations o JOIN edges e ON e.id = o.edge_id JOIN scans s ON s.id = o.scan_id
+         ORDER BY o.observed_at, o.tool`,
+      )
+      .all();
+  }
+
+  test('every finding with a parent records an edge observation for its scan', () => {
+    const db = freshDb();
+    const result = expectIngested(ingestDocument(db, scanBy('subfinder', '2026-10-29T10:00:00Z', [sub('api.example.com')])));
+    expect(result.edgeObservations).toBe(1);
+    expect(edgeObservationRows(db)).toEqual([
+      { relation: 'has_subdomain', tool: 'subfinder', data: '{}', observed_at: '2026-10-29T10:00:00.000Z', scan_matches: 1 },
+    ]);
+  });
+
+  test('the same edge from two tools: one row per scan', () => {
+    const db = freshDb();
+    ingestDocument(db, scanBy('subfinder', '2026-10-29T10:00:00Z', [sub('api.example.com')]));
+    ingestDocument(db, scanBy('amass', '2026-10-29T11:00:00Z', [sub('api.example.com')]));
+    expect(counts(db).edges).toBe(1);
+    expect(edgeObservationRows(db).map((r) => (r as { tool: string }).tool)).toEqual(['subfinder', 'amass']);
+  });
+
+  test('the same edge twice in one file: one row', () => {
+    const db = freshDb();
+    const doc = scanBy('subfinder', '2026-10-29T10:00:00Z', [sub('api.example.com'), { ...sub('api.example.com'), data: { source: 'crtsh' } }]);
+    expect(expectIngested(ingestDocument(db, doc)).edgeObservations).toBe(1);
+    expect(edgeObservationRows(db)).toHaveLength(1);
+  });
+
+  test('re-ingesting a file adds no edge observations', () => {
+    const db = freshDb();
+    ingestAll(db);
+    const before = db.$client.prepare('SELECT COUNT(*) AS n FROM edge_observations').get();
+    expect(before).toEqual({ n: 11 });
+    ingestAll(db);
+    expect(db.$client.prepare('SELECT COUNT(*) AS n FROM edge_observations').get()).toEqual(before);
+  });
+
+  test('a finding without a parent records none', () => {
+    const db = freshDb();
+    ingestDocument(db, scanBy('subfinder', '2026-10-29T10:00:00Z', [{ type: 'domain', value: 'example.com' }]));
+    expect(edgeObservationRows(db)).toEqual([]);
+  });
+});

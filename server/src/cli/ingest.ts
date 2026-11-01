@@ -74,7 +74,7 @@ export function runIngestCli(argv: readonly string[], io: CliIo, env: NodeJS.Pro
           `Ingested ${args.file} as scan ${result.scanId}: ` +
             `${String(result.nodeIds.length)} nodes (${String(result.created.nodes)} new), ` +
             `${String(result.edgeIds.length)} edges (${String(result.created.edges)} new), ` +
-            `${String(result.observations)} observations`,
+            `${String(result.observations)} observations, ${String(result.edgeObservations)} edge observations`,
         );
         break;
     }

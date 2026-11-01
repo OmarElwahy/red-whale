@@ -4,7 +4,7 @@ import { validateContract, type Confidence } from '@redwhale/shared';
 import { eq, sql, type SQL } from 'drizzle-orm';
 import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import type { Db } from '../db/client';
-import { edges, nodes, observations, scans } from '../db/schema';
+import { edgeObservations, edges, nodes, observations, scans } from '../db/schema';
 import { deriveNodeState, type ObservationInput } from './derive';
 import { fileHash } from './hash';
 import { planIngest } from './plan';
@@ -18,6 +18,8 @@ export type IngestResult =
       edgeIds: string[];
       created: { nodes: number; edges: number };
       observations: number;
+      /** One per edge in the file. */
+      edgeObservations: number;
       warnings: string[];
     }
   | { status: 'duplicate'; scanId: string; warnings: string[] }
@@ -123,6 +125,13 @@ export function ingestDocument(db: Db, input: unknown, now: Date = new Date()): 
           .run();
       }
 
+      // Edge provenance: one row per edge per scan, like observations for nodes (plan.edges is already deduplicated).
+      for (const batch of chunks(edgeIds)) {
+        tx.insert(edgeObservations)
+          .values(batch.map((edgeId) => ({ edgeId, scanId, tool: file.tool, data: {}, observedAt })))
+          .run();
+      }
+
       recomputeNodes(tx, nodeIds);
 
       return {
@@ -132,6 +141,7 @@ export function ingestDocument(db: Db, input: unknown, now: Date = new Date()): 
         edgeIds,
         created: { nodes: createdNodes, edges: edgeIds.length - knownEdges },
         observations: plan.observations.size,
+        edgeObservations: edgeIds.length,
         warnings,
       };
     },

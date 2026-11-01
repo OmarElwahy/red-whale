@@ -1,6 +1,7 @@
 // Drizzle schema (docs/architecture.md §4). After editing, run `pnpm db:generate` and commit server/drizzle/.
 import {
   CONFIDENCE_LEVELS,
+  EDGE_CONFIDENCE_LEVELS,
   NODE_TYPES,
   OBSERVATION_ROLES,
   RELATION_TYPES,
@@ -100,6 +101,9 @@ export const edges = sqliteTable(
       .notNull()
       .references(() => nodes.id),
     relation: text('relation', { enum: RELATION_TYPES }).notNull(),
+    // Everything from here on is derived from edge_observations at ingest.
+    confidence: text('confidence', { enum: EDGE_CONFIDENCE_LEVELS }).notNull().default('discovered'),
+    sourceCount: integer('source_count').notNull().default(0),
     firstSeen: text('first_seen').notNull(),
     lastSeen: text('last_seen').notNull(),
   },
@@ -108,6 +112,33 @@ export const edges = sqliteTable(
     index('edges_source_idx').on(t.sourceId),
     index('edges_target_idx').on(t.targetId),
     check('edges_relation_ck', oneOf(t.relation, RELATION_TYPES)),
+    check('edges_confidence_ck', oneOf(t.confidence, EDGE_CONFIDENCE_LEVELS)),
+  ],
+);
+
+/** Edge provenance: one row per (edge, scan) that reported the relation, i.e. had a finding naming that parent. */
+export const edgeObservations = sqliteTable(
+  'edge_observations',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    edgeId: text('edge_id')
+      .notNull()
+      .references(() => edges.id),
+    scanId: text('scan_id')
+      .notNull()
+      .references(() => scans.id),
+    /** Copied from scans.tool, as on observations. */
+    tool: text('tool').notNull(),
+    /** Reserved for per-tool edge details; `{}` for now. */
+    data: text('data', { mode: 'json' }).$type<Record<string, unknown>>().notNull(),
+    /** The scan's finished_at. */
+    observedAt: text('observed_at').notNull(),
+  },
+  (t) => [
+    uniqueIndex('edge_observations_edge_scan_uq').on(t.edgeId, t.scanId),
+    index('edge_observations_edge_idx').on(t.edgeId),
+    index('edge_observations_scan_idx').on(t.scanId),
+    index('edge_observations_observed_at_idx').on(t.observedAt),
   ],
 );
 

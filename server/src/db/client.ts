@@ -15,7 +15,7 @@ const MIGRATIONS_DIR = fileURLToPath(new URL('../../drizzle', import.meta.url));
  * Migrations that can't carry existing rows forward. Until there is real engagement data, schema changes
  * don't get backfills (CLAUDE.md): a database with observations from before one of these is refused.
  */
-const BREAKING_MIGRATIONS: ReadonlySet<string> = new Set(['0001_observation_role']);
+const BREAKING_MIGRATIONS: ReadonlySet<string> = new Set(['0001_observation_role', '0003_edge_observations']);
 
 const journalSchema = z.object({ entries: z.array(z.object({ tag: z.string(), when: z.number() })) });
 

@@ -151,6 +151,51 @@ export function schema0001Db(): string {
   return path;
 }
 
+/** A copy of the first `count` migrations, as an older checkout had them. */
+function migrationsUpTo(count: number): string {
+  const source = join(REPO_ROOT, 'server/drizzle');
+  const migrations = join(tempDir(), 'drizzle');
+  mkdirSync(join(migrations, 'meta'), { recursive: true });
+  const journal = JSON.parse(readFileSync(join(source, 'meta/_journal.json'), 'utf8')) as { entries: { tag: string }[] };
+  const entries = journal.entries.slice(0, count);
+  for (const { tag } of entries) copyFileSync(join(source, `${tag}.sql`), join(migrations, `${tag}.sql`));
+  writeFileSync(join(migrations, 'meta/_journal.json'), JSON.stringify({ ...journal, entries }));
+  return migrations;
+}
+
+/** Applies the first `count` migrations to the database at `path` directly, past openDb's guard. */
+export function migrateTo(path: string, count: number): void {
+  const sqlite = new Database(path);
+  migrate(drizzle(sqlite), { migrationsFolder: migrationsUpTo(count) });
+  sqlite.close();
+}
+
+/** A database migrated only up to 0002_scope (before edge provenance); with `withData`, one scan, node and observation. */
+export function schema0002Db(withData: boolean): string {
+  const path = join(tempDir(), 'old.db');
+  migrateTo(path, 3);
+  if (!withData) return path;
+  const sqlite = new Database(path);
+  const t = '2026-10-29T10:00:00.000Z';
+  sqlite
+    .prepare(
+      `INSERT INTO scans (id, tool, target, command, status, errors, started_at, finished_at, ingested_at, file_hash, raw)
+       VALUES ('s1', 'subfinder', 'example.com', 'subfinder', 'success', '[]', @t, @t, @t, 'h1', '{}')`,
+    )
+    .run({ t });
+  sqlite
+    .prepare(`INSERT INTO nodes (id, type, value, label, first_seen, last_seen) VALUES ('n1', 'domain', 'example.com', 'example.com', @t, @t)`)
+    .run({ t });
+  sqlite
+    .prepare(
+      `INSERT INTO observations (node_id, scan_id, tool, role, severity, data, observed_at)
+       VALUES ('n1', 's1', 'subfinder', 'finding', NULL, '{}', @t)`,
+    )
+    .run({ t });
+  sqlite.close();
+  return path;
+}
+
 export function counts(db: Db) {
   const count = (table: string) =>
     (db.$client.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get() as { n: number }).n;
@@ -173,6 +218,10 @@ export function snapshot(db: Db) {
     observations: all(
       `SELECT o.node_id, s.file_hash, o.tool, o.role, o.severity, o.data, o.observed_at
        FROM observations o JOIN scans s ON s.id = o.scan_id ORDER BY o.node_id, s.file_hash`,
+    ),
+    edgeObservations: all(
+      `SELECT o.edge_id, s.file_hash, o.tool, o.data, o.observed_at
+       FROM edge_observations o JOIN scans s ON s.id = o.scan_id ORDER BY o.edge_id, s.file_hash`,
     ),
   };
 }
