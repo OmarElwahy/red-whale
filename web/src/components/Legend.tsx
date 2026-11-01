@@ -9,6 +9,8 @@ import {
   AGGREGATE_BORDER,
   COLORS,
   CONFIDENCE_BORDER,
+  CORROBORATED_EDGE,
+  EDGE_WIDTH,
   IGNORED_OPACITY,
   MUTED_OPACITY,
   OUT_OF_SCOPE_HATCH,
@@ -100,6 +102,15 @@ function Swatch({
   );
 }
 
+/** A short edge at the canvas width. */
+function EdgeSwatch({ width }: { width: number }) {
+  return (
+    <svg width="28" height="12" viewBox="0 0 28 12" aria-hidden className="shrink-0">
+      <line x1="2" y1="6" x2="26" y2="6" stroke={COLORS.edge} strokeWidth={width} strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function Row({ swatch, children }: { swatch: ReactNode; children: ReactNode }) {
   return (
     <li className="flex items-center gap-2">
@@ -181,6 +192,10 @@ export function Legend({ className, onClose }: { className?: string; onClose: ()
           <Row swatch={<Swatch opacity={IGNORED_OPACITY} />}>ignored</Row>
           <Row swatch={<Swatch opacity={SEARCH_PATH_OPACITY} />}>search path</Row>
           <Row swatch={<Swatch opacity={MUTED_OPACITY} />}>muted (low-risk)</Row>
+        </Section>
+        <Section title="Edges (click for provenance)">
+          <Row swatch={<EdgeSwatch width={EDGE_WIDTH} />}>reported by 1 tool</Row>
+          <Row swatch={<EdgeSwatch width={CORROBORATED_EDGE.width} />}>reported by 2+ tools (corroborated)</Row>
         </Section>
       </CardContent>
     </Card>

@@ -28,6 +28,7 @@ export const queryKeys = {
     ['api', 'graph', graphSearchParams(filters).toString(), JSON.stringify({ expand, neighbors, expandAll })] as const,
   path: (nodeId: string, filters: GraphFilters) => ['api', 'path', nodeId, graphSearchParams(filters).toString()] as const,
   node: (id: string) => ['api', 'node', id] as const,
+  edge: (id: string) => ['api', 'edge', id] as const,
   /** One page of the table (GET /api/nodes). */
   nodes: (filters: GraphFilters, page: number, sort: string) =>
     ['api', 'nodes', graphSearchParams(filters).toString(), page, sort] as const,

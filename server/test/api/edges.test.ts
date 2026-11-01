@@ -115,6 +115,7 @@ describe('graph edges', () => {
         target: SUB_GROUP,
         relation: 'has_subdomain',
         kind: 'group',
+        edgeId: null,
         sourceCount: null,
         confidence: null,
         tools: ['amass', 'crtsh', 'subfinder'],
@@ -131,20 +132,22 @@ describe('graph edges', () => {
     expect(g.edges.find((e) => e.kind === 'group')).toMatchObject({ tools: ['amass', 'subfinder'], edgeCount: 3 });
   });
 
-  test('real edges carry their own source count and confidence; member edges carry nothing', async () => {
+  test('real edges carry their own source count and confidence; member edges carry their real edge’s', async () => {
     const api = await corroborated();
     const g = body(
       await api.send('POST', '/api/graph/view', { expand: [{ id: SUB_GROUP, pages: 1, pins: [] }] }),
       200,
       graphResponseSchema,
     );
-    const member = g.edges.find((e) => e.kind === 'member');
-    expect(member).toMatchObject({ sourceCount: null, confidence: null, tools: null, edgeCount: null });
+    const member = g.edges.find((e) => e.kind === 'member' && e.target === API);
+    expect(member).toMatchObject({ edgeId: API_EDGE, sourceCount: 2, confidence: 'corroborated', tools: null, edgeCount: null });
+    const single = g.edges.find((e) => e.kind === 'member' && e.target === nodeId('subdomain', 'dev.example.com'));
+    expect(single).toMatchObject({ sourceCount: 1, confidence: 'discovered' });
 
     // A single child is drawn with its real edge: amass alone, as the only tool reporting api.
     const only = body(await api.get('/api/graph?tool=amass'), 200, graphResponseSchema);
     expect(only.edges).toEqual([
-      expect.objectContaining({ id: API_EDGE, kind: 'relation', sourceCount: 2, confidence: 'corroborated', tools: null }),
+      expect.objectContaining({ id: API_EDGE, kind: 'relation', edgeId: API_EDGE, sourceCount: 2, confidence: 'corroborated', tools: null }),
     ]);
   });
 });

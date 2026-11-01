@@ -6,6 +6,8 @@ import type { Position } from '@/api/hooks';
 export interface GraphHandlers {
   /** A node was clicked, or the background (null). */
   onSelect: (id: string | null) => void;
+  /** An edge was clicked (its canvas ID): a real one, a group → member one (its real edge), or parent → group. */
+  onSelectEdge: (id: string) => void;
   /** A group (expand or collapse it) or a "more" node (load the next page) was double-clicked. */
   onDoubleTap: (id: string) => void;
   /** Right-click on a node, at its rendered position inside the container. */
@@ -18,6 +20,9 @@ export interface GraphHandlers {
 }
 
 const DOUBLE_TAP = 'node[kind = "aggregate"], node[kind = "more"]';
+
+/** Every edge but group → "more": real ones and group → member show a real edge, parent → group the members' tools. */
+export const CLICKABLE_EDGES = 'edge[kind != "more"]';
 
 /** "12 subdomains: 2 critical, 1 high below", or just the label when nothing serious is below. */
 export function groupTitle(node: NodeSingular): string {
@@ -33,6 +38,9 @@ export function groupTitle(node: NodeSingular): string {
 export function bindGraphEvents(cy: Core, handlers: () => GraphHandlers): () => void {
   const onTapNode = (e: EventObject) => {
     handlers().onSelect((e.target as NodeSingular).id());
+  };
+  const onTapEdge = (e: EventObject) => {
+    handlers().onSelectEdge((e.target as NodeSingular).id());
   };
   const onTapCanvas = (e: EventObject) => {
     if (e.target === cy) handlers().onSelect(null);
@@ -55,6 +63,7 @@ export function bindGraphEvents(cy: Core, handlers: () => GraphHandlers): () => 
   };
 
   cy.on('tap', 'node', onTapNode);
+  cy.on('tap', CLICKABLE_EDGES, onTapEdge);
   cy.on('tap', onTapCanvas);
   cy.on('dbltap', DOUBLE_TAP, onDoubleTap);
   cy.on('cxttap', 'node', onRightClick);
@@ -62,6 +71,7 @@ export function bindGraphEvents(cy: Core, handlers: () => GraphHandlers): () => 
   cy.on('mouseout', 'node[kind = "aggregate"]', onOut);
   return () => {
     cy.off('tap', 'node', onTapNode);
+    cy.off('tap', CLICKABLE_EDGES, onTapEdge);
     cy.off('tap', onTapCanvas);
     cy.off('dbltap', DOUBLE_TAP, onDoubleTap);
     cy.off('cxttap', 'node', onRightClick);
@@ -70,7 +80,7 @@ export function bindGraphEvents(cy: Core, handlers: () => GraphHandlers): () => 
   };
 }
 
-/** Selects exactly this node (or nothing), without emitting a tap. */
+/** Selects exactly this node or edge (or nothing), without emitting a tap. */
 export function syncSelection(cy: Core, id: string | null): void {
   cy.batch(() => {
     cy.$(':selected').filter((el) => el.id() !== id).unselect();

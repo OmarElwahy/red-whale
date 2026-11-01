@@ -275,7 +275,12 @@ export const viewEdgeSchema = z.strictObject({
   /** Null on `member` and `more` edges. */
   relation: z.enum(RELATION_TYPES).nullable(),
   kind: z.enum(VIEW_EDGE_KINDS),
-  /** The real edge's provenance, on `relation` and `neighbor` edges; null on the others. */
+  /**
+   * The real edge this one stands for: itself on `relation` and `neighbor` edges, parent → member on `member` edges
+   * (GET /edges/:id takes it); null on `group` and `more` edges.
+   */
+  edgeId: z.string().nullable(),
+  /** That real edge's provenance (same nulls as `edgeId`). */
   sourceCount: edgeSourceCount.nullable(),
   confidence: edgeConfidence.nullable(),
   /**

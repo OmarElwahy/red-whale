@@ -170,3 +170,20 @@ describe('UI state', () => {
     expect(ui().bottomPanel).toBeNull();
   });
 });
+
+describe('edge selection', () => {
+  beforeEach(() => {
+    useUi.setState(initialUiState);
+  });
+
+  test('selecting an edge clears the node, and selecting a node (or nothing) clears the edge', () => {
+    ui().select('n1');
+    ui().selectEdge('e1');
+    expect([ui().selectedId, ui().selectedEdgeId]).toEqual([null, 'e1']);
+    ui().select('n2');
+    expect([ui().selectedId, ui().selectedEdgeId]).toEqual(['n2', null]);
+    ui().selectEdge('e2');
+    ui().select(null);
+    expect([ui().selectedId, ui().selectedEdgeId]).toEqual([null, null]);
+  });
+});

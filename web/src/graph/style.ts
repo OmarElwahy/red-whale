@@ -48,6 +48,12 @@ export const CONFIDENCE_BORDER: Record<Confidence, { style: 'dashed' | 'solid'; 
 
 /** Groups have no confidence of their own; a double border marks them. An open group's is fainter. */
 export const AGGREGATE_BORDER = { style: 'double', width: 4 } as const;
+
+/** Edge widths: 1.5 px; one standing for a real edge that 2+ distinct tools reported (corroborated) 2.5 px. */
+export const EDGE_WIDTH = 1.5;
+export const CORROBORATED_EDGE = { minSources: 2, width: 2.5 } as const;
+/** Group → member edges are quieter: 1 px, 2 px when corroborated. */
+export const MEMBER_EDGE = { width: 1, corroboratedWidth: 2 } as const;
 export const OPEN_GROUP_OPACITY = { border: 0.5, fill: 0.7 } as const;
 
 export const COLORS = {
@@ -330,7 +336,7 @@ export function graphStylesheet(): StylesheetJson {
     {
       selector: 'edge',
       style: {
-        width: 1.5,
+        width: EDGE_WIDTH,
         'line-color': COLORS.edge,
         'target-arrow-color': COLORS.edge,
         'target-arrow-shape': 'triangle',
@@ -347,10 +353,25 @@ export function graphStylesheet(): StylesheetJson {
         'text-background-shape': 'roundrectangle',
       },
     },
+    // Reported by 2+ tools: slightly thicker. Only edges standing for one real edge carry a sourceCount (a parent →
+    // group edge's tools are a union, which corroborates no single relation).
+    {
+      selector: `edge[sourceCount >= ${String(CORROBORATED_EDGE.minSources)}]`,
+      style: { width: CORROBORATED_EDGE.width },
+    },
     // Group → member: plain, quieter; the relation is on the parent → group edge.
     {
       selector: 'edge[kind = "member"]',
-      style: { width: 1, 'line-color': COLORS.memberEdge, 'target-arrow-color': COLORS.memberEdge, 'arrow-scale': 0.6 },
+      style: {
+        width: MEMBER_EDGE.width,
+        'line-color': COLORS.memberEdge,
+        'target-arrow-color': COLORS.memberEdge,
+        'arrow-scale': 0.6,
+      },
+    },
+    {
+      selector: `edge[kind = "member"][sourceCount >= ${String(CORROBORATED_EDGE.minSources)}]`,
+      style: { width: MEMBER_EDGE.corroboratedWidth },
     },
     {
       selector: 'edge[kind = "more"]',

@@ -1,4 +1,4 @@
-import type { AggregateNode, GraphNode, GraphResponse, ViewNode } from '@redwhale/shared';
+import type { AggregateNode, GraphNode, GraphResponse, ViewEdge, ViewNode } from '@redwhale/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { ApiError, ResponseShapeError } from '@/api/client';
@@ -40,6 +40,7 @@ import { menuItems, safeHttpUrl, type MenuAction } from '@/menu/items';
 import { HighlightsView } from '@/highlights/HighlightsView';
 import { scopeIsEmpty, useScopeRules, useScopeSettings } from '@/api/scope';
 import { ScopeBanner, ScopePanel } from '@/scope/ScopePanel';
+import { EdgePanel, GroupEdgePanel } from '@/panel/EdgePanel';
 import { SidePanel } from '@/panel/SidePanel';
 import { useLive } from '@/state/live';
 import { useUi, type BottomPanel } from '@/state/ui';
@@ -208,6 +209,39 @@ function usePositionSaver(): { saver: RefObject<PositionSaver | null>; error: st
   return { saver, error };
 }
 
+/**
+ * The selected edge's panel: a parent → group edge from the view (gone with its group); a real edge from its detail,
+ * so its panel stays when the edge leaves the canvas.
+ */
+function SelectedEdgePanel({
+  id,
+  edge,
+  ix,
+  onPickNode,
+  onClose,
+}: {
+  id: string;
+  edge: ViewEdge | undefined;
+  ix: ViewIndex;
+  onPickNode: (id: string) => void;
+  onClose: () => void;
+}) {
+  if (edge?.kind === 'group') {
+    const parent = ix.byId.get(edge.source);
+    return (
+      <GroupEdgePanel
+        edge={edge}
+        parent={parent ? { id: parent.id, label: parent.label } : undefined}
+        groupLabel={ix.byId.get(edge.target)?.label ?? 'group'}
+        onPickNode={onPickNode}
+        onClose={onClose}
+      />
+    );
+  }
+  if (id.startsWith('edge:')) return null;
+  return <EdgePanel key={id} edgeId={id} onPickNode={onPickNode} onClose={onClose} />;
+}
+
 export function App() {
   const filters = useView((s) => s.filters);
   const mute = useView((s) => s.mute);
@@ -224,6 +258,7 @@ export function App() {
   const graphRef = useRef<GraphHandle>(null);
   const queryClient = useQueryClient();
   const selectedId = useUi((s) => s.selectedId);
+  const selectedEdgeId = useUi((s) => s.selectedEdgeId);
   const focusId = useUi((s) => s.focusId);
   const expanded = useUi((s) => s.expanded);
   const neighbors = useUi((s) => s.neighbors);
@@ -237,7 +272,7 @@ export function App() {
   const centerOn = useUi((s) => s.centerOn);
   const jumpPending = useUi((s) => s.jumpPending);
   const ui = useUi.getState();
-  const { select, focus, openMenu, closeMenu, center, clearJump } = ui;
+  const { select, selectEdge, focus, openMenu, closeMenu, center, clearJump } = ui;
 
   // What the canvas shows directly goes with every request (`keep`), so a live update that folds it into a new
   // group gets that group opened instead.
@@ -246,6 +281,14 @@ export function App() {
   const view = graph.data;
   const ix = useMemo(() => (view ? indexView(view) : null), [view]);
   const elements = useMemo(() => (view ? toElements(view) : []), [view]);
+  const edgeById = useMemo(() => new Map(view?.edges.map((e) => [e.id, e]) ?? []), [view]);
+  // The selected edge on the canvas: a parent → group edge by its own ID; a real edge drawn directly, or else as a
+  // group → member edge standing for it.
+  const canvasEdgeId = useMemo(() => {
+    if (selectedEdgeId === null) return null;
+    if (edgeById.has(selectedEdgeId)) return selectedEdgeId;
+    return view?.edges.find((e) => e.edgeId === selectedEdgeId)?.id ?? null;
+  }, [selectedEdgeId, edgeById, view]);
   useEffect(() => {
     if (view) keep.current = keepFrom(view);
   }, [view]);
@@ -390,6 +433,12 @@ export function App() {
   };
 
   const handlers: GraphHandlers = {
+    onSelectEdge: (id) => {
+      const e = edgeById.get(id);
+      if (!e) return;
+      // A group → member edge stands for its real edge: that's what the panel shows (and keeps if it's hidden).
+      selectEdge(e.kind === 'group' ? e.id : (e.edgeId ?? e.id));
+    },
     onSelect: (id) => {
       // A "more" node stands for its group.
       const more = id !== null ? ix?.byId.get(id) : undefined;
@@ -413,6 +462,14 @@ export function App() {
   const pick = (id: string) => {
     select(id);
     void showOnGraph(id);
+  };
+
+  /** An edge panel's end: a group has no path to open, so it's selected and centered; a node is picked like a row. */
+  const pickNode = (id: string) => {
+    if (id.startsWith('agg:')) {
+      select(id);
+      center(id);
+    } else pick(id);
   };
 
   const shownNode = selectedId === null ? undefined : ix?.byId.get(selectedId);
@@ -530,7 +587,7 @@ export function App() {
               <CytoscapeGraph
                 ref={graphRef}
                 elements={elements}
-                selectedId={selectedId}
+                selectedId={selectedId ?? canvasEdgeId}
                 focusId={focusId}
                 hops={hops}
                 mute={mute}
@@ -611,6 +668,17 @@ export function App() {
             </section>
           )}
         </div>
+        {selectedEdgeId !== null && ix && (
+          <SelectedEdgePanel
+            id={selectedEdgeId}
+            edge={edgeById.get(selectedEdgeId)}
+            ix={ix}
+            onPickNode={pickNode}
+            onClose={() => {
+              select(null);
+            }}
+          />
+        )}
         {selected && ix && (
           <SidePanel
             target={selected}

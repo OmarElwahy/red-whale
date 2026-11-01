@@ -78,6 +78,10 @@ export interface EdgeData {
   kind: ViewEdgeKind;
   /** The relation on `relation`, `group` and `neighbor` edges; '' on group → member and "more" edges. */
   label: string;
+  /** The real edge it stands for (relation, neighbor, member edges), for its panel; null on group and "more" edges. */
+  edgeId: string | null;
+  /** Distinct tools behind that real edge (null on the others); 2+ draws it thicker (graph/style.ts). */
+  sourceCount: number | null;
 }
 
 export interface NodeElement {
@@ -88,6 +92,8 @@ export interface NodeElement {
 export interface EdgeElement {
   group: 'edges';
   data: EdgeData;
+  /** A "more" edge has nothing to show, so a click doesn't select it. */
+  selectable: boolean;
 }
 export type Element = NodeElement | EdgeElement;
 
@@ -152,7 +158,10 @@ function edgeElement(e: ViewEdge): EdgeElement {
       relation: e.relation,
       kind: e.kind,
       label: labelled ? (e.relation ?? '') : '',
+      edgeId: e.edgeId,
+      sourceCount: e.sourceCount,
     },
+    selectable: e.kind !== 'more',
   };
 }
 

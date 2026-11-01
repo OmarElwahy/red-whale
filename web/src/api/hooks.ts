@@ -1,5 +1,6 @@
 // TanStack Query hooks over the API client.
 import {
+  edgeDetailResponseSchema,
   graphPathResponseSchema,
   graphResponseSchema,
   highlightsResponseSchema,
@@ -7,6 +8,7 @@ import {
   nodeDetailResponseSchema,
   nodeListResponseSchema,
   statsResponseSchema,
+  type EdgeDetailResponse,
   type GraphFilters,
   type GraphNode,
   type GraphPathResponse,
@@ -137,6 +139,15 @@ export function useNodeDetail(id: string | null): UseQueryResult<NodeDetailRespo
   return useQuery({
     queryKey: queryKeys.node(id ?? ''),
     queryFn: ({ signal }) => getJson(path('/api/nodes', id ?? ''), nodeDetailResponseSchema, { signal }),
+    enabled: id !== null,
+  });
+}
+
+/** Edge detail + provenance (GET /api/edges/:id). Only real edges have one; pass null otherwise. */
+export function useEdgeDetail(id: string | null): UseQueryResult<EdgeDetailResponse> {
+  return useQuery({
+    queryKey: queryKeys.edge(id ?? ''),
+    queryFn: ({ signal }) => getJson(path('/api/edges', id ?? ''), edgeDetailResponseSchema, { signal }),
     enabled: id !== null,
   });
 }

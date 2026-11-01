@@ -18,7 +18,14 @@ function setup() {
         aggregate({ id: AGG, expanded: true, shown: 1, remaining: 411, risk: { critical: 2, high: 1 } }),
         more(AGG, 411),
       ],
-      edges: [edge('a', 'b'), edge('a', 'c'), edge('c', 'd'), edge('a', AGG, { kind: 'group' }), edge(AGG, `more:${AGG}`, { kind: 'more', relation: null })],
+      edges: [
+        edge('a', 'b'),
+        edge('a', 'c'),
+        edge('c', 'd'),
+        edge('a', AGG, { kind: 'group' }),
+        edge(AGG, 'b', { id: 'member-b', kind: 'member', relation: null, edgeId: 'a->b' }),
+        edge(AGG, `more:${AGG}`, { kind: 'more', relation: null }),
+      ],
     }),
   );
   return cy;
@@ -27,6 +34,7 @@ function setup() {
 function spies() {
   return {
     onSelect: vi.fn<GraphHandlers['onSelect']>(),
+    onSelectEdge: vi.fn<GraphHandlers['onSelectEdge']>(),
     onDoubleTap: vi.fn<GraphHandlers['onDoubleTap']>(),
     onContextMenu: vi.fn<GraphHandlers['onContextMenu']>(),
     onMoved: vi.fn<GraphHandlers['onMoved']>(),
@@ -50,6 +58,16 @@ describe('bindGraphEvents', () => {
     cy.getElementById('b').emit('tap');
     cy.emit('tap');
     expect(h.onSelect.mock.calls).toEqual([['b'], [null]]);
+  });
+
+  test('clicking a real, group or member edge reports it; a "more" edge is not clickable', () => {
+    cy.getElementById('a->b').emit('tap');
+    cy.getElementById(`a->${AGG}`).emit('tap');
+    cy.getElementById('member-b').emit('tap');
+    cy.getElementById(`${AGG}->more:${AGG}`).emit('tap');
+    expect(h.onSelectEdge.mock.calls).toEqual([['a->b'], [`a->${AGG}`], ['member-b']]);
+    expect(h.onSelect).not.toHaveBeenCalled();
+    expect(cy.getElementById(`${AGG}->more:${AGG}`).selectable()).toBe(false);
   });
 
   test('double-clicking a group or a "more" node reports it', () => {

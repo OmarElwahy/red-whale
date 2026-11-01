@@ -14,8 +14,8 @@ corroborated edges). The approved plan is summarized under "Decisions" below.
 | 1 | `edge_observations` table + migration `0003_edge_observations` + ingest writing it, tests | done |
 | 2 | Derived edge fields (first/last seen, source_count, confidence) + order/idempotency tests | done |
 | 3 | API: `GET /edges/:id`, edge fields on `/nodes/:id` and `/graph`, group-edge tool union, export | done |
-| 4 | UI: edge side panel, thicker corroborated edges | in progress |
-| 5 | Mock data + coverage test (edge confidence) | todo |
+| 4 | UI: edge side panel, thicker corroborated edges | done |
+| 5 | Mock data + coverage test (edge confidence) | in progress |
 | 6 | Docs: architecture.md §4 §5 §6 §8 §9, decisions log, handoff.md | todo |
 
 ## Decisions (made along the way; user may overrule)
@@ -64,13 +64,26 @@ corroborated edges). The approved plan is summarized under "Decisions" below.
 - New `server/src/routes/edges.ts` (`edgeDetail`, `edgeRoutes`), registered in app.ts. Tests:
   server/test/api/edges.test.ts (detail, 404, 403, node-detail fields, group union incl. a filter, export).
 
+## Notes from step 4
+
+- **Changed from the plan: group → member edges ARE clickable and DO show provenance.** In both mocks the
+  corroborated `has_subdomain` edges are inside groups (drawn group → member), so with member edges unclickable no
+  corroborated edge could be seen in the UI. A member edge stands for exactly one real edge, so `ViewEdge` gained
+  `edgeId` (the real edge: itself on relation/neighbor, parent → member on member; null on group/more) and member
+  edges carry that edge's `sourceCount`/`confidence`. Only "more" edges are unclickable (`selectable: false`).
+- Widths (`web/src/graph/style.ts`): `EDGE_WIDTH` 1.5, `CORROBORATED_EDGE` 2.5 (sourceCount ≥ 2, data selector);
+  member edges `MEMBER_EDGE` 1 → 2 when corroborated. Parent → group edges never thicker. Selected edge style
+  unchanged (`edge:selected`, already existed). Legend: new "Edges" section.
+- State: `selectedEdgeId` + `selectEdge` in ui.ts (exclusive with `selectedId`; background tap clears both). The
+  store holds the **real** edge ID (or the `edge:agg:…` view ID for a group edge); App resolves the canvas element
+  (`canvasEdgeId`) for highlighting and renders `SelectedEdgePanel` → `EdgePanel` (fetches `/api/edges/:id`, stays
+  when the edge leaves the canvas) or `GroupEdgePanel` (from the view; gone with its group).
+- Ends in the panel: a node is picked like a table row (`pick`: select + open path); a group end is selected + centered.
+- Not run in a browser in this session (manual check for the user).
+
 ## Next action
 
-Step 4 (UI). `web/src/state/ui.ts`: add `selectedEdgeId` + `selectEdge(id)` (mutually exclusive with `selectedId`;
-Esc/background clears both). `web/src/graph/events.ts`: `tap` on `edge[kind = "relation"], edge[kind = "neighbor"],
-edge[kind = "group"]` → selectEdge. `web/src/graph/elements.ts`: pass sourceCount/tools/edgeCount into edge data
-and a `corroborated` class when sourceCount ≥ 2; `web/src/graph/style.ts`: thicker width for `edge.corroborated`
-+ a selected-edge style. `web/src/api/hooks.ts`: `useEdgeDetail(id)` (GET /api/edges/:id, edgeDetailResponseSchema).
-New `web/src/panel/EdgePanel.tsx` (relation, from → to clickable = select node, first/last seen, confidence,
-provenance table) and a group-edge variant from the view edge; render it where SidePanel is chosen (find in App.tsx).
-Legend row "thicker edge = 2+ tools". Tests in web/test (panel, elements/style, ui-state).
+Step 5: confirm both mocks have ≥1 corroborated and ≥1 single-source edge (subfinder + amass both report
+`has_subdomain`). Extend server/test/showcase.test.ts ("covers every confidence") with
+`SELECT DISTINCT confidence FROM edges` = `EDGE_CONFIDENCE_LEVELS`, and add the same check to
+server/test/mock.test.ts for the large mock. Only touch server/src/mock/*.ts if a test shows a gap.

@@ -76,9 +76,25 @@ describe('toElements', () => {
       ],
     });
     expect(els.map((e) => e.data)).toEqual([
-      { id: 'a->b', source: 'a', target: 'b', relation: 'resolves_to', kind: 'relation', label: 'resolves_to' },
-      { id: 'a->g', source: 'a', target: 'g', relation: 'has_subdomain', kind: 'group', label: 'has_subdomain' },
-      { id: 'g->m', source: 'g', target: 'm', relation: null, kind: 'member', label: '' },
+      { id: 'a->b', source: 'a', target: 'b', relation: 'resolves_to', kind: 'relation', label: 'resolves_to', edgeId: 'a->b', sourceCount: 1 },
+      { id: 'a->g', source: 'a', target: 'g', relation: 'has_subdomain', kind: 'group', label: 'has_subdomain', edgeId: null, sourceCount: null },
+      { id: 'g->m', source: 'g', target: 'm', relation: null, kind: 'member', label: '', edgeId: 'g->m', sourceCount: 1 },
+    ]);
+  });
+
+  test('every edge but "more" is selectable; edges carry the real edge they stand for and its source count', () => {
+    const els = toElements({
+      nodes: [],
+      edges: [
+        edge('a', 'b', { sourceCount: 2, confidence: 'corroborated' }),
+        edge('g', 'm', { kind: 'member', relation: null, edgeId: 'real-a-m', sourceCount: 3 }),
+        edge('g', 'more:g', { kind: 'more', relation: null }),
+      ],
+    });
+    expect(els.map((e) => (e.group === 'edges' ? [e.data.edgeId, e.data.sourceCount, e.selectable] : null))).toEqual([
+      ['a->b', 2, true],
+      ['real-a-m', 3, true],
+      [null, null, false],
     ]);
   });
 });

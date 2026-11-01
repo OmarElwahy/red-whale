@@ -347,11 +347,11 @@ interface Rendered {
 }
 
 /** The provenance fields of a view edge that stands for no single real edge. */
-const NO_PROVENANCE = { sourceCount: null, confidence: null, tools: null, edgeCount: null } as const;
+const NO_PROVENANCE = { edgeId: null, sourceCount: null, confidence: null, tools: null, edgeCount: null } as const;
 
 /** A real edge drawn on the canvas: its own provenance, no group fields. */
 function realEdge(e: GraphEdge, kind: 'relation' | 'neighbor'): ViewEdge {
-  return { ...e, kind, tools: null, edgeCount: null };
+  return { ...e, kind, edgeId: e.id, tools: null, edgeCount: null };
 }
 
 /** Every tool that reported any of these edges, sorted. */
@@ -404,8 +404,20 @@ function render(
         edgeCount: g.set.edgeOf.size,
       });
     }
+    // Group → member stands for the real parent → member edge, so it carries that edge's provenance.
     for (const m of g.members) {
-      addEdge({ ...NO_PROVENANCE, id: `member:${id}:${m}`, source: id, target: m, relation: null, kind: 'member' });
+      const real = g.set.edgeOf.get(m);
+      addEdge({
+        ...NO_PROVENANCE,
+        id: `member:${id}:${m}`,
+        source: id,
+        target: m,
+        relation: null,
+        kind: 'member',
+        edgeId: real?.id ?? null,
+        sourceCount: real?.sourceCount ?? null,
+        confidence: real?.confidence ?? null,
+      });
     }
     if (g.open && remaining > 0) {
       const moreId = `more:${id}`;

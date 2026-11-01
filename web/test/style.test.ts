@@ -6,6 +6,9 @@ import { toElements } from '../src/graph/elements';
 import { GLYPH_BY_TYPE, INK_BY_SEVERITY, badgeImage, contrast, glyphImage, glyphSvg, riskText } from '../src/graph/icons';
 import {
   AGGREGATE_BORDER,
+  CORROBORATED_EDGE,
+  EDGE_WIDTH,
+  MEMBER_EDGE,
   COLORS,
   CONFIDENCE_BORDER,
   ICON_HIDDEN,
@@ -20,7 +23,7 @@ import {
   SEVERITY_COLOR,
   SEVERITY_KEYS,
 } from '../src/graph/style';
-import { aggregate, headless, more, node } from './fixtures';
+import { aggregate, edge, headless, more, node } from './fixtures';
 
 /** Cytoscape reports colors as `rgb(r,g,b)`. */
 function rgb(hex: string): string {
@@ -228,5 +231,31 @@ describe('computed styles on a Cytoscape instance', () => {
     const get = put(node('s', n));
     get('s').select();
     expect(get('s').style('background-color')).toBe(rgb(SEVERITY_COLOR.medium));
+  });
+});
+
+describe('edge widths', () => {
+  test('an edge 2+ tools reported is drawn thicker; a single-source or group edge is not', () => {
+    const cy = headless();
+    cy.add(
+      toElements({
+        nodes: [node('a'), node('b'), node('c'), aggregate({ id: 'agg:a:has_subdomain:subdomain' })],
+        edges: [
+          edge('a', 'b', { sourceCount: 2, confidence: 'corroborated' }),
+          edge('a', 'c'),
+          edge('a', 'agg:a:has_subdomain:subdomain', { kind: 'group', tools: ['amass', 'subfinder'], edgeCount: 2 }),
+          edge('agg:a:has_subdomain:subdomain', 'b', { id: 'm1', kind: 'member', relation: null, sourceCount: 2 }),
+          edge('agg:a:has_subdomain:subdomain', 'c', { id: 'm2', kind: 'member', relation: null }),
+        ],
+      }),
+    );
+    const width = (id: string) => cy.getElementById(id).style('width') as string;
+    expect(width('a->b')).toBe(px(CORROBORATED_EDGE.width));
+    expect(width('a->c')).toBe(px(EDGE_WIDTH));
+    expect(width('a->agg:a:has_subdomain:subdomain')).toBe(px(EDGE_WIDTH));
+    expect(width('m1')).toBe(px(MEMBER_EDGE.corroboratedWidth));
+    expect(width('m2')).toBe(px(MEMBER_EDGE.width));
+    expect(CORROBORATED_EDGE.width).toBeGreaterThan(EDGE_WIDTH);
+    cy.destroy();
   });
 });

@@ -110,7 +110,7 @@ describe('the rule', () => {
     const [only] = subs(1) as [GraphNode];
     const r = view(graph([domain, only], fanOut([only])));
     expect(groups(r)).toEqual([]);
-    expect(r.edges).toEqual([{ ...edge(domain, 'has_subdomain', only), kind: 'relation', tools: null, edgeCount: null }]);
+    expect(r.edges).toEqual([{ ...edge(domain, 'has_subdomain', only), kind: 'relation', edgeId: edge(domain, 'has_subdomain', only).id, tools: null, edgeCount: null }]);
   });
 
   test('two or more children become one collapsed group, carrying the relation', () => {
@@ -135,6 +135,7 @@ describe('the rule', () => {
         target: SUBS,
         relation: 'has_subdomain',
         kind: 'group',
+        edgeId: null,
         sourceCount: null,
         confidence: null,
         tools: [],

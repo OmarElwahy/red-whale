@@ -1,9 +1,11 @@
-// Every scan that reported the node (CLAUDE.md rule 4). A row opens to show that tool's raw data.
+// Every scan that reported the node or edge (CLAUDE.md rule 4). A row opens to show that tool's raw data.
 import { Fragment, useState } from 'react';
 import type { NodeDetailResponse } from '@/api/hooks';
 import { formatTime } from './format';
 
-type Observation = NodeDetailResponse['observations'][number];
+/** A node's observation, or an edge's (which has no role or severity). */
+type Observation = Pick<NodeDetailResponse['observations'][number], 'scanId' | 'tool' | 'command' | 'data' | 'observedAt'> &
+  Partial<Pick<NodeDetailResponse['observations'][number], 'role' | 'severity'>>;
 
 export function ProvenanceTable({ observations }: { observations: readonly Observation[] }) {
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());

@@ -28,6 +28,8 @@ export interface Collapsing {
 
 export interface UiState {
   selectedId: string | null;
+  /** A selected edge (a real one by its ID, or a parent → group edge by its view ID); never set with `selectedId`. */
+  selectedEdgeId: string | null;
   focusId: string | null;
   /**
    * Open groups, oldest first (the server refuses the newest first when the element budget is short). `pins` are
@@ -58,7 +60,10 @@ export interface UiState {
   /** Bumped by the Re-layout button; the canvas re-runs the tree when it changes. */
   relayoutSeq: number;
 
+  /** Selects a node (or nothing); clears any selected edge. */
   select: (id: string | null) => void;
+  /** Selects an edge; clears the selected node. */
+  selectEdge: (id: string) => void;
   focus: (id: string | null) => void;
   /** Opens a collapsed group (first page), or turns a group opened only for its pins into its first page. */
   expandGroup: (groupId: string) => void;
@@ -101,6 +106,7 @@ export interface UiState {
 
 export const initialUiState = {
   selectedId: null,
+  selectedEdgeId: null,
   focusId: null,
   expanded: [],
   neighbors: [],
@@ -139,9 +145,13 @@ export const useUi = create<UiState>()((set) => ({
   select: (id) => {
     set((s) => ({
       selectedId: id,
+      selectedEdgeId: null,
       menu: null,
       centerWhenShown: s.centerWhenShown === id ? s.centerWhenShown : null,
     }));
+  },
+  selectEdge: (id) => {
+    set({ selectedId: null, selectedEdgeId: id, menu: null, centerWhenShown: null });
   },
   focus: (id) => {
     set({ focusId: id, menu: null });
