@@ -3,7 +3,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { NodeDetailResponse } from '../src/api/hooks';
-import type { GroupState } from '../src/graph/compose';
 import { SidePanel, type SidePanelProps } from '../src/panel/SidePanel';
 import { aggregate, node } from './fixtures';
 
@@ -85,8 +84,6 @@ function renderPanel(props: Partial<SidePanelProps> = {}) {
     <QueryClientProvider client={client}>
       <SidePanel
         target={node(ID, { type: 'url', label: 'https://a.example.com/login' })}
-        group={undefined}
-        canLoadPage
         onAction={onAction}
         onClose={onClose}
         {...props}
@@ -254,11 +251,12 @@ describe('node panel', () => {
     expect(document.querySelector('.markdown img')).toBeNull();
   });
 
-  test('a node shown from an expanded group can collapse that group', async () => {
-    const group: GroupState = { aggregateId: 'agg:root:url', pages: 1, members: [ID], total: 30, remaining: 0 };
-    const { onAction } = renderPanel({ group });
-    fireEvent.click(await screen.findByRole('button', { name: 'Collapse group' }));
-    expect(onAction).toHaveBeenCalledWith('collapse');
+  test('a member of an open group can collapse that group', async () => {
+    const memberOf = aggregate({ id: 'agg:root:url', label: '30 URLs', childType: 'url', count: 30, expanded: true, shown: 30, remaining: 0 });
+    const { onAction } = renderPanel({ memberOf });
+    expect(await screen.findByText(/In the group “30 URLs”/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse group' }));
+    expect(onAction).toHaveBeenCalledWith('collapse-parent');
   });
 
   test('the close button closes the panel', () => {
@@ -295,28 +293,37 @@ describe('node panel', () => {
   });
 });
 
-describe('aggregate panel', () => {
-  const agg = aggregate({ label: '412 subdomains', count: 412, total: 420 });
+describe('group panel', () => {
+  const agg = aggregate({ label: '412 subdomains', count: 412, risk: { critical: 2, high: 1 } });
 
-  test('shows the group and offers Expand; no node detail is fetched', () => {
+  test('shows the group and what is below it, and offers Expand; no node detail is fetched', () => {
     const { onAction } = renderPanel({ target: agg, parentLabel: 'example.com' });
     expect(screen.getByText('example.com')).toBeTruthy();
-    expect(screen.getByText('412')).toBeTruthy();
+    expect(screen.getByText('412 subdomain')).toBeTruthy();
+    expect(screen.getByText('2 critical, 1 high below')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Expand' }));
     expect(onAction).toHaveBeenCalledWith('expand');
     expect(api.fetch).not.toHaveBeenCalled();
   });
 
-  test('once expanded: load more with what is left, and collapse', () => {
-    const group: GroupState = { aggregateId: agg.id, pages: 2, members: [], total: 420, remaining: 220 };
-    const { onAction } = renderPanel({ target: agg, group });
-    fireEvent.click(screen.getByRole('button', { name: 'Load more (220 left)' }));
+  test('once open: collapse, load more with what is left, and collapse all below', () => {
+    const open = { ...agg, expanded: true, shown: 200, remaining: 212 };
+    const { onAction } = renderPanel({ target: open, hasOpenBelow: true });
+    expect(screen.getByText('200 of 412')).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: 'Collapse' }));
-    expect(onAction.mock.calls).toEqual([['expand'], ['collapse']]);
+    fireEvent.click(screen.getByRole('button', { name: 'Load more (212 left)' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Collapse all below' }));
+    expect(onAction.mock.calls).toEqual([['collapse'], ['load-more'], ['collapse-below']]);
   });
 
-  test('load more is disabled at the element limit', () => {
-    renderPanel({ target: agg, canLoadPage: false });
+  test('collapse all below is disabled when nothing is open below', () => {
+    renderPanel({ target: { ...agg, expanded: true, shown: 412, remaining: 0 } });
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Collapse all below' }).disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: /Load more/ })).toBeNull();
+  });
+
+  test('expand is disabled at the element limit', () => {
+    renderPanel({ target: { ...agg, canLoadMore: false } });
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Expand' }).disabled).toBe(true);
   });
 });

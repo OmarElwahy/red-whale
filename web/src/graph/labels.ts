@@ -4,13 +4,22 @@
 // label goes to half opacity, then all the way (LABEL_FADE_MS in all): two class swaps per crossing. A Cytoscape
 // `transition` would restyle every label on every frame of the fade; measured at the 2,000-element cap, that
 // pushed zooming's p95 frame from ~21 ms to ~35 ms. Cytoscape skips text at opacity 0, so hidden labels are free.
+// Node icons hide the same way below ICON_MIN_PX on screen (one class swap, `icon-hidden`).
 import type { CollectionReturnValue, Core, EventObject, SingularElementReturnValue } from 'cytoscape';
-import { EDGE_FONT_PX, LABEL_FADE_MS, NODE_FONT_PX } from './style';
+import { EDGE_FONT_PX, ICON_HIDDEN, ICON_PX, LABEL_FADE_MS, NODE_FONT_PX } from './style';
 
 /** Smallest on-screen font size at which labels are shown. */
 export const LABEL_MIN_PX = 8;
 /** Labels reappear only this much above the threshold, so a zoom resting on it doesn't flicker. */
 const HYSTERESIS_PX = 0.4;
+/** Smallest on-screen icon size at which node icons are drawn; below it a node is its fill, border and hatch. */
+export const ICON_MIN_PX = 7;
+
+/** Whether node icons should show at this zoom, given whether they show now. */
+export function iconsVisible(zoom: number, showing: boolean): boolean {
+  const rendered = ICON_PX * zoom;
+  return showing ? rendered >= ICON_MIN_PX : rendered >= ICON_MIN_PX + HYSTERESIS_PX;
+}
 
 /**
  * One class per opacity level below full: index 0 is hidden; a label with none of them is fully shown.
@@ -68,8 +77,22 @@ export function bindLabelFade(cy: Core): () => void {
     }, STEP_MS);
   };
 
+  // Icons: one class swap, no fade (an icon is small; the hatch and a group's badge stay either way).
+  let icons = iconsVisible(cy.zoom(), false);
+  const paintIcons = () => {
+    cy.batch(() => {
+      if (icons) cy.nodes().removeClass(ICON_HIDDEN);
+      else cy.nodes().addClass(ICON_HIDDEN);
+    });
+  };
+
   const onZoom = () => {
     const zoom = cy.zoom();
+    const showIcons = iconsVisible(zoom, icons);
+    if (showIcons !== icons) {
+      icons = showIcons;
+      paintIcons();
+    }
     for (const g of groups) {
       const showing = labelsVisible(g.font, zoom, g.showing);
       if (showing === g.showing) continue;
@@ -86,6 +109,7 @@ export function bindLabelFade(cy: Core): () => void {
     const cls = g ? levelClass(g.level) : undefined;
     el.removeClass(ALL_LEVELS);
     if (cls) el.addClass(cls);
+    if (el.isNode() && !icons) el.addClass(ICON_HIDDEN);
   };
 
   for (const g of groups) {
@@ -93,6 +117,7 @@ export function bindLabelFade(cy: Core): () => void {
     g.level = g.showing ? SHOWN : 0;
     paint(g);
   }
+  paintIcons();
   cy.on('zoom', onZoom);
   cy.on('add', onAdd);
   return () => {

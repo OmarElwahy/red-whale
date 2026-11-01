@@ -17,7 +17,7 @@ export interface TreeNode {
   height: number;
   /** Where the node's position sits relative to the center of that box (labels hang below the node). */
   offset: { x: number; y: number };
-  /** Effective severity (aggregates: their highest member). */
+  /** Effective severity (groups: their highest member; "more" nodes: none, so they sort last). */
   risk: SeverityKey;
   label: string;
 }
@@ -141,12 +141,13 @@ const MIN_WIDTH = 30;
 
 /** What's on the canvas, as tree input. Edges always point parent → child in our graph. */
 export function treeInput(cy: Core): TreeInput {
-  const nodes = cy.nodes().map((n: NodeSingular): TreeNode => {
+  const shown = cy.nodes().not('.retiring');
+  const nodes = shown.map((n: NodeSingular): TreeNode => {
     const bb = n.boundingBox({ includeLabels: true, includeOverlays: false });
     const center = { x: (bb.x1 + bb.x2) / 2, y: (bb.y1 + bb.y2) / 2 };
     const { x, y } = n.position();
     const kind = n.data('kind') as string;
-    const risk = (kind === 'aggregate' ? n.data('severity') : n.data('effectiveSeverity')) as SeverityKey;
+    const risk = (kind === 'aggregate' ? n.data('severity') : kind === 'more' ? 'none' : n.data('effectiveSeverity')) as SeverityKey;
     return {
       id: n.id(),
       width: Math.max(bb.w, MIN_WIDTH),

@@ -197,21 +197,53 @@ export const graphNodeSchema = z.strictObject({
 });
 export type GraphNode = z.infer<typeof graphNodeSchema>;
 
+/** Members shown per page when a group is expanded (and per "load more"). */
+export const GROUP_PAGE_SIZE = 100;
+/** Parentless nodes of one type are shown as they are up to this many, and grouped above it. */
+export const ROOT_GROUP_THRESHOLD = 25;
+
+/**
+ * A group (docs/architecture.md §7): the children of one parent with the same relation and type, when there are
+ * two or more (or, for parentless nodes, more than ROOT_GROUP_THRESHOLD of one type). It stays on the canvas as
+ * the members' parent whether it is collapsed or expanded.
+ */
 export const aggregateNodeSchema = z.strictObject({
   id: z.string().startsWith('agg:'),
   type: z.literal('aggregate'),
+  /** `12 subdomains`. */
   label: z.string(),
-  /** Members hidden inside the aggregate. */
+  /** All members of the group under the current filters. */
   count: z.number().int().min(1),
-  /** All members of the group, including the ones that stay visible. */
-  total: z.number().int().min(1),
   childType: z.enum(NODE_TYPES),
   relation: z.enum(RELATION_TYPES).nullable(),
   parentId: z.string().nullable(),
-  /** Highest effective severity among all members. */
+  /** Highest effective severity among the members. */
   maxSeverity: severity,
+  /**
+   * Distinct nodes with their own severity high or critical at or below the members (each counted once, however
+   * many paths reach it), so a collapsed group never hides a serious finding without a signal.
+   */
+  risk: z.strictObject({ critical: z.number().int().min(0), high: z.number().int().min(0) }),
+  /** Open: its members (the loaded pages, plus pinned ones) hang under it. */
+  expanded: z.boolean(),
+  /** Members drawn under this group. */
+  shown: z.number().int().min(0),
+  /** Members not drawn under it (`count - shown`). */
+  remaining: z.number().int().min(0),
+  /** The next page (the first one, while collapsed) fits in the element budget. */
+  canLoadMore: z.boolean(),
 });
 export type AggregateNode = z.infer<typeof aggregateNodeSchema>;
+
+/** "+300 more": hangs under an expanded group that has members not loaded yet; double-click loads a page. */
+export const moreNodeSchema = z.strictObject({
+  id: z.string().startsWith('more:'),
+  type: z.literal('more'),
+  groupId: z.string(),
+  label: z.string(),
+  remaining: z.number().int().min(1),
+});
+export type MoreNode = z.infer<typeof moreNodeSchema>;
 
 export const graphEdgeSchema = z.strictObject({
   id: z.string(),
@@ -221,19 +253,102 @@ export const graphEdgeSchema = z.strictObject({
 });
 export type GraphEdge = z.infer<typeof graphEdgeSchema>;
 
+/**
+ * What an edge on the canvas stands for. `relation`: a real edge (a parent's only child of that kind);
+ * `group`: parent → group, carrying the relation; `member`: group → member (plain); `more`: group → its "more"
+ * node; `neighbor`: a real edge drawn because the analyst expanded a node's neighbors.
+ */
+export const VIEW_EDGE_KINDS = ['relation', 'group', 'member', 'more', 'neighbor'] as const;
+export type ViewEdgeKind = (typeof VIEW_EDGE_KINDS)[number];
+
+export const viewEdgeSchema = z.strictObject({
+  id: z.string(),
+  source: z.string(),
+  target: z.string(),
+  /** Null on `member` and `more` edges. */
+  relation: z.enum(RELATION_TYPES).nullable(),
+  kind: z.enum(VIEW_EDGE_KINDS),
+});
+export type ViewEdge = z.infer<typeof viewEdgeSchema>;
+
+export type ViewNode = GraphNode | AggregateNode | MoreNode;
+
+const nodeIdText = z.string().min(1).max(200);
+
+/** One open group: `pages` × GROUP_PAGE_SIZE members, riskiest first, plus `pins` (members opened on purpose). */
+export const groupOpenSchema = z.strictObject({
+  id: z.string().startsWith('agg:').max(200),
+  pages: z.number().int().min(0).max(50),
+  pins: z.array(nodeIdText).max(100),
+});
+export type GroupOpen = z.infer<typeof groupOpenSchema>;
+
+/** The analyst's view of the graph: which groups are open, and whose neighbors are expanded. */
+export const viewStateSchema = z.strictObject({
+  expand: z.array(groupOpenSchema).max(2000),
+  /** Nodes whose parents are all drawn, with their edges (the only way to see a shared node's other parents). */
+  neighbors: z.array(nodeIdText).max(200),
+});
+export type ViewState = z.infer<typeof viewStateSchema>;
+
+export const graphViewRequestSchema = z.strictObject({
+  filters: graphFiltersSchema.prefault({}),
+  expand: viewStateSchema.shape.expand.default([]),
+  neighbors: viewStateSchema.shape.neighbors.default([]),
+  /** One-shot: open every group below these nodes, as far as the element budget allows. */
+  expandAll: z.array(nodeIdText).max(10).default([]),
+  /**
+   * What the canvas showed directly before this request: `relation` edges (a parent's only child of that kind) and
+   * parentless nodes. A collapsed group that now holds one of them (a live update turned 1 child into 2) is opened,
+   * so nothing the analyst is looking at disappears when a scan finishes.
+   */
+  keep: z
+    .strictObject({
+      edges: z.array(nodeIdText).max(5000).default([]),
+      roots: z.array(nodeIdText).max(5000).default([]),
+    })
+    .prefault({}),
+});
+export type GraphViewRequest = z.input<typeof graphViewRequestSchema>;
+export type GraphViewInput = z.output<typeof graphViewRequestSchema>;
+
 export const graphResponseSchema = z.strictObject({
-  nodes: z.array(z.union([graphNodeSchema, aggregateNodeSchema])),
-  edges: z.array(graphEdgeSchema),
-  /** True when the server had to aggregate harder than the normal threshold, or cut the result. */
+  nodes: z.array(z.union([graphNodeSchema, aggregateNodeSchema, moreNodeSchema])),
+  edges: z.array(viewEdgeSchema),
+  /** True when something asked for didn't fit in the element budget, or the result had to be cut. */
   truncated: z.boolean(),
-  /** The aggregation threshold that was used. */
-  threshold: z.number().int(),
-  /** Size of the filtered graph before aggregation. */
+  /** Size of the filtered graph before grouping. */
   totals: z.strictObject({ nodes: z.number().int(), edges: z.number().int() }),
+  /**
+   * The view as applied: open groups that are on the canvas (pins limited to real members), and neighbor
+   * expansions whose node is shown. Anything asked for that isn't here was dropped (collapsed above, gone under
+   * these filters, or over budget); the client adopts this as its state.
+   */
+  state: viewStateSchema,
+  /** Groups (or `neighbors:<id>`) refused, or loaded with fewer pages, to stay within the element budget. */
+  overBudget: z.array(z.string()),
+  /** Groups opened because they hold something the canvas showed directly (see `keep`). */
+  autoOpened: z.array(z.string()),
+  /** Such groups that couldn't be opened within the budget: folded instead (the UI flashes them). */
+  autoFolded: z.array(z.string()),
+  /** Per `expandAll` node: groups it opened, and nodes below it still not on the canvas. */
+  expandAll: z.array(
+    z.strictObject({ nodeId: z.string(), opened: z.number().int().min(0), hidden: z.number().int().min(0) }),
+  ),
 });
 export type GraphResponse = z.infer<typeof graphResponseSchema>;
 
 export const neighborsResponseSchema = graphResponseSchema.extend({ center: z.string() });
+
+/** The groups to open (as pins) so that a node deep inside collapsed groups is drawn: GET /graph/path/:nodeId. */
+export const graphPathResponseSchema = z.strictObject({
+  nodeId: z.string(),
+  /** False when the current filters exclude the node: no path can show it. */
+  inView: z.boolean(),
+  /** From the root down; groups of one aren't groups, so they need no step. */
+  steps: z.array(z.strictObject({ groupId: z.string(), memberId: z.string() })),
+});
+export type GraphPathResponse = z.infer<typeof graphPathResponseSchema>;
 
 export const expandResponseSchema = z.strictObject({
   aggregate: z.strictObject({

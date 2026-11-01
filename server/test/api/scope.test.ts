@@ -1,5 +1,4 @@
 import {
-  graphResponseSchema,
   nodeDetailResponseSchema,
   nodeListResponseSchema,
   scopeCheckResponseSchema,
@@ -13,7 +12,7 @@ import {
 } from '@redwhale/shared';
 import { describe, expect, test, vi } from 'vitest';
 import { exampleDoc } from '../helpers';
-import { HOST, body, error, idOf, ingestExamples, testApi, type TestApi } from './helpers';
+import { HOST, body, error, idOf, ingestExamples, isReal, openAll, testApi, type TestApi } from './helpers';
 
 async function addRule(api: TestApi, rule: Record<string, unknown>) {
   return body(await api.send('POST', '/api/scope/rules', rule), 201, scopeRuleSchema);
@@ -182,8 +181,8 @@ describe('scope log', () => {
 describe('inScope on the graph', () => {
   test('every node carries its passive decision; the IP a subdomain resolves to stays out', async () => {
     const { api } = await scopedExamples();
-    const graph = body(await api.get('/api/graph'), 200, graphResponseSchema);
-    const byValue = Object.fromEntries(graph.nodes.flatMap((n) => (n.type === 'aggregate' ? [] : [[n.value, n.inScope]])));
+    const graph = await openAll(api);
+    const byValue = Object.fromEntries(graph.nodes.filter(isReal).map((n) => [n.value, n.inScope]));
     expect(byValue).toEqual({
       'example.com': 'in',
       'api.example.com': 'in',
@@ -202,23 +201,23 @@ describe('inScope on the graph', () => {
   test('with an empty scope everything targetable is out', async () => {
     const api = await testApi();
     ingestExamples(api.db);
-    const graph = body(await api.get('/api/graph'), 200, graphResponseSchema);
-    const decisions = new Set(graph.nodes.flatMap((n) => (n.type === 'aggregate' ? [] : [n.inScope])));
+    const graph = await openAll(api);
+    const decisions = new Set(graph.nodes.filter(isReal).map((n) => n.inScope));
     expect(decisions).toEqual(new Set(['out', 'n/a']));
   });
 
   test('a rule change applies to the next read (nothing is stored)', async () => {
     const { api } = await scopedExamples();
     await addRule(api, { kind: 'cidr', value: '93.184.216.0/24', action: 'include' });
-    const graph = body(await api.get('/api/graph'), 200, graphResponseSchema);
-    const ip = graph.nodes.find((n) => n.type === 'ip');
-    expect(ip && ip.type !== 'aggregate' && ip.inScope).toBe('in');
+    const graph = await openAll(api);
+    const ip = graph.nodes.filter(isReal).find((n) => n.type === 'ip');
+    expect(ip?.inScope).toBe('in');
   });
 
   test('scope= filters /graph, /graph/expand and /nodes; /stats counts byScope', async () => {
     const { api } = await scopedExamples();
-    const out = body(await api.get('/api/graph?scope=out'), 200, graphResponseSchema);
-    expect(out.nodes.map((n) => (n.type === 'aggregate' ? n.id : n.value)).sort()).toEqual(
+    const out = await openAll(api, 'scope=out');
+    expect(out.nodes.filter(isReal).map((n) => n.value).sort()).toEqual(
       ['93.184.216.34', '93.184.216.34:22/tcp', '93.184.216.34:443/tcp', 'dev.example.com', 'https://dev.example.com/.git/config'].sort(),
     );
     const list = body(await api.get('/api/nodes?scope=in,n/a'), 200, nodeListResponseSchema);

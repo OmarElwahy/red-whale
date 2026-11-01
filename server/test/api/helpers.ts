@@ -1,4 +1,11 @@
-import { errorResponseSchema } from '@redwhale/shared';
+import {
+  errorResponseSchema,
+  graphResponseSchema,
+  type AggregateNode,
+  type GraphNode,
+  type GraphResponse,
+  type GroupOpen,
+} from '@redwhale/shared';
 import type { FastifyInstance, InjectOptions, LightMyRequestResponse } from 'fastify';
 import { afterEach, expect } from 'vitest';
 import type { z } from 'zod';
@@ -76,4 +83,26 @@ export function idOf(db: Db, label: string): string {
     | undefined;
   if (!row) throw new Error(`no node ${label}`);
   return row.id;
+}
+
+type ViewNode = GraphResponse['nodes'][number];
+export const isAggregate = (n: ViewNode): n is AggregateNode => n.type === 'aggregate';
+export const isReal = (n: ViewNode): n is GraphNode => n.type !== 'aggregate' && n.type !== 'more';
+
+export async function view(api: TestApi, request: Record<string, unknown>): Promise<GraphResponse> {
+  return body(await api.send('POST', '/api/graph/view', request), 200, graphResponseSchema);
+}
+
+/** Opens every group, all pages, until nothing is collapsed: the whole filtered graph, drawn through its groups. */
+export async function openAll(api: TestApi, query = ''): Promise<GraphResponse> {
+  const filters = Object.fromEntries(new URLSearchParams(query));
+  let expand: GroupOpen[] = [];
+  for (let i = 0; i < 12; i++) {
+    const g = await view(api, { filters, expand });
+    const closed = g.nodes.filter(isAggregate).filter((n) => !n.expanded || n.remaining > 0);
+    if (closed.length === 0) return g;
+    const ids = new Set(closed.map((c) => c.id));
+    expand = [...g.state.expand.filter((x) => !ids.has(x.id)), ...closed.map((c) => ({ id: c.id, pages: 50, pins: [] }))];
+  }
+  throw new Error('groups still collapsed');
 }

@@ -6,8 +6,8 @@ import type { Position } from '@/api/hooks';
 export interface GraphHandlers {
   /** A node was clicked, or the background (null). */
   onSelect: (id: string | null) => void;
-  /** An aggregate was double-clicked. */
-  onExpand: (aggregateId: string) => void;
+  /** A group (expand or collapse it) or a "more" node (load the next page) was double-clicked. */
+  onDoubleTap: (id: string) => void;
   /** Right-click on a node, at its rendered position inside the container. */
   onContextMenu: (target: { id: string; x: number; y: number }) => void;
   /**
@@ -15,6 +15,15 @@ export interface GraphHandlers {
    * here). Not called in Tree mode, whose positions aren't saved.
    */
   onMoved: (positions: Position[]) => void;
+}
+
+const DOUBLE_TAP = 'node[kind = "aggregate"], node[kind = "more"]';
+
+/** "12 subdomains: 2 critical, 1 high below", or just the label when nothing serious is below. */
+export function groupTitle(node: NodeSingular): string {
+  const label = String(node.data('label'));
+  const risk = node.data('riskTitle') as unknown;
+  return typeof risk === 'string' && risk !== '' ? `${label}: ${risk}` : label;
 }
 
 /**
@@ -29,7 +38,16 @@ export function bindGraphEvents(cy: Core, handlers: () => GraphHandlers): () => 
     if (e.target === cy) handlers().onSelect(null);
   };
   const onDoubleTap = (e: EventObject) => {
-    handlers().onExpand((e.target as NodeSingular).id());
+    handlers().onDoubleTap((e.target as NodeSingular).id());
+  };
+  // A group's tooltip: its risk ("2 critical, 1 high below"), on the container since the canvas has no DOM nodes.
+  const onOver = (e: EventObject) => {
+    const container = cy.container();
+    if (container) container.title = groupTitle(e.target as NodeSingular);
+  };
+  const onOut = () => {
+    const container = cy.container();
+    if (container) container.title = '';
   };
   const onRightClick = (e: EventObject) => {
     const { x, y } = e.renderedPosition;
@@ -38,13 +56,17 @@ export function bindGraphEvents(cy: Core, handlers: () => GraphHandlers): () => 
 
   cy.on('tap', 'node', onTapNode);
   cy.on('tap', onTapCanvas);
-  cy.on('dbltap', 'node[kind = "aggregate"]', onDoubleTap);
+  cy.on('dbltap', DOUBLE_TAP, onDoubleTap);
   cy.on('cxttap', 'node', onRightClick);
+  cy.on('mouseover', 'node[kind = "aggregate"]', onOver);
+  cy.on('mouseout', 'node[kind = "aggregate"]', onOut);
   return () => {
     cy.off('tap', 'node', onTapNode);
     cy.off('tap', onTapCanvas);
-    cy.off('dbltap', 'node[kind = "aggregate"]', onDoubleTap);
+    cy.off('dbltap', DOUBLE_TAP, onDoubleTap);
     cy.off('cxttap', 'node', onRightClick);
+    cy.off('mouseover', 'node[kind = "aggregate"]', onOver);
+    cy.off('mouseout', 'node[kind = "aggregate"]', onOut);
   };
 }
 

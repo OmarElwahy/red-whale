@@ -1,50 +1,84 @@
 // TanStack Query hooks over the API client.
 import {
-  expandResponseSchema,
+  graphPathResponseSchema,
   graphResponseSchema,
   highlightsResponseSchema,
   layoutResponseSchema,
-  neighborsResponseSchema,
   nodeDetailResponseSchema,
   nodeListResponseSchema,
   statsResponseSchema,
   type GraphFilters,
+  type GraphNode,
+  type GraphPathResponse,
   type GraphResponse,
+  type GroupOpen,
   type Highlight,
   type NodePatch,
   type StatsResponse,
 } from '@redwhale/shared';
-import {
-  keepPreviousData,
-  useMutation,
-  useQueries,
-  useQuery,
-  useQueryClient,
-  type UseQueryResult,
-} from '@tanstack/react-query';
+import { keepPreviousData, useMutation, useQuery, useQueryClient, type UseQueryResult } from '@tanstack/react-query';
 import { useCallback } from 'react';
 import type { z } from 'zod';
-import { EXPAND_PAGE_SIZE, revealFrom, type Expansion, type Neighborhood, type Reveal } from '@/graph/compose';
 import { getJson, sendJson } from './client';
 import { graphSearchParams, queryKeys, withParams } from './query';
 
 export type NodeDetailResponse = z.infer<typeof nodeDetailResponseSchema>;
 export type NodeListResponse = z.infer<typeof nodeListResponseSchema>;
-type ExpandResponse = z.infer<typeof expandResponseSchema>;
-type NeighborsResponse = z.infer<typeof neighborsResponseSchema>;
 
 const path = (prefix: string, id: string) => `${prefix}/${encodeURIComponent(id)}`;
 
+export interface ViewRequest {
+  filters: GraphFilters;
+  expand: readonly GroupOpen[];
+  neighbors: readonly string[];
+  expandAll: readonly string[];
+}
+
+/** What the canvas shows directly, read when the request is sent (see groups.ts `keepFrom`). */
+export type KeepSource = () => { edges: string[]; roots: string[] };
+
 /**
- * The filtered graph. While a new filter loads, the previous graph stays on the canvas (`isPlaceholderData`),
- * so typing in search doesn't blank the graph and re-run the full layout on every keystroke.
+ * The grouped graph (POST /api/graph/view): the filters and the open groups. While the next view loads, the
+ * previous one stays on the canvas (`isPlaceholderData`), so typing in search or opening a group never blanks it.
+ * `keep` isn't part of the key: it only matters to a refetch (a live update), and is read when the request goes out.
+ * Never stale on its own: live updates invalidate it.
  */
-export function useGraph(filters: GraphFilters = {}): UseQueryResult<GraphResponse> {
+export function useGraphView(req: ViewRequest, keep: KeepSource): UseQueryResult<GraphResponse> {
   return useQuery({
-    queryKey: queryKeys.graph(filters),
-    queryFn: ({ signal }) => getJson(withParams('/api/graph', graphSearchParams(filters)), graphResponseSchema, { signal }),
+    queryKey: queryKeys.view(req.filters, req.expand, req.neighbors, req.expandAll),
+    queryFn: ({ signal }) =>
+      sendJson(
+        'POST',
+        '/api/graph/view',
+        { filters: req.filters, expand: req.expand, neighbors: req.neighbors, expandAll: req.expandAll, keep: keep() },
+        graphResponseSchema,
+        { signal },
+      ),
     placeholderData: keepPreviousData,
+    staleTime: Infinity,
   });
+}
+
+/** The groups to open so that a node is drawn (GET /api/graph/path/:id), under the graph's filters. */
+export function fetchPath(id: string, filters: GraphFilters): Promise<GraphPathResponse> {
+  return getJson(withParams(path('/api/graph/path', id), graphSearchParams(filters)), graphPathResponseSchema);
+}
+
+/** Path status for a node that isn't drawn: is it in view at all under these filters? */
+export function useGraphPath(id: string | null, filters: GraphFilters): UseQueryResult<GraphPathResponse> {
+  return useQuery({
+    queryKey: queryKeys.path(id ?? '', filters),
+    queryFn: () => fetchPath(id ?? '', filters),
+    enabled: id !== null,
+  });
+}
+
+/** The riskiest node matching the search (GET /api/nodes lists matches only, riskiest first), or null. */
+export async function fetchFirstMatch(filters: GraphFilters): Promise<GraphNode | null> {
+  const params = graphSearchParams(filters);
+  params.set('pageSize', '1');
+  const list = await getJson(withParams('/api/nodes', params), nodeListResponseSchema);
+  return list.items[0] ?? null;
 }
 
 /** Workspace totals for the filter badges. Not filtered: the counts don't change with the filters. */
@@ -60,89 +94,6 @@ export function useHighlights(): UseQueryResult<Highlight[]> {
   return useQuery({
     queryKey: queryKeys.highlights,
     queryFn: async ({ signal }) => (await getJson('/api/highlights', highlightsResponseSchema, { signal })).items,
-  });
-}
-
-interface Overlays<T> {
-  data: T[];
-  isFetching: boolean;
-  error: Error | null;
-}
-
-/** Groups loaded pages by aggregate, keeping only pages 1..n with no gap (a later page may load first). */
-function combineExpansions(results: UseQueryResult<ExpandResponse>[]): Overlays<Expansion> {
-  const byId = new Map<string, ExpandResponse[]>();
-  for (const r of results) {
-    if (!r.data) continue;
-    const pages = byId.get(r.data.aggregate.id);
-    if (pages) pages.push(r.data);
-    else byId.set(r.data.aggregate.id, [r.data]);
-  }
-  const data = [...byId].map(([aggregateId, pages]) => {
-    pages.sort((a, b) => a.page - b.page);
-    const contiguous = pages.filter((p, i) => p.page === i + 1);
-    return { aggregateId, pages: contiguous };
-  });
-  return { data, isFetching: results.some((r) => r.isFetching), error: results.find((r) => r.error)?.error ?? null };
-}
-
-/** Every loaded page of every expanded aggregate, under the same filters as the graph. */
-export function useExpansions(
-  expanded: readonly { id: string; pages: number }[],
-  filters: GraphFilters = {},
-): Overlays<Expansion> {
-  return useQueries({
-    queries: expanded.flatMap(({ id, pages }) =>
-      Array.from({ length: pages }, (_, i) => {
-        const page = i + 1;
-        const params = graphSearchParams(filters);
-        params.set('page', String(page));
-        params.set('pageSize', String(EXPAND_PAGE_SIZE));
-        return {
-          queryKey: queryKeys.expand(id, page, filters),
-          queryFn: ({ signal }: { signal: AbortSignal }) =>
-            getJson(withParams(path('/api/graph/expand', id), params), expandResponseSchema, { signal }),
-        };
-      }),
-    ),
-    combine: combineExpansions,
-  });
-}
-
-function combineNeighborhoods(results: UseQueryResult<NeighborsResponse>[]): Overlays<Neighborhood> {
-  return {
-    data: results.flatMap((r) => (r.data ? [r.data] : [])),
-    isFetching: results.some((r) => r.isFetching),
-    error: results.find((r) => r.error)?.error ?? null,
-  };
-}
-
-/** The 1-hop neighborhood of each node the analyst expanded. */
-export function useNeighborhoods(ids: readonly string[]): Overlays<Neighborhood> {
-  return useQueries({
-    queries: ids.map((id) => ({
-      queryKey: queryKeys.neighbors(id),
-      queryFn: ({ signal }: { signal: AbortSignal }) =>
-        getJson(withParams(path('/api/graph/neighbors', id), new URLSearchParams({ depth: '1' })), neighborsResponseSchema, {
-          signal,
-        }),
-    })),
-    combine: combineNeighborhoods,
-  });
-}
-
-/** The nodes hidden from the graph that the analyst asked to show, from their detail (usually cached already). */
-export function useReveals(ids: readonly string[]): Overlays<Reveal> {
-  return useQueries({
-    queries: ids.map((id) => ({
-      queryKey: queryKeys.node(id),
-      queryFn: ({ signal }: { signal: AbortSignal }) => getJson(path('/api/nodes', id), nodeDetailResponseSchema, { signal }),
-    })),
-    combine: (results: UseQueryResult<NodeDetailResponse>[]) => ({
-      data: results.flatMap((r) => (r.data ? [revealFrom(r.data)] : [])),
-      isFetching: results.some((r) => r.isFetching),
-      error: results.find((r) => r.error)?.error ?? null,
-    }),
   });
 }
 
@@ -192,7 +143,7 @@ export function useNodeDetail(id: string | null): UseQueryResult<NodeDetailRespo
 
 /**
  * PATCH a node (tag, notes). The answer is the new detail, so it goes straight into the cache; the graph views
- * are refetched because a tag changes the node's look and can change aggregation (`interesting` stays visible).
+ * are refetched because a tag changes the node's look.
  */
 export function usePatchNode(id: string) {
   const client = useQueryClient();

@@ -45,3 +45,11 @@ After each phase: review the diff, run `pnpm typecheck && pnpm test`, commit, th
 ```bash
 python3 tools/validate_output.py path/to/their_output.json
 ```
+
+## Third-party
+
+- **Lucide icons** (`lucide-static` 1.59.0, [ISC License](https://lucide.dev/license), © Lucide Icons and Contributors):
+  the node-type icons on the graph. Only the 11 icons we use are bundled, inlined into the app
+  (`web/src/graph/icons.ts`); nothing is loaded from a CDN. Four of them (`at-sign`, `link`, `lock`, `server`)
+  come from the Feather project (MIT License, © 2013-present Cole Bemis). The full license text ships in
+  `web/node_modules/lucide-static/LICENSE`.

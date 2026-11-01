@@ -55,7 +55,7 @@ export async function sendJson<S extends z.ZodType>(
   path: string,
   payload: unknown,
   schema: S,
-  options: { fetch?: Fetch; keepalive?: boolean } = {},
+  options: { fetch?: Fetch; keepalive?: boolean; signal?: AbortSignal } = {},
 ): Promise<z.output<S>> {
   const doFetch = options.fetch ?? fetch;
   const res = await doFetch(path, {
@@ -63,6 +63,7 @@ export async function sendJson<S extends z.ZodType>(
     headers: { accept: 'application/json', 'content-type': 'application/json' },
     body: JSON.stringify(payload),
     keepalive: options.keepalive,
+    signal: options.signal,
   });
   return parseResponse(res, path, schema);
 }

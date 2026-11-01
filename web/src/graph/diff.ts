@@ -1,6 +1,6 @@
 // Element diffing for the Cytoscape wrapper (docs/architecture.md §8): new data is applied as
 // add/remove/update by id, so unchanged elements keep their identity, position and selection.
-import type { Core } from 'cytoscape';
+import type { Core, NodeSingular } from 'cytoscape';
 import type { EdgeElement, Element, NodeElement } from './elements';
 
 export interface ElementDiff {
@@ -57,12 +57,54 @@ export function diffElements(current: ReadonlyMap<string, Element>, next: readon
   return diff;
 }
 
-/** Applies a diff in one batch: remove, add nodes, add edges, update data. */
-export function applyDiff(cy: Core, diff: ElementDiff): void {
+/** Collapsing a group: these removed nodes slide into it and fade before they go. */
+export interface Retire {
+  into: string;
+  nodes: ReadonlySet<string>;
+  duration: number;
+}
+
+/** Marks a node that is sliding into its group: already gone as far as the app is concerned. */
+export const RETIRING = 'retiring';
+
+/** Extra time after a slide before its nodes are removed anyway. */
+const RETIRE_GRACE_MS = 80;
+
+/** Removes a sliding node now, whatever its animation is doing. Safe to call twice, or after the canvas is gone. */
+function finishRetiring(cy: Core, n: NodeSingular): void {
+  if (cy.destroyed() || !n.inside()) return;
+  n.stop(true, false);
+  cy.remove(n);
+}
+
+/**
+ * Applies a diff in one batch: remove, add nodes, add edges, update data. With `retire`, removed nodes it names
+ * lose their edges at once, slide to the group and fade, then go (no animation when `duration` is 0).
+ *
+ * The removal never depends on the animation finishing: layouts stop node animations without completing them
+ * (Tree re-runs right after a collapse), which would leave the node behind, edgeless and unclickable. A timer
+ * removes it regardless, and any node still sliding is swept at the start of the next diff.
+ */
+export function applyDiff(cy: Core, diff: ElementDiff, retire?: Retire): void {
   if (emptyDiff(diff)) return;
+  const into = retire && retire.duration > 0 ? cy.getElementById(retire.into) : null;
+  const sliding: NodeSingular[] = [];
   cy.batch(() => {
+    // Anything still sliding from an earlier collapse goes now (and can come straight back if this diff adds it).
+    cy.nodes(`.${RETIRING}`).forEach((n) => {
+      finishRetiring(cy, n);
+    });
     let gone = cy.collection();
-    for (const id of diff.remove) gone = gone.union(cy.getElementById(id));
+    for (const id of diff.remove) {
+      const el = cy.getElementById(id);
+      if (retire && into?.nonempty() && el.isNode() && retire.nodes.has(id)) {
+        cy.remove(el.connectedEdges());
+        el.addClass(RETIRING);
+        sliding.push(el);
+        continue;
+      }
+      gone = gone.union(el);
+    }
     cy.remove(gone);
     if (diff.add.nodes.length > 0) cy.add(diff.add.nodes);
     if (diff.add.edges.length > 0) cy.add(diff.add.edges);
@@ -73,6 +115,22 @@ export function applyDiff(cy: Core, diff: ElementDiff): void {
       ele.data(el.data);
     }
   });
+  if (!into || !retire) return;
+  const to = { ...into.position() };
+  for (const n of sliding) {
+    n.animate(
+      { position: to, style: { opacity: 0 } },
+      {
+        duration: retire.duration,
+        complete: () => {
+          finishRetiring(cy, n);
+        },
+      },
+    );
+    setTimeout(() => {
+      finishRetiring(cy, n);
+    }, retire.duration + RETIRE_GRACE_MS);
+  }
 }
 
 /** Index elements by id (first one wins, like diffElements), as the wrapper remembers what it last applied. */

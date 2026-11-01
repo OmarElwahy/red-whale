@@ -1,8 +1,8 @@
 import type { Core } from 'cytoscape';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { toElements } from '../src/graph/elements';
-import { LABEL_FADE_LEVELS, LABEL_HIDDEN, LABEL_MIN_PX, bindLabelFade, labelsVisible } from '../src/graph/labels';
-import { EDGE_FONT_PX, LABEL_FADE_MS, NODE_FONT_PX } from '../src/graph/style';
+import { ICON_MIN_PX, LABEL_FADE_LEVELS, LABEL_HIDDEN, LABEL_MIN_PX, bindLabelFade, iconsVisible, labelsVisible } from '../src/graph/labels';
+import { EDGE_FONT_PX, ICON_HIDDEN, ICON_PX, LABEL_FADE_MS, NODE_FONT_PX } from '../src/graph/style';
 import { edge, headless, node } from './fixtures';
 
 describe('labelsVisible', () => {
@@ -15,6 +15,16 @@ describe('labelsVisible', () => {
     const atThreshold = LABEL_MIN_PX / 10;
     expect(labelsVisible(10, atThreshold, false)).toBe(false);
     expect(labelsVisible(10, atThreshold * 1.1, false)).toBe(true);
+  });
+});
+
+describe('iconsVisible', () => {
+  test('shown while the icon is at least ICON_MIN_PX on screen, with a little hysteresis coming back', () => {
+    const at = ICON_MIN_PX / ICON_PX;
+    expect(iconsVisible(at, true)).toBe(true);
+    expect(iconsVisible(at * 0.99, true)).toBe(false);
+    expect(iconsVisible(at, false)).toBe(false);
+    expect(iconsVisible(at * 1.2, false)).toBe(true);
   });
 });
 
@@ -72,6 +82,19 @@ describe('bindLabelFade', () => {
     cy.zoom(1.5);
     vi.advanceTimersByTime(LABEL_FADE_MS);
     expect(state()).toEqual({ nodes: 'shown', edges: 'shown' });
+  });
+
+  test('node icons hide at far zoom (one class swap) and come back; edges have none', () => {
+    const { unbind } = setup(1);
+    expect(cy.$('node.' + ICON_HIDDEN).length).toBe(0);
+    cy.zoom((ICON_MIN_PX - 1) / ICON_PX);
+    expect(cy.$('node.' + ICON_HIDDEN).length).toBe(2);
+    expect(cy.$('edge.' + ICON_HIDDEN).length).toBe(0);
+    cy.add(toElements({ nodes: [node('late')], edges: [] }));
+    expect(cy.getElementById('late').hasClass(ICON_HIDDEN)).toBe(true);
+    cy.zoom(1);
+    expect(cy.$('node.' + ICON_HIDDEN).length).toBe(0);
+    unbind();
   });
 
   test('elements added later take the current state', () => {

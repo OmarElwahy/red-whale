@@ -8,9 +8,10 @@
 import cytoscape, { type Core } from 'cytoscape';
 import fcose from 'cytoscape-fcose';
 import { useEffect, useImperativeHandle, useRef, type Ref } from 'react';
+import type { Collapsing } from '@/state/ui';
 import type { LayoutMode } from '@/state/view';
 import { benchCanvas, type BenchOptions, type BenchResult } from './bench';
-import { applyDiff, byId, diffElements } from './diff';
+import { applyDiff, byId, diffElements, type Retire } from './diff';
 import type { Element } from './elements';
 import { applyFocus, applyMute, applySearchPath, focusNeighborhood } from './emphasis';
 import { bindGraphEvents, syncSelection, type GraphHandlers } from './events';
@@ -27,6 +28,9 @@ import { browserTreeEngine, type TreeEngine } from './tree';
 import { bindWheelZoom, type WheelZoom } from './wheel';
 
 cytoscape.use(fcose);
+
+/** How long collapsing members take to slide into their group. */
+const COLLAPSE_MS = 220;
 
 /** What the app can ask of the canvas directly. */
 export interface GraphHandle {
@@ -49,6 +53,12 @@ export interface CytoscapeGraphProps {
   centerOn: { id: string; seq: number } | null;
   /** IDs named by recent live updates: when they first appear on the canvas, they flash. */
   fresh: ReadonlyMap<string, number>;
+  /** Also flash these with the next elements (groups a live update folded instead of opening: no room). */
+  alsoFlash?: readonly string[];
+  /** The last collapse: the nodes it hides slide into the group when they leave the canvas. */
+  collapsing?: Collapsing | null;
+  /** The node the last expand/collapse acted on: the Tree re-layout it causes keeps it in place on screen. */
+  anchor?: { id: string; seq: number } | null;
   layout: LayoutMode;
   /** Tree mode: re-run the tree and fit when this changes (the Re-layout button). */
   relayoutSeq: number;
@@ -76,6 +86,9 @@ export function CytoscapeGraph({
   query,
   centerOn,
   fresh,
+  alsoFlash = [],
+  collapsing = null,
+  anchor = null,
   layout,
   relayoutSeq,
   handlers,
@@ -92,6 +105,13 @@ export function CytoscapeGraph({
   const pinned = useRef<Set<string>>(new Set());
   const handlersRef = useRef(handlers);
   const freshRef = useRef(fresh);
+  const alsoFlashRef = useRef(alsoFlash);
+  const collapsingRef = useRef(collapsing);
+  const anchorRef = useRef(anchor);
+  /** The anchor already used by a re-layout (each is used once; later re-runs keep the view's middle instead). */
+  const anchoredSeq = useRef(anchor?.seq ?? 0);
+  /** The collapse whose slide has run (each runs once). */
+  const slid = useRef(0);
   const engineRef = useRef(treeEngine);
   const busyRef = useRef(onLayoutBusy);
   const initialLayoutMode = useRef(layout);
@@ -101,6 +121,9 @@ export function CytoscapeGraph({
   useEffect(() => {
     handlersRef.current = handlers;
     freshRef.current = fresh;
+    alsoFlashRef.current = alsoFlash;
+    collapsingRef.current = collapsing;
+    anchorRef.current = anchor;
     engineRef.current = treeEngine;
     busyRef.current = onLayoutBusy;
   });
@@ -191,12 +214,24 @@ export function CytoscapeGraph({
     if (!cy || !modes.current) return;
     const diff = diffElements(applied.current, elements);
     const previous = applied.current;
-    applyDiff(cy, diff);
+    const c = collapsingRef.current;
+    let retire: Retire | undefined;
+    if (c && c.seq !== slid.current && diff.remove.some((id) => c.nodes.includes(id))) {
+      slid.current = c.seq;
+      retire = { into: c.groupId, nodes: new Set(c.nodes), duration: motionMs(COLLAPSE_MS) };
+    }
+    applyDiff(cy, diff, retire);
     applied.current = byId(elements);
     for (const id of savedPositions(applied.current).keys()) pinned.current.add(id);
     const firstPaint = diff.add.nodes.length > 0 && diff.add.nodes.length === cy.nodes().length;
-    void modes.current.afterDiff(diff, previous);
-    if (!firstPaint) flash(cy, flashIds(diff, previous, freshRef.current));
+    const a = anchorRef.current;
+    let anchorId: string | null = null;
+    if (a && a.seq !== anchoredSeq.current) {
+      anchoredSeq.current = a.seq;
+      anchorId = a.id;
+    }
+    void modes.current.afterDiff(diff, previous, anchorId);
+    if (!firstPaint) flash(cy, [...flashIds(diff, previous, freshRef.current), ...alsoFlashRef.current]);
   }, [elements]);
 
   useEffect(() => {
@@ -249,7 +284,8 @@ export function CytoscapeGraph({
     const node = cy.getElementById(centerOn.id);
     if (node.empty()) return;
     const zoom = Math.max(cy.zoom(), 1);
-    const { x, y } = node.position();
+    // A node still growing out of its parent: center on where it will stop, not where it starts.
+    const { x, y } = modes.current?.growTarget(centerOn.id) ?? node.position();
     motion.current?.momentum.stop();
     motion.current?.wheel.stop();
     cy.stop();

@@ -1,15 +1,14 @@
 // The small showcase mock (`pnpm mock`): one hand-written target, `showcase.example`, small enough to read on
 // the canvas, that still covers every node type, relation, severity (none → critical), confidence and tag.
 // It also has the shapes the UI must handle: an IP shared by two subdomains, an IPv6 address, a node only
-// ever named as a parent (source_count 0), and exactly one aggregate (a JS file with just over AGG_THRESHOLD
-// endpoints, one of them risky enough to stay visible). The big generator is `generate.ts` (`pnpm mock:large`).
+// ever named as a parent (source_count 0), and groups nested three deep (domain → subdomains → … → the URLs
+// app.js links to, 27 endpoints with one medium finding). The big generator is `generate.ts` (`pnpm mock:large`).
 //
 // Everything goes through the normal ingest path. The only direct writes are the analyst's annotations
 // (`verified`, tags, notes), which use the PATCH route's own `updateNode`, and the scope (SHOWCASE_SCOPE),
 // added with the POST route's own `addRule`.
 import { createHash } from 'node:crypto';
 import type { ContractFile, Finding, NodePatch, NodeType, Relation, Severity } from '@redwhale/shared';
-import { AGG_THRESHOLD } from '../graph/aggregate';
 import type { MockFile, MockScopeRule } from './generate';
 
 export const SHOWCASE_DOMAIN = 'showcase.example';
@@ -101,18 +100,20 @@ const uDev = url(`https://dev.${D}/`);
 const uDevGit = url(`https://dev.${D}/.git/config`);
 const uVpn = url(`https://vpn.${D}/remote/login`);
 const uAppJs = url(`https://app.${D}/static/app.js`);
+/** A second link on the app's page, so its URLs form a group: subdomains → app's URLs → app.js endpoints. */
+const uAppLogin = url(`https://app.${D}/login`);
 
-/** Endpoints katana pulls out of app.js: just over AGG_THRESHOLD, so they fold into the one aggregate. */
+/** Endpoints katana pulls out of app.js (27 with uExport): the deepest group in the showcase. */
 const ENDPOINT_WORDS = [
   'users', 'users/me', 'orders', 'orders/history', 'cart', 'checkout', 'payments', 'invoices', 'products',
   'products/search', 'reviews', 'wishlist', 'coupons', 'shipping', 'addresses', 'notifications', 'messages',
   'settings', 'profile', 'avatar', 'sessions', 'tokens/refresh', 'password/reset', 'feature-flags', 'health',
   'metrics', 'i18n', 'uploads', 'exports', 'webhooks', 'support/tickets', 'analytics',
 ];
-/** The one endpoint with a finding (medium): it stays visible next to the aggregate. */
+/** The one endpoint with a finding (medium): the endpoints group is amber while collapsed. */
 const uExport = url(`https://app.${D}/api/v1/admin/export`);
 function endpoints(): Ref[] {
-  const quiet = AGG_THRESHOLD + 2;
+  const quiet = 26;
   const names = Array.from({ length: quiet }, (_, i) => ENDPOINT_WORDS[i] ?? `route-${String(i)}`);
   return [...names.map((w) => url(`https://app.${D}/api/v1/${w}`)), uExport];
 }
@@ -197,6 +198,7 @@ export function generateShowcase(): MockFile[] {
     ]),
     scan('katana', '1.1.0', `katana -u https://app.${D}/ -jc -d 3 -json`, '09:12:30', '09:14:00', [
       finding('url', uAppJs.value, uApp, 'has_url', { data: { source: 'script', size: 482_113 } }),
+      finding('url', uAppLogin.value, uApp, 'has_url', { data: { source: 'link' } }),
       ...endpoints().map((e) => finding('url', e.value, uAppJs, 'has_url', { data: { source: 'js-endpoint' } })),
     ]),
     scan('trufflehog', '3.82.0', 'trufflehog filesystem js/ --json', '09:14:30', '09:15:00', [

@@ -160,3 +160,42 @@ describe('applySearchPath', () => {
     expect(ids(cy, SEARCH_PATH)).toEqual([]);
   });
 });
+
+describe('focus steps through groups', () => {
+  const G = 'agg:000000000000000a:resolves_to:ip';
+  /** p ──→ G (open) ──→ m1, m2;  m1 ──→ x */
+  function grouped() {
+    const cy = headless();
+    cy.add(
+      toElements({
+        nodes: [
+          node('000000000000000a'),
+          aggregate({ id: G, parentId: '000000000000000a', childType: 'ip', relation: 'resolves_to', expanded: true }),
+          node('m1', { type: 'ip' }),
+          node('m2', { type: 'ip' }),
+          node('x', { type: 'port' }),
+        ],
+        edges: [
+          edge('000000000000000a', G, { kind: 'group', relation: 'resolves_to' }),
+          edge(G, 'm1', { kind: 'member', relation: null }),
+          edge(G, 'm2', { kind: 'member', relation: null }),
+          edge('m1', 'x', { relation: 'has_port' }),
+        ],
+      }),
+    );
+    return cy;
+  }
+  const nodesOf = (cy: Core, id: string, hops: number) =>
+    focusNeighborhood(cy, id, hops)
+      .nodes()
+      .map((n) => n.id())
+      .sort();
+
+  test('1 hop from a parent reaches the members of its groups (the group is no hop of its own)', () => {
+    expect(nodesOf(grouped(), '000000000000000a', 1)).toEqual(['000000000000000a', G, 'm1', 'm2'].sort());
+  });
+
+  test('1 hop from a member reaches its group’s parent, not its siblings', () => {
+    expect(nodesOf(grouped(), 'm1', 1)).toEqual(['000000000000000a', G, 'm1', 'x'].sort());
+  });
+});

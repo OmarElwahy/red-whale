@@ -1,19 +1,31 @@
 import {
   SEVERITIES,
   expandResponseSchema,
+  graphPathResponseSchema,
   graphResponseSchema,
   neighborsResponseSchema,
   nodeId,
-  type AggregateNode,
-  type GraphNode,
+  type GraphResponse,
 } from '@redwhale/shared';
 import { describe, expect, test } from 'vitest';
-import { body, error, idOf, ingestExamples, ingestMock, testApi } from './helpers';
+import { body, error, idOf, ingestExamples, ingestMock, isAggregate, isReal, openAll, testApi, view } from './helpers';
 
 const rank = (s: string | null) => (s === null ? -1 : SEVERITIES.indexOf(s as (typeof SEVERITIES)[number]));
-const isAggregate = (n: GraphNode | AggregateNode): n is AggregateNode => n.type === 'aggregate';
 const DOMAIN = nodeId('domain', 'northwind.example');
 const SUB_AGG = `agg:${DOMAIN}:has_subdomain:subdomain`;
+
+/** The real parent → child links a view draws, through groups or directly. */
+function links(g: GraphResponse): string[] {
+  const parentOf = new Map(g.nodes.filter(isAggregate).map((a) => [a.id, a.parentId]));
+  const out = g.edges.flatMap((e) => {
+    if (e.kind === 'relation' || e.kind === 'neighbor') return [`${e.source}>${e.target}`];
+    const parent = e.kind === 'member' ? parentOf.get(e.source) : null;
+    return parent ? [`${parent}>${e.target}`] : [];
+  });
+  return [...new Set(out)];
+}
+
+const EMPTY_VIEW = { state: { expand: [], neighbors: [] }, overBudget: [], autoOpened: [], autoFolded: [], expandAll: [] };
 
 describe('GET /api/graph', () => {
   test('empty database', async () => {
@@ -22,26 +34,34 @@ describe('GET /api/graph', () => {
       nodes: [],
       edges: [],
       truncated: false,
-      threshold: 25,
       totals: { nodes: 0, edges: 0 },
+      ...EMPTY_VIEW,
     });
   });
 
-  test('the four examples come back whole, with no aggregates', async () => {
+  test('the four examples start collapsed: the domain and one group per kind of child', async () => {
     const api = await testApi();
     ingestExamples(api.db);
     const g = body(await api.get('/api/graph'), 200, graphResponseSchema);
-    expect(g.nodes).toHaveLength(11);
-    expect(g.edges).toHaveLength(11);
-    expect(g.nodes.filter(isAggregate)).toEqual([]);
+    const domain = idOf(api.db, 'example.com');
+    expect(g.nodes.filter(isReal).map((n) => n.label)).toEqual(['example.com']);
+    for (const a of g.nodes.filter(isAggregate)) expect(a).toMatchObject({ parentId: domain, expanded: false });
     expect(g.totals).toEqual({ nodes: 11, edges: 11 });
+  });
+
+  test('opened all the way, the examples come back whole', async () => {
+    const api = await testApi();
+    ingestExamples(api.db);
+    const g = await openAll(api);
+    expect(g.nodes.filter(isReal)).toHaveLength(11);
+    expect(links(g)).toHaveLength(11);
   });
 
   test('effective severity reaches the domain through the path to the medium finding', async () => {
     const api = await testApi();
     ingestExamples(api.db);
-    const g = body(await api.get('/api/graph'), 200, graphResponseSchema);
-    const eff = Object.fromEntries(g.nodes.flatMap((n) => (isAggregate(n) ? [] : [[n.label, n.effectiveSeverity]])));
+    const g = await openAll(api);
+    const eff = Object.fromEntries(g.nodes.filter(isReal).map((n) => [n.label, n.effectiveSeverity]));
     expect(eff).toMatchObject({
       'example.com': 'medium',
       'dev.example.com': 'medium',
@@ -50,17 +70,15 @@ describe('GET /api/graph', () => {
     });
   });
 
-  test('mock with 60 subdomains: the domain, one aggregate, and the risky subdomains', async () => {
+  test('mock with 60 subdomains: the domain and one collapsed subdomain group, with its risk', async () => {
     const api = await testApi();
     ingestMock(api.db, 60);
     const g = body(await api.get('/api/graph'), 200, graphResponseSchema);
     const agg = g.nodes.filter(isAggregate).find((n) => n.id === SUB_AGG);
-    const risky = g.nodes.filter((n): n is GraphNode => n.type === 'subdomain');
-    expect(risky.length).toBeGreaterThan(0);
-    for (const s of risky) expect(rank(s.effectiveSeverity) >= rank('medium') || s.tag === 'interesting').toBe(true);
-    expect(agg).toMatchObject({ total: 60, count: 60 - risky.length, parentId: DOMAIN, relation: 'has_subdomain' });
-    expect(g.nodes.some((n) => n.id === DOMAIN)).toBe(true);
-    expect(g.edges).toContainEqual({ id: `edge:${SUB_AGG}`, source: DOMAIN, target: SUB_AGG, relation: 'has_subdomain' });
+    expect(agg).toMatchObject({ count: 60, remaining: 60, expanded: false, parentId: DOMAIN, relation: 'has_subdomain' });
+    expect((agg?.risk.critical ?? 0) + (agg?.risk.high ?? 0)).toBeGreaterThan(0);
+    expect(g.nodes.filter((n) => n.type === 'subdomain')).toEqual([]);
+    expect(g.edges).toContainEqual({ id: `edge:${SUB_AGG}`, source: DOMAIN, target: SUB_AGG, relation: 'has_subdomain', kind: 'group' });
   });
 
   describe('filters', () => {
@@ -69,38 +87,40 @@ describe('GET /api/graph', () => {
       ingestExamples(api.db);
       return api;
     }
-    const labels = (g: { nodes: (GraphNode | AggregateNode)[] }) => g.nodes.map((n) => n.label).sort();
+    const labels = (g: GraphResponse) => g.nodes.filter(isReal).map((n) => n.label).sort();
 
     test('types', async () => {
       const api = await examples();
-      const g = body(await api.get('/api/graph?types=subdomain,ip'), 200, graphResponseSchema);
-      expect(new Set(g.nodes.map((n) => n.type))).toEqual(new Set(['subdomain', 'ip']));
-      expect(g.nodes).toHaveLength(4);
+      const g = await openAll(api, 'types=subdomain,ip');
+      expect(new Set(g.nodes.filter(isReal).map((n) => n.type))).toEqual(new Set(['subdomain', 'ip']));
+      expect(g.nodes.filter(isReal)).toHaveLength(4);
     });
 
     test('types given twice (?types=a&types=b)', async () => {
       const api = await examples();
-      const g = body(await api.get('/api/graph?types=subdomain&types=ip'), 200, graphResponseSchema);
-      expect(g.nodes).toHaveLength(4);
+      const twice = body(await api.get('/api/graph?types=subdomain&types=ip'), 200, graphResponseSchema);
+      const once = body(await api.get('/api/graph?types=subdomain,ip'), 200, graphResponseSchema);
+      expect(twice).toEqual(once);
+      expect(twice.totals.nodes).toBe(4);
     });
 
     test('minSeverity keeps the path down to the finding', async () => {
       const api = await examples();
-      const g = body(await api.get('/api/graph?minSeverity=medium'), 200, graphResponseSchema);
+      const g = await openAll(api, 'minSeverity=medium');
       expect(labels(g)).toEqual(['dev.example.com', 'example.com', 'git-config-exposure', 'https://dev.example.com/.git/config']);
-      expect(g.edges).toHaveLength(3);
+      expect(links(g)).toHaveLength(3);
     });
 
     test('confidence', async () => {
       const api = await examples();
-      const g = body(await api.get('/api/graph?confidence=corroborated'), 200, graphResponseSchema);
+      const g = await openAll(api, 'confidence=corroborated');
       expect(labels(g)).toEqual(['nginx/1.18.0']);
-      for (const n of g.nodes) expect(n).toMatchObject({ confidence: 'corroborated' });
+      for (const n of g.nodes.filter(isReal)) expect(n).toMatchObject({ confidence: 'corroborated' });
     });
 
     test('tool: nodes nuclei reported, including as a parent', async () => {
       const api = await examples();
-      const g = body(await api.get('/api/graph?tool=nuclei'), 200, graphResponseSchema);
+      const g = await openAll(api, 'tool=nuclei');
       expect(labels(g)).toEqual(['dev.example.com', 'git-config-exposure', 'https://dev.example.com/.git/config']);
     });
 
@@ -109,25 +129,25 @@ describe('GET /api/graph', () => {
       const api1 = idOf(api.db, 'api.example.com');
       await api.send('PATCH', `/api/nodes/${api1}`, { tag: 'interesting' });
       await api.send('PATCH', `/api/nodes/${idOf(api.db, 'mail.example.com')}`, { tag: 'ignored' });
-      const tagged = body(await api.get('/api/graph?tag=interesting'), 200, graphResponseSchema);
+      const tagged = await openAll(api, 'tag=interesting');
       expect(labels(tagged)).toEqual(['api.example.com']);
-      const rest = body(await api.get('/api/graph?excludeTag=ignored'), 200, graphResponseSchema);
+      const rest = await openAll(api, 'excludeTag=ignored');
       expect(labels(rest)).not.toContain('mail.example.com');
-      expect(rest.nodes).toHaveLength(10);
+      expect(rest.nodes.filter(isReal)).toHaveLength(10);
     });
 
     test('q: case-insensitive matches, plus their path up to the root', async () => {
       const api = await examples();
-      const g = body(await api.get('/api/graph?q=API'), 200, graphResponseSchema);
+      const g = await openAll(api, 'q=API');
       expect(labels(g)).toEqual(['api.example.com', 'example.com', 'https://api.example.com/']);
-      expect(g.edges).toHaveLength(2);
+      expect(links(g)).toHaveLength(2);
     });
 
     test('q: the path only goes through nodes that pass the other filters', async () => {
       const api = await examples();
-      const g = body(await api.get('/api/graph?q=git-config&types=vulnerability,url'), 200, graphResponseSchema);
+      const g = await openAll(api, 'q=git-config&types=vulnerability,url');
       expect(labels(g)).toEqual(['git-config-exposure', 'https://dev.example.com/.git/config']);
-      const cut = body(await api.get('/api/graph?q=git-config&types=vulnerability,subdomain,domain'), 200, graphResponseSchema);
+      const cut = await openAll(api, 'q=git-config&types=vulnerability,subdomain,domain');
       expect(labels(cut)).toEqual(['git-config-exposure']);
     });
 
@@ -145,12 +165,11 @@ describe('GET /api/graph', () => {
     });
   });
 
-  test('over maxElements the server aggregates harder and says so', async () => {
+  test('over maxElements an open group is refused and the server says so', async () => {
     const api = await testApi({ maxElements: 50 });
     ingestMock(api.db, 60);
-    const g = body(await api.get('/api/graph'), 200, graphResponseSchema);
-    expect(g.truncated).toBe(true);
-    expect(g.threshold).toBeLessThan(25);
+    const g = await view(api, { expand: [{ id: SUB_AGG, pages: 1, pins: [] }] });
+    expect(g).toMatchObject({ truncated: true, overBudget: [SUB_AGG], state: { expand: [] } });
     expect(g.nodes.length + g.edges.length).toBeLessThanOrEqual(50);
   });
 
@@ -160,6 +179,76 @@ describe('GET /api/graph', () => {
     const g = body(await api.get('/api/graph'), 200, graphResponseSchema);
     expect(g.totals.nodes).toBeGreaterThan(900);
     expect(g.nodes.length + g.edges.length).toBeLessThanOrEqual(2000);
+  });
+});
+
+describe('POST /api/graph/view', () => {
+  test('an open group: its members hang under it, with their own groups collapsed', async () => {
+    const api = await testApi();
+    ingestMock(api.db, 60);
+    const g = await view(api, { expand: [{ id: SUB_AGG, pages: 1, pins: [] }] });
+    const subs = g.nodes.filter((n) => n.type === 'subdomain');
+    expect(subs).toHaveLength(60);
+    const ranks = subs.map((n) => rank(isReal(n) ? n.effectiveSeverity : null));
+    expect(ranks).toEqual([...ranks].sort((a, b) => b - a));
+    expect(g.state.expand).toEqual([{ id: SUB_AGG, pages: 1, pins: [] }]);
+    expect(g.nodes.find((n) => n.id === SUB_AGG)).toMatchObject({ expanded: true, shown: 60, remaining: 0 });
+  });
+
+  test('filters go in the body, as the query string takes them', async () => {
+    const api = await testApi();
+    ingestExamples(api.db);
+    const g = await view(api, { filters: { types: 'subdomain,ip' } });
+    expect(g.totals.nodes).toBe(4);
+  });
+
+  test('expandAll opens everything below a node and reports what it opened', async () => {
+    const api = await testApi();
+    ingestExamples(api.db);
+    const domain = idOf(api.db, 'example.com');
+    const g = await view(api, { expandAll: [domain] });
+    expect(g.nodes.filter(isReal)).toHaveLength(11);
+    expect(g.expandAll).toEqual([{ nodeId: domain, opened: g.state.expand.length, hidden: 0 }]);
+  });
+
+  test.each([
+    [{ expand: [{ id: 'nope', pages: 1, pins: [] }] }, 'expand[0].id'],
+    [{ expand: [{ id: SUB_AGG, pages: 51, pins: [] }] }, 'expand[0].pages'],
+    [{ filters: { types: 'bogus' } }, 'filters.types[0]'],
+    [{ foo: 1 }, 'Unrecognized key: "foo"'],
+  ])('%j → 400', async (request, issue) => {
+    const api = await testApi();
+    error(await api.send('POST', '/api/graph/view', request), 400, issue);
+  });
+});
+
+describe('GET /api/graph/path/:nodeId', () => {
+  test('the groups to open, root first, to draw a node three groups deep', async () => {
+    const api = await testApi();
+    ingestExamples(api.db);
+    const port = idOf(api.db, '93.184.216.34:443/tcp');
+    const path = body(await api.get(`/api/graph/path/${port}`), 200, graphPathResponseSchema);
+    expect(path.inView).toBe(true);
+    expect(path.steps.length).toBeGreaterThanOrEqual(2);
+    expect(path.steps.at(-1)).toMatchObject({ memberId: port });
+    // Opening exactly those groups as pins draws the port.
+    const g = await view(api, { expand: path.steps.map((s) => ({ id: s.groupId, pages: 0, pins: [s.memberId] })) });
+    expect(g.nodes.some((n) => n.id === port)).toBe(true);
+  });
+
+  test('a node the filters exclude is not in view', async () => {
+    const api = await testApi();
+    ingestExamples(api.db);
+    const port = idOf(api.db, '93.184.216.34:443/tcp');
+    const path = body(await api.get(`/api/graph/path/${port}?types=domain`), 200, graphPathResponseSchema);
+    expect(path).toEqual({ nodeId: port, inView: false, steps: [] });
+  });
+
+  test('unknown node → 404, bad filter → 400', async () => {
+    const api = await testApi();
+    ingestExamples(api.db);
+    error(await api.get('/api/graph/path/0000000000000000'), 404, 'not found');
+    error(await api.get(`/api/graph/path/${idOf(api.db, 'example.com')}?minSeverity=urgent`), 400, 'minSeverity');
   });
 });
 
@@ -221,7 +310,7 @@ describe('GET /api/graph/neighbors/:nodeId', () => {
     ingestExamples(api.db);
     return api;
   }
-  const labelsOf = (g: { nodes: (GraphNode | AggregateNode)[] }) => g.nodes.map((n) => n.label).sort();
+  const labelsOf = (g: GraphResponse) => g.nodes.map((n) => n.label).sort();
 
   test('depth 1 (the default) of a subdomain: its domain, IP and URL', async () => {
     const api = await examples();
@@ -232,16 +321,15 @@ describe('GET /api/graph/neighbors/:nodeId', () => {
     expect(g.edges).toHaveLength(3);
   });
 
-  test('depth 2 reaches the ports, the technology and the sibling subdomains', async () => {
+  test('depth 2 reaches the ports, the technology and the sibling subdomains, grouped', async () => {
     const api = await examples();
     const g = body(
       await api.get(`/api/graph/neighbors/${idOf(api.db, 'api.example.com')}?depth=2`),
       200,
       neighborsResponseSchema,
     );
-    expect(labelsOf(g)).toEqual(
-      expect.arrayContaining(['93.184.216.34:22/tcp', '93.184.216.34:443/tcp', 'nginx/1.18.0', 'dev.example.com', 'mail.example.com']),
-    );
+    expect(labelsOf(g)).toEqual(expect.arrayContaining(['2 ports', '3 subdomains', 'nginx/1.18.0']));
+    expect(g.totals.nodes).toBeGreaterThanOrEqual(8);
   });
 
   test('a big neighbourhood is aggregated, with the centre always present', async () => {

@@ -16,7 +16,17 @@ function stub(status: number, body: unknown): { fetch: Fetch; calls: string[] } 
   };
 }
 
-const graph = { nodes: [node('a')], edges: [], truncated: false, threshold: 25, totals: { nodes: 1, edges: 0 } };
+const graph = {
+  nodes: [node('a')],
+  edges: [],
+  truncated: false,
+  totals: { nodes: 1, edges: 0 },
+  state: { expand: [], neighbors: [] },
+  overBudget: [],
+  autoOpened: [],
+  autoFolded: [],
+  expandAll: [],
+};
 
 describe('getJson', () => {
   test('parses a valid response with the shared schema', async () => {
@@ -63,7 +73,7 @@ describe('query params', () => {
   });
 
   test('equal filters give equal query keys regardless of key order', () => {
-    expect(queryKeys.graph({ q: 'x', types: ['ip'] })).toEqual(queryKeys.graph({ types: ['ip'], q: 'x' }));
+    expect(queryKeys.view({ q: 'x', types: ['ip'] }, [], [], [])).toEqual(queryKeys.view({ types: ['ip'], q: 'x' }, [], [], []));
   });
 });
 

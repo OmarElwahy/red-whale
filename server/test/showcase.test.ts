@@ -12,12 +12,12 @@ import {
   SCOPE_KINDS,
   SEVERITIES,
   TAGS,
+  graphPathResponseSchema,
   graphResponseSchema,
   nodeId,
   validateContract,
 } from '@redwhale/shared';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { AGG_THRESHOLD } from '../src/graph/aggregate';
 import { openDb, type Db } from '../src/db/client';
 import { foreignScans, isMockTarget, runMockCli, wipeWorkspace, type MockKind } from '../src/mock/cli';
 import { mockFileText } from '../src/mock/generate';
@@ -130,19 +130,26 @@ describe('after pnpm mock', () => {
     expect(column(db, "SELECT value AS v FROM nodes WHERE type = 'ip'").some((v) => v?.includes(':'))).toBe(true);
   });
 
-  test('exactly one aggregate, just over the threshold, with a risky member left visible', async () => {
+  test('starts collapsed: the domain and its groups, with the critical findings on the badge', async () => {
     const api = await testApi({ db });
     const g = body(await api.get('/api/graph'), 200, graphResponseSchema);
-    const aggregates = g.nodes.filter((n) => n.type === 'aggregate');
-    expect(aggregates).toHaveLength(1);
-    expect(aggregates[0]).toMatchObject({
-      childType: 'url',
-      relation: 'has_url',
-      parentId: nodeId('url', `https://app.${SHOWCASE_DOMAIN}/static/app.js`),
-      total: AGG_THRESHOLD + 3,
-      count: AGG_THRESHOLD + 2,
-    });
-    expect(g.nodes.some((n) => n.id === nodeId('url', `https://app.${SHOWCASE_DOMAIN}/api/v1/admin/export`))).toBe(true);
+    const domain = nodeId('domain', SHOWCASE_DOMAIN);
+    expect(g.nodes.filter((n) => n.type !== 'aggregate').map((n) => n.id)).toContain(domain);
+    const subs = g.nodes.find((n) => n.id === `agg:${domain}:has_subdomain:subdomain`);
+    expect(subs).toMatchObject({ type: 'aggregate', expanded: false, maxSeverity: 'critical' });
+    expect(subs?.type === 'aggregate' && subs.risk.critical).toBeGreaterThan(0);
+  });
+
+  test('groups nest three deep: subdomains → app’s URLs → the endpoints app.js links to', async () => {
+    const api = await testApi({ db });
+    const exportUrl = nodeId('url', `https://app.${SHOWCASE_DOMAIN}/api/v1/admin/export`);
+    const path = body(await api.get(`/api/graph/path/${exportUrl}`), 200, graphPathResponseSchema);
+    const app = (p: string) => nodeId('url', `https://app.${SHOWCASE_DOMAIN}${p}`);
+    expect(path.steps.map((s) => s.groupId)).toEqual([
+      `agg:${nodeId('domain', SHOWCASE_DOMAIN)}:has_subdomain:subdomain`,
+      `agg:${app('/')}:has_url:url`,
+      `agg:${app('/static/app.js')}:has_url:url`,
+    ]);
   });
 });
 

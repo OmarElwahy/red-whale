@@ -1,8 +1,11 @@
-// GET /api/graph, /api/graph/expand/:aggregateId, /api/graph/neighbors/:nodeId (docs/architecture.md §6–7).
+// The graph views (docs/architecture.md §6–7): GET /api/graph (everything collapsed), POST /api/graph/view (with
+// the analyst's open groups), GET /api/graph/path/:nodeId, GET /api/graph/expand/:aggregateId and
+// GET /api/graph/neighbors/:nodeId.
 import {
   RELATIONS,
   expandQuerySchema,
   graphFiltersSchema,
+  graphViewRequestSchema,
   neighborsQuerySchema,
   parseAggregateId,
   type GraphEdge,
@@ -10,17 +13,33 @@ import {
 } from '@redwhale/shared';
 import { eq } from 'drizzle-orm';
 import { nodes } from '../db/schema';
-import { aggregateGraph } from '../graph/aggregate';
+import { groupPath, groupedView } from '../graph/aggregate';
 import { filteredGraph, loadGraph, riskFirst, type Graph } from '../graph/store';
 import { HttpError, notFound, parseInput } from '../http';
 import type { RouteContext } from './context';
 
-export function graphRoutes({ app, db, threshold, maxElements }: RouteContext): void {
+export function graphRoutes({ app, db, maxElements }: RouteContext): void {
   app.get('/api/graph', (req) => {
     const filters = parseInput(graphFiltersSchema, req.query);
     const graph = filteredGraph(db, filters, { searchPaths: true });
-    const result = aggregateGraph(graph, { threshold, maxElements });
+    const result = groupedView(graph, { maxElements });
     return { ...result, totals: { nodes: graph.nodes.length, edges: graph.edges.length } };
+  });
+
+  // A POST because the open groups don't fit in a query string; it reads only.
+  app.post('/api/graph/view', (req) => {
+    const { filters, ...view } = parseInput(graphViewRequestSchema, req.body);
+    const graph = filteredGraph(db, filters, { searchPaths: true });
+    const result = groupedView(graph, { maxElements, ...view });
+    return { ...result, totals: { nodes: graph.nodes.length, edges: graph.edges.length } };
+  });
+
+  app.get<{ Params: { nodeId: string } }>('/api/graph/path/:nodeId', (req) => {
+    const id = req.params.nodeId;
+    const filters = parseInput(graphFiltersSchema, req.query);
+    if (!db.select({ id: nodes.id }).from(nodes).where(eq(nodes.id, id)).get()) throw notFound(`node ${id}`);
+    const steps = groupPath(filteredGraph(db, filters, { searchPaths: true }), id);
+    return { nodeId: id, inView: steps !== null, steps: steps ?? [] };
   });
 
   app.get<{ Params: { aggregateId: string } }>('/api/graph/expand/:aggregateId', (req) => {
@@ -100,7 +119,7 @@ export function graphRoutes({ app, db, threshold, maxElements }: RouteContext): 
       nodes: full.nodes.filter((n) => reached.has(n.id)),
       edges: full.edges.filter((e) => reached.has(e.source) && reached.has(e.target)),
     };
-    const result = aggregateGraph(sub, { threshold, maxElements, pinned: [center] });
+    const result = groupedView(sub, { maxElements, entries: [center] });
     return { ...result, totals: { nodes: sub.nodes.length, edges: sub.edges.length }, center };
   });
 }

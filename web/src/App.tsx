@@ -1,33 +1,35 @@
-import type { AggregateNode, GraphNode } from '@redwhale/shared';
-import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import type { AggregateNode, GraphNode, GraphResponse, ViewNode } from '@redwhale/shared';
+import { useQueryClient } from '@tanstack/react-query';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { ApiError, ResponseShapeError } from '@/api/client';
 import type { LiveStatus } from '@/api/live';
 import { useLiveUpdates } from '@/api/useLiveUpdates';
 import {
+  fetchFirstMatch,
+  fetchPath,
   saveLayout,
-  useExpansions,
-  useGraph,
+  useGraphPath,
+  useGraphView,
   useHighlights,
-  useNeighborhoods,
   useNodeDetail,
-  useReveals,
   useStats,
 } from '@/api/hooks';
+import { queryKeys } from '@/api/query';
 import { Legend } from '@/components/Legend';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { FilterSidebar } from '@/filters/FilterSidebar';
-import { firstMatch } from '@/filters/search';
 import {
+  ELEMENT_BUDGET,
+  below,
   canExpandNeighbors,
-  canLoadPage,
-  composeGraph,
-  revealCheck,
-  revealFrom,
-  type ComposedGraph,
-  type GroupState,
-} from '@/graph/compose';
+  childGroups,
+  indexView,
+  keepFrom,
+  sameState,
+  type ViewIndex,
+} from '@/graph/groups';
 import { CytoscapeGraph, type GraphHandle } from '@/graph/CytoscapeGraph';
 import { ExportButtons } from '@/graph/ExportButtons';
 import { toElements } from '@/graph/elements';
@@ -44,7 +46,6 @@ import { useUi, type BottomPanel } from '@/state/ui';
 import { NodeTable } from '@/table/NodeTable';
 import { LAYOUT_MODES, hasFilters, useView, type LayoutMode } from '@/state/view';
 
-type AnyNode = GraphNode | AggregateNode;
 
 function ErrorPanel({ error }: { error: Error }) {
   const issues = error instanceof ApiError || error instanceof ResponseShapeError ? error.issues : [];
@@ -155,15 +156,28 @@ function Message({ children }: { children: ReactNode }) {
   return <div className="text-muted-foreground m-auto text-sm">{children}</div>;
 }
 
-/** The aggregate's own expansion, or the group a node was expanded from. */
-function groupFor(composed: ComposedGraph, node: AnyNode): GroupState | undefined {
-  const aggregateId = node.type === 'aggregate' ? node.id : composed.groupOf.get(node.id);
-  return aggregateId === undefined ? undefined : composed.groups.get(aggregateId);
+/** The header line for an "Expand all below" answer. */
+function expandAllNotice(view: GraphResponse): string | null {
+  if (view.expandAll.length === 0) return null;
+  const opened = view.expandAll.reduce((n, r) => n + r.opened, 0);
+  const hidden = view.expandAll.reduce((n, r) => n + r.hidden, 0);
+  const groups = `${String(opened)} group${opened === 1 ? '' : 's'}`;
+  if (hidden === 0) return `Expand all below: opened ${groups}`;
+  const why = view.truncated ? ' (element limit)' : '';
+  return `Expand all below: opened ${groups}; ${String(hidden)} nodes below are still collapsed${why}`;
 }
 
-function canLoadMore(composed: ComposedGraph, node: AnyNode): boolean {
-  if (node.type !== 'aggregate') return false;
-  return canLoadPage(composed, composed.groups.get(node.id)?.remaining ?? node.total);
+function groupNode(ix: ViewIndex, id: string): AggregateNode | undefined {
+  const n = ix.byId.get(id);
+  return n?.type === 'aggregate' ? n : undefined;
+}
+
+/** Open groups drawn below this group, and every node drawn below those. */
+function openBelow(ix: ViewIndex, groupId: string): { groups: string[]; hidden: string[] } {
+  const groups = below(ix, groupId).groups.filter((g) => groupNode(ix, g)?.expanded === true);
+  const hidden = new Set<string>();
+  for (const g of groups) for (const id of below(ix, g).nodes) hidden.add(id);
+  return { groups, hidden: [...hidden] };
 }
 
 /** Saves dragged positions for the lifetime of the app, flushing when the page goes away. */
@@ -201,81 +215,112 @@ export function App() {
   const layout = useView((s) => s.layout);
   const relayoutSeq = useUi((s) => s.relayoutSeq);
   const [layingOut, setLayingOut] = useState(false);
+  const [legendOpen, setLegendOpen] = useState(false);
   useLiveUpdates();
   const liveStatus = useLive((s) => s.status);
   const fresh = useLive((s) => s.fresh);
-  const graph = useGraph(filters);
   const stats = useStats();
   const highlights = useHighlights();
   const graphRef = useRef<GraphHandle>(null);
+  const queryClient = useQueryClient();
   const selectedId = useUi((s) => s.selectedId);
   const focusId = useUi((s) => s.focusId);
   const expanded = useUi((s) => s.expanded);
   const neighbors = useUi((s) => s.neighbors);
-  const revealed = useUi((s) => s.revealed);
+  const expandAll = useUi((s) => s.expandAll);
+  const collapsing = useUi((s) => s.collapsing);
+  const anchor = useUi((s) => s.anchor);
+  const notice = useUi((s) => s.notice);
   const centerWhenShown = useUi((s) => s.centerWhenShown);
   const bottomPanel = useUi((s) => s.bottomPanel);
   const menu = useUi((s) => s.menu);
   const centerOn = useUi((s) => s.centerOn);
   const jumpPending = useUi((s) => s.jumpPending);
-  const { select, focus, expand, collapse, expandNeighbors, reveal, openMenu, closeMenu, center, clearJump } =
-    useUi.getState();
+  const ui = useUi.getState();
+  const { select, focus, openMenu, closeMenu, center, clearJump } = ui;
 
-  const expansions = useExpansions(expanded, filters);
-  const neighborhoods = useNeighborhoods(neighbors);
-  const reveals = useReveals(revealed);
-  const composed = useMemo(
-    () =>
-      graph.data
-        ? composeGraph({
-            base: graph.data,
-            expansions: expansions.data,
-            neighborhoods: neighborhoods.data,
-            reveals: reveals.data,
-          })
-        : null,
-    [graph.data, expansions.data, neighborhoods.data, reveals.data],
-  );
-  const elements = useMemo(() => (composed ? toElements(composed) : []), [composed]);
-  const nodesById = useMemo(() => new Map(composed?.nodes.map((n) => [n.id, n])), [composed]);
+  // What the canvas shows directly goes with every request (`keep`), so a live update that folds it into a new
+  // group gets that group opened instead.
+  const keep = useRef<{ edges: string[]; roots: string[] }>({ edges: [], roots: [] });
+  const graph = useGraphView({ filters, expand: expanded, neighbors, expandAll }, () => keep.current);
+  const view = graph.data;
+  const ix = useMemo(() => (view ? indexView(view) : null), [view]);
+  const elements = useMemo(() => (view ? toElements(view) : []), [view]);
+  useEffect(() => {
+    if (view) keep.current = keepFrom(view);
+  }, [view]);
   const { saver, error: layoutError } = usePositionSaver();
 
-  // A node selected while it isn't on the canvas (picked in the table, or hidden by a filter change): its panel
-  // is built from its detail, and offers "Show on graph".
+  // The server answers with the view it applied: groups dropped (collapsed above, gone under these filters, over
+  // budget), auto-opened, or opened by "Expand all below". That becomes the state, under a key that already has
+  // this answer, so nothing is fetched twice.
+  useEffect(() => {
+    if (!view || graph.isPlaceholderData) return;
+    const now = useUi.getState();
+    const asked = { expand: now.expanded, neighbors: now.neighbors };
+    if (now.expandAll.length === 0 && sameState(view.state, asked)) return;
+    queryClient.setQueryData(queryKeys.view(filters, view.state.expand, view.state.neighbors, []), view);
+    now.adoptView(view.state, now.expandAll.length > 0 ? expandAllNotice(view) : null);
+  }, [view, graph.isPlaceholderData, filters, queryClient]);
+
+  const isShown = (id: string) => ix?.byId.has(id) ?? false;
+
+  // A node selected while it isn't on the canvas (picked in the table, hidden by a collapse or a filter change):
+  // its panel is built from its detail, and offers "Show on graph" unless the filters leave it out.
   const hiddenId =
-    selectedId !== null && !selectedId.startsWith('agg:') && composed !== null && !nodesById.has(selectedId)
+    selectedId !== null &&
+    !selectedId.startsWith('agg:') &&
+    !selectedId.startsWith('more:') &&
+    ix !== null &&
+    !ix.byId.has(selectedId)
       ? selectedId
       : null;
   const hidden = useNodeDetail(hiddenId);
-  const hiddenReveal = hiddenId !== null && hidden.data?.node.id === hiddenId ? revealFrom(hidden.data) : null;
+  const hiddenPath = useGraphPath(hiddenId, filters);
+  const hiddenNode = hiddenId !== null && hidden.data?.node.id === hiddenId ? hidden.data.node : null;
 
-  // "Show on graph": center on the node once it's on the canvas.
+  // The latest view, for callbacks that run after an await.
+  const ixRef = useRef<ViewIndex | null>(null);
   useEffect(() => {
-    if (centerWhenShown === null || !nodesById.has(centerWhenShown)) return;
+    ixRef.current = ix;
+  }, [ix]);
+
+  /** Opens exactly the groups on the path to the node, then centers on it once it's drawn. */
+  const showOnGraph = useCallback(
+    async (id: string) => {
+      if (ixRef.current?.byId.has(id)) {
+        center(id);
+        return;
+      }
+      const path = await fetchPath(id, useView.getState().filters);
+      if (path.inView) useUi.getState().openPath(id, path.steps);
+    },
+    [center],
+  );
+
+  // Center on a node as soon as it is on the canvas (after opening the path to it).
+  useEffect(() => {
+    if (centerWhenShown === null || !ix?.byId.has(centerWhenShown)) return;
     useUi.getState().clearCenterWhenShown();
     center(centerWhenShown);
-  }, [centerWhenShown, nodesById, center]);
+  }, [centerWhenShown, ix, center]);
 
   // The search the canvas was loaded with: while a new one loads, the previous graph is still shown.
   const [loadedQuery, setLoadedQuery] = useState(filters.q);
-  if (graph.data && !graph.isPlaceholderData && loadedQuery !== filters.q) setLoadedQuery(filters.q);
+  if (view && !graph.isPlaceholderData && loadedQuery !== filters.q) setLoadedQuery(filters.q);
 
-  // Search jump: once the graph for the query has loaded, select and center the riskiest match.
-  const settled = graph.data !== undefined && !graph.isPlaceholderData && !graph.isFetching;
+  // Search jump (Enter): the riskiest match anywhere, opened down to if it's inside collapsed groups.
   useEffect(() => {
     if (!jumpPending) return;
-    if (graph.error) {
-      clearJump();
-      return;
-    }
-    if (!settled || !composed) return;
     clearJump();
-    const target = filters.q === undefined ? null : firstMatch(composed.nodes, filters.q);
-    if (target) {
-      select(target.id);
-      center(target.id);
-    }
-  }, [jumpPending, settled, composed, graph.error, filters.q, select, center, clearJump]);
+    const current = useView.getState().filters;
+    if (current.q === undefined) return;
+    void fetchFirstMatch(current).then((match) => {
+      if (!match) return;
+      select(match.id);
+      void showOnGraph(match.id);
+    });
+  }, [jumpPending, clearJump, select, showOnGraph]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -287,18 +332,30 @@ export function App() {
     };
   }, [focus]);
 
-  const run = (action: MenuAction, target: AnyNode) => {
+  const collapseGroup = (groupId: string) => {
+    if (!ix) return;
+    ui.collapse(groupId, [...below(ix, groupId).nodes]);
+  };
+
+  const run = (action: MenuAction, target: ViewNode) => {
     closeMenu();
-    if (!composed) return;
+    if (!ix) return;
+    const group = target.type === 'aggregate' ? target : undefined;
     switch (action) {
       case 'focus':
         focus(target.id);
         break;
       case 'expand-neighbors':
-        if (canExpandNeighbors(composed)) expandNeighbors(target.id);
+        if (canExpandNeighbors(ix)) {
+          const closed = childGroups(ix, target.id).filter((id) => groupNode(ix, id)?.expanded === false);
+          ui.expandNeighbors(target.id, closed);
+        }
+        break;
+      case 'expand-all-below':
+        ui.expandAllBelow(target.id);
         break;
       case 'copy-value':
-        if (target.type !== 'aggregate') void navigator.clipboard.writeText(target.value);
+        if (target.type !== 'aggregate' && target.type !== 'more') void navigator.clipboard.writeText(target.value);
         break;
       case 'open-url': {
         const url = target.type === 'url' ? safeHttpUrl(target.value) : null;
@@ -306,11 +363,25 @@ export function App() {
         break;
       }
       case 'expand':
-        if (canLoadMore(composed, target)) expand(target.id);
+        if (group?.canLoadMore) ui.expandGroup(group.id);
         break;
-      case 'collapse': {
-        const group = groupFor(composed, target);
-        if (group) collapse(group.aggregateId, group.members);
+      case 'collapse':
+        if (group) collapseGroup(group.id);
+        break;
+      case 'collapse-below':
+        if (group) {
+          const { groups, hidden: gone } = openBelow(ix, group.id);
+          ui.collapseBelow(group.id, groups, gone);
+        }
+        break;
+      case 'load-more': {
+        const owner = target.type === 'more' ? groupNode(ix, target.groupId) : group;
+        if (owner?.canLoadMore) ui.loadMore(owner.id);
+        break;
+      }
+      case 'collapse-parent': {
+        const parent = ix.memberOf.get(target.id);
+        if (parent) collapseGroup(parent.id);
         break;
       }
       case 'run-tool':
@@ -320,12 +391,15 @@ export function App() {
 
   const handlers: GraphHandlers = {
     onSelect: (id) => {
-      select(id);
+      // A "more" node stands for its group.
+      const more = id !== null ? ix?.byId.get(id) : undefined;
+      select(more?.type === 'more' ? more.groupId : id);
       if (id === null) focus(null);
     },
-    onExpand: (id) => {
-      const target = nodesById.get(id);
-      if (target) run('expand', target);
+    onDoubleTap: (id) => {
+      const target = ix?.byId.get(id);
+      if (target?.type === 'aggregate') run(target.expanded ? 'collapse' : 'expand', target);
+      else if (target?.type === 'more') run('load-more', target);
     },
     onContextMenu: ({ id, x, y }) => {
       openMenu({ id, x, y });
@@ -335,45 +409,58 @@ export function App() {
     },
   };
 
-  /** Table row or highlight: select it, and center on it if it's on the canvas. */
+  /** Table row or highlight: select it, and open the groups down to it if it's inside collapsed ones. */
   const pick = (id: string) => {
     select(id);
-    if (nodesById.has(id)) center(id);
+    void showOnGraph(id);
   };
 
-  const selected = selectedId === null ? undefined : (nodesById.get(selectedId) ?? hiddenReveal?.node);
-  const revealBlocked = hiddenReveal && composed ? revealCheck(composed, hiddenReveal) : null;
-  const menuTarget = menu === null ? undefined : nodesById.get(menu.id);
-  const overlayError = expansions.error ?? neighborhoods.error ?? reveals.error;
+  const shownNode = selectedId === null ? undefined : ix?.byId.get(selectedId);
+  const selected: GraphNode | AggregateNode | undefined =
+    shownNode && shownNode.type !== 'more' ? shownNode : (hiddenNode ?? undefined);
+  const revealBlocked =
+    hiddenPath.data === undefined
+      ? 'Checking where it is…'
+      : !hiddenPath.data.inView
+        ? 'The current filters leave it out.'
+        : ix !== null && ix.size >= ELEMENT_BUDGET
+          ? 'The graph is at its ~2,000-element limit. Collapse a group to make room.'
+          : null;
+  const menuTarget = menu === null ? undefined : ix?.byId.get(menu.id);
   const filtered = hasFilters(filters);
   const workspaceEmpty =
-    stats.data?.totals.nodes === 0 || (graph.data !== undefined && graph.data.totals.nodes === 0 && !filtered);
-  const noMatches = !workspaceEmpty && filtered && graph.data?.totals.nodes === 0;
+    stats.data?.totals.nodes === 0 || (view !== undefined && view.totals.nodes === 0 && !filtered);
+  const noMatches = !workspaceEmpty && filtered && view?.totals.nodes === 0;
+  const realShown = view ? view.nodes.filter((n) => n.type !== 'aggregate' && n.type !== 'more').length : 0;
+  const overBudget = view !== undefined && (view.overBudget.length > 0 || view.truncated);
 
   return (
     <div className="flex h-full flex-col">
       <header className="flex h-11 shrink-0 items-center gap-3 border-b px-4">
         <h1 className="text-sm font-bold tracking-[0.2em] text-red-500">RED WHALE</h1>
-        {graph.data && composed && (
+        {view && (
           <span className="text-muted-foreground text-xs tabular-nums">
-            {composed.nodes.length} of {graph.data.totals.nodes} nodes shown · {graph.data.totals.edges} edges
+            {realShown} of {view.totals.nodes} nodes shown · {view.totals.edges} edges
             {filtered && stats.data && <> · filtered from {stats.data.totals.nodes}</>}
           </span>
         )}
-        {graph.data?.truncated && (
-          <Badge variant="destructive" title={`aggregated at threshold ${String(graph.data.threshold)}`}>
-            truncated
-          </Badge>
-        )}
-        {composed && composed.overBudget.length > 0 && (
-          <Badge variant="destructive" title="Some expansions weren't shown: the canvas holds ~2,000 elements at most">
+        {overBudget && (
+          <Badge
+            variant="destructive"
+            title="Some groups weren't opened: the canvas holds ~2,000 elements at most. Collapse a group to make room."
+          >
             element limit reached
           </Badge>
         )}
-        {overlayError && (
-          <Badge variant="destructive" title={overlayError.message}>
-            expand failed
-          </Badge>
+        {notice !== null && (
+          <button
+            type="button"
+            className="text-muted-foreground hover:text-foreground text-xs"
+            title="Dismiss"
+            onClick={ui.dismissNotice}
+          >
+            {notice} ✕
+          </button>
         )}
         {layoutError !== null && (
           <Badge variant="destructive" title={layoutError}>
@@ -391,7 +478,7 @@ export function App() {
             focused · {hops} hop{hops === 1 ? '' : 's'} · Esc to clear
           </button>
         )}
-        {(graph.isFetching || expansions.isFetching || neighborhoods.isFetching) && (
+        {graph.isFetching && (
           <span className="text-muted-foreground text-xs">loading…</span>
         )}
         {layingOut && layout === 'tree' && <span className="text-muted-foreground text-xs">laying out tree…</span>}
@@ -399,6 +486,16 @@ export function App() {
           <LiveIndicator status={liveStatus} />
           <LayoutToggle layout={layout} />
           <span className="bg-border mx-1 h-5 w-px" aria-hidden />
+          <Button
+            size="sm"
+            variant={legendOpen ? 'secondary' : 'ghost'}
+            aria-pressed={legendOpen}
+            onClick={() => {
+              setLegendOpen((o) => !o);
+            }}
+          >
+            Legend
+          </Button>
           <PanelToggle panel="table" current={bottomPanel}>
             Table
           </PanelToggle>
@@ -409,7 +506,7 @@ export function App() {
           <span className="bg-border mx-1 h-5 w-px" aria-hidden />
           <ExportButtons
             png={() => graphRef.current?.png() ?? null}
-            pngDisabled={graph.error !== null || workspaceEmpty || composed === null}
+            pngDisabled={graph.error !== null || workspaceEmpty || view === undefined}
           />
         </div>
       </header>
@@ -440,6 +537,9 @@ export function App() {
                 query={loadedQuery}
                 centerOn={centerOn}
                 fresh={fresh}
+                alsoFlash={view && !graph.isPlaceholderData ? view.autoFolded : []}
+                collapsing={collapsing}
+                anchor={anchor}
                 layout={layout}
                 relayoutSeq={relayoutSeq}
                 onLayoutBusy={setLayingOut}
@@ -455,16 +555,24 @@ export function App() {
                 </Button>
               </div>
             )}
-            <Legend className="absolute bottom-4 left-4" />
-            {menu && menuTarget && composed && (
+            {legendOpen && (
+              <Legend
+                className="absolute bottom-4 left-4"
+                onClose={() => {
+                  setLegendOpen(false);
+                }}
+              />
+            )}
+            {menu && menuTarget && ix && (
               <ContextMenu
                 x={menu.x}
                 y={menu.y}
                 title={menuTarget.label}
                 items={menuItems(menuTarget, {
-                  group: groupFor(composed, menuTarget),
-                  canLoadPage: canLoadMore(composed, menuTarget),
-                  canExpandNeighbors: canExpandNeighbors(composed),
+                  group: menuTarget.type === 'more' ? groupNode(ix, menuTarget.groupId) : ix.memberOf.get(menuTarget.id),
+                  canExpandNeighbors: canExpandNeighbors(ix),
+                  hasRoom: ix.size < ELEMENT_BUDGET,
+                  hasOpenBelow: menuTarget.type === 'aggregate' && openBelow(ix, menuTarget.id).groups.length > 0,
                 })}
                 onAction={(action) => {
                   run(action, menuTarget);
@@ -477,7 +585,7 @@ export function App() {
             <section aria-label="Table" className="flex h-[40%] min-h-40 shrink-0 flex-col border-t">
               <NodeTable
                 selectedId={selectedId}
-                isShown={(id) => nodesById.has(id)}
+                isShown={isShown}
                 onPick={(node) => {
                   pick(node.id);
                 }}
@@ -496,29 +604,29 @@ export function App() {
                 items={highlights.data}
                 error={highlights.error}
                 selectedId={selectedId}
-                isShown={(id) => nodesById.has(id)}
+                isShown={isShown}
                 onPick={pick}
                 className="min-h-0 flex-1"
               />
             </section>
           )}
         </div>
-        {selected && composed && (
+        {selected && ix && (
           <SidePanel
             target={selected}
-            group={groupFor(composed, selected)}
+            memberOf={ix.memberOf.get(selected.id)}
             parentLabel={
               selected.type === 'aggregate' && selected.parentId !== null
-                ? nodesById.get(selected.parentId)?.label
+                ? ix.byId.get(selected.parentId)?.label
                 : undefined
             }
-            canLoadPage={canLoadMore(composed, selected)}
+            hasOpenBelow={selected.type === 'aggregate' && openBelow(ix, selected.id).groups.length > 0}
             reveal={
-              hiddenReveal && revealBlocked
+              hiddenNode
                 ? {
-                    blocked: revealBlocked.ok ? null : revealBlocked.reason,
+                    blocked: revealBlocked,
                     onReveal: () => {
-                      reveal(hiddenReveal.node.id);
+                      void showOnGraph(hiddenNode.id);
                     },
                   }
                 : undefined

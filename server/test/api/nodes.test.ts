@@ -114,21 +114,18 @@ describe('PATCH /api/nodes/:id', () => {
     error(await api.send('PATCH', '/api/nodes/0000000000000000', { tag: 'checked' }), 404, 'not found');
   });
 
-  test('tagging a folded subdomain interesting brings it out of the aggregate', async () => {
+  test('tagging a node inside a collapsed group leaves it there: groups have no sticky members', async () => {
     const api = await testApi();
     ingestMock(api.db, 60);
-    const before = body(await api.get('/api/graph'), 200, graphResponseSchema);
-    const shown = new Set(before.nodes.map((n) => n.id));
-    const list = body(await api.get('/api/nodes?types=subdomain&pageSize=100'), 200, nodeListResponseSchema);
-    const folded = list.items.find((n) => !shown.has(n.id));
-    if (!folded) throw new Error('nothing folded');
+    const list = body(await api.get('/api/nodes?types=subdomain&pageSize=1'), 200, nodeListResponseSchema);
+    const member = list.items[0];
+    if (!member) throw new Error('no subdomain');
 
-    await api.send('PATCH', `/api/nodes/${folded.id}`, { tag: 'interesting' });
+    await api.send('PATCH', `/api/nodes/${member.id}`, { tag: 'interesting' });
     const after = body(await api.get('/api/graph'), 200, graphResponseSchema);
-    const agg = (g: typeof after) =>
-      g.nodes.find((n): n is AggregateNode => n.type === 'aggregate' && n.childType === 'subdomain');
-    expect(after.nodes.map((n) => n.id)).toContain(folded.id);
-    expect(agg(after)?.count).toBe((agg(before)?.count ?? 0) - 1);
+    const agg = after.nodes.find((n): n is AggregateNode => n.type === 'aggregate' && n.childType === 'subdomain');
+    expect(after.nodes.map((n) => n.id)).not.toContain(member.id);
+    expect(agg).toMatchObject({ count: 60, expanded: false });
   });
 });
 

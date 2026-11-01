@@ -3,45 +3,112 @@ import { initialUiState, useUi } from '../src/state/ui';
 
 const A = 'agg:0123456789abcdef:has_subdomain:subdomain';
 const B = 'agg:root:ip';
+const C = 'agg:1111111111111111:resolves_to:ip';
 const ui = () => useUi.getState();
+const open = (id: string, pages = 1, pins: string[] = []) => ({ id, pages, pins });
 
 describe('UI state', () => {
   beforeEach(() => {
     useUi.setState(initialUiState);
   });
 
-  test('expanding loads page 1; expanding again loads the next page', () => {
-    ui().expand(A);
-    ui().expand(B);
-    ui().expand(A);
-    expect(ui().expanded).toEqual([
-      { id: A, pages: 2 },
-      { id: B, pages: 1 },
-    ]);
+  test('expanding opens the first page once; loading more adds a page and moves the group last', () => {
+    ui().expandGroup(A);
+    ui().expandGroup(B);
+    ui().expandGroup(A);
+    expect(ui().expanded).toEqual([open(A), open(B)]);
+    ui().loadMore(A);
+    expect(ui().expanded).toEqual([open(B), open(A, 2)]);
   });
 
-  test('collapse forgets the expansion and the neighborhoods opened from its members', () => {
-    ui().expand(A);
-    ui().expandNeighbors('m1');
-    ui().expandNeighbors('other');
-    ui().collapse(A, ['m1', 'm2']);
+  test('expanding a group opened only for its pins loads its first page and keeps the pins', () => {
+    ui().openPath('m9', [{ groupId: A, memberId: 'm9' }]);
+    ui().expandGroup(A);
+    expect(ui().expanded).toEqual([open(A, 1, ['m9'])]);
+  });
+
+  test('collapse closes only that group; the server then drops what was open below it', () => {
+    ui().expandGroup(A);
+    ui().expandGroup(C);
+    ui().collapse(A, ['m1', 'm2', C]);
+    expect(ui().expanded).toEqual([open(C)]);
+    // The answer for that state no longer has C (its parent is folded): adopting it is the recursive collapse.
+    ui().adoptView({ expand: [], neighbors: [] });
     expect(ui().expanded).toEqual([]);
-    expect(ui().neighbors).toEqual(['other']);
   });
 
-  test('collapsing the group of the selected node selects the group instead, and drops its focus', () => {
-    ui().expand(A);
+  test('collapsing the group of the selected node selects the group instead, drops its focus, and slides', () => {
+    ui().expandGroup(A);
     ui().select('m2');
     ui().focus('m2');
     ui().collapse(A, ['m1', 'm2']);
     expect(ui().selectedId).toBe(A);
     expect(ui().focusId).toBeNull();
+    expect(ui().collapsing).toMatchObject({ groupId: A, nodes: ['m1', 'm2'] });
   });
 
-  test('expanding the same neighborhood twice is a no-op', () => {
-    ui().expandNeighbors('n');
-    ui().expandNeighbors('n');
+  test('collapse all below closes the groups below and keeps the group itself open', () => {
+    ui().expandGroup(A);
+    ui().expandGroup(C);
+    ui().expandGroup(B);
+    ui().select('ip1');
+    ui().collapseBelow(A, [C], ['ip1']);
+    expect(ui().expanded).toEqual([open(A), open(B)]);
+    expect(ui().selectedId).toBe(A);
+  });
+
+  test('expand neighbors remembers the node once and opens the groups under it', () => {
+    ui().expandNeighbors('n', [C]);
+    ui().expandNeighbors('n', [C]);
     expect(ui().neighbors).toEqual(['n']);
+    expect(ui().expanded).toEqual([open(C)]);
+  });
+
+  test('expand all below is a one-shot request, cleared when the answer is adopted', () => {
+    ui().expandAllBelow('d');
+    ui().expandAllBelow('d');
+    expect(ui().expandAll).toEqual(['d']);
+    ui().adoptView({ expand: [open(A), open(C)], neighbors: [] });
+    expect(ui().expandAll).toEqual([]);
+    expect(ui().expanded).toEqual([open(A), open(C)]);
+  });
+
+  test('opening a path pins each step and asks to center on the node once it is drawn', () => {
+    ui().expandGroup(A);
+    ui().openPath('port', [
+      { groupId: A, memberId: 'sub' },
+      { groupId: C, memberId: 'port' },
+    ]);
+    expect(ui().expanded).toEqual([open(A, 1, ['sub']), open(C, 0, ['port'])]);
+    expect(ui().centerWhenShown).toBe('port');
+    // Selecting something else drops the pending center; the groups stay open.
+    ui().select('other');
+    expect(ui().centerWhenShown).toBeNull();
+  });
+
+  test('every expand/collapse action anchors the node it acted on, once per action', () => {
+    const seen: (string | undefined)[] = [];
+    const seqs = new Set<number>();
+    const record = () => {
+      seen.push(ui().anchor?.id);
+      seqs.add(ui().anchor?.seq ?? -1);
+    };
+    ui().expandGroup(A);
+    record();
+    ui().loadMore(A);
+    record();
+    ui().collapseBelow(A, [C], []);
+    record();
+    ui().collapse(A, []);
+    record();
+    ui().expandNeighbors('n', []);
+    record();
+    ui().expandAllBelow('d');
+    record();
+    ui().openPath('port', []);
+    record();
+    expect(seen).toEqual([A, A, A, A, 'n', 'd', 'port']);
+    expect(seqs.size).toBe(7);
   });
 
   test('every action closes the context menu', () => {
@@ -53,10 +120,19 @@ describe('UI state', () => {
         ui().focus('x');
       },
       () => {
-        ui().expand(A);
+        ui().expandGroup(A);
       },
       () => {
-        ui().expandNeighbors('x');
+        ui().loadMore(A);
+      },
+      () => {
+        ui().collapse(A, []);
+      },
+      () => {
+        ui().expandNeighbors('x', []);
+      },
+      () => {
+        ui().expandAllBelow('x');
       },
     ];
     for (const act of acts) {
@@ -66,24 +142,15 @@ describe('UI state', () => {
     }
   });
 
-  test('reveal remembers the node once and asks to center on it once shown', () => {
-    ui().select('n1');
-    ui().reveal('n1');
-    ui().reveal('n1');
-    expect(ui().revealed).toEqual(['n1']);
-    expect(ui().centerWhenShown).toBe('n1');
-    // Selecting something else drops the pending center, but the node stays on the graph.
-    ui().select('n2');
-    expect(ui().centerWhenShown).toBeNull();
-    expect(ui().revealed).toEqual(['n1']);
-  });
-
-  test('a filter change drops reveals and sends the table back to page 1, keeping its sort', () => {
-    ui().reveal('n1');
+  test('a filter change keeps open groups, drops focus and the pending center, and sends the table to page 1', () => {
+    ui().expandGroup(A);
+    ui().focus('n1');
+    ui().openPath('n1', []);
     ui().setTableSort('label');
     ui().setTablePage(4);
     ui().clearOverlays();
-    expect(ui().revealed).toEqual([]);
+    expect(ui().expanded).toEqual([open(A)]);
+    expect(ui().focusId).toBeNull();
     expect(ui().centerWhenShown).toBeNull();
     expect(ui().table).toEqual({ page: 1, sort: 'label' });
   });

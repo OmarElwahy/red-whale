@@ -1,6 +1,6 @@
-// UI state (Zustand): what's selected, focused, expanded, and where the context menu is. Server data lives in
-// TanStack Query; this only says which expand pages and neighborhoods to fetch.
-import { DEFAULT_NODE_SORT } from '@redwhale/shared';
+// UI state (Zustand): what's selected, focused and open, and where the context menu is. Server data lives in
+// TanStack Query; this only says which groups are open (docs/architecture.md §7), which the server then draws.
+import { DEFAULT_NODE_SORT, type GroupOpen, type ViewState } from '@redwhale/shared';
 import { create } from 'zustand';
 
 export interface MenuState {
@@ -19,36 +19,66 @@ export interface TableState {
   sort: string;
 }
 
+/** What a collapse hides: the canvas slides those nodes into the group (graph/diff.ts). */
+export interface Collapsing {
+  groupId: string;
+  nodes: readonly string[];
+  seq: number;
+}
+
 export interface UiState {
   selectedId: string | null;
   focusId: string | null;
-  /** Expanded aggregates and how many pages of each are loaded, in the order they were expanded. */
-  expanded: { id: string; pages: number }[];
-  /** Nodes whose neighborhood was expanded, in order. */
+  /**
+   * Open groups, oldest first (the server refuses the newest first when the element budget is short). `pins` are
+   * members opened on purpose, e.g. the path to a search result.
+   */
+  expanded: GroupOpen[];
+  /** Nodes whose parents are all drawn ("Expand neighbors"), in order. */
   neighbors: string[];
-  /** Hidden nodes the analyst asked to show on the graph ("Show on graph"), in order. */
-  revealed: string[];
-  /** Center on this node as soon as it is on the canvas (after "Show on graph"). */
+  /** One-shot "Expand all below" requests, cleared when the server's answer is adopted. */
+  expandAll: string[];
+  /** Center on this node as soon as it is on the canvas (after opening the path to it). */
   centerWhenShown: string | null;
+  collapsing: Collapsing | null;
+  /**
+   * The node the analyst last expanded, collapsed or opened a path to. The next tree re-layout keeps it where it is
+   * on screen (graph/modes.ts); `seq` changes on every action, so the canvas uses each one once.
+   */
+  anchor: { id: string; seq: number } | null;
+  /** A one-line answer shown in the header until dismissed (what "Expand all below" did). */
+  notice: string | null;
   bottomPanel: BottomPanel | null;
   table: TableState;
   menu: MenuState | null;
   /** A request to pan to a node; `seq` changes on every request, so the same node can be centered again. */
   centerOn: { id: string; seq: number } | null;
-  /** Enter was pressed in search: select and center the first match once the graph for that query is loaded. */
+  /** Enter was pressed in search: select and center the riskiest match once the graph for that query is loaded. */
   jumpPending: boolean;
   /** Bumped by the Re-layout button; the canvas re-runs the tree when it changes. */
   relayoutSeq: number;
 
   select: (id: string | null) => void;
   focus: (id: string | null) => void;
-  /** Expands the aggregate, or loads its next page if it's already expanded. */
-  expand: (aggregateId: string) => void;
-  /** Removes the expansion, and the neighborhoods expanded from its members. */
-  collapse: (aggregateId: string, members: readonly string[]) => void;
-  expandNeighbors: (id: string) => void;
-  /** Shows a hidden node next to a neighbor that's on the graph, then centers on it. */
-  reveal: (id: string) => void;
+  /** Opens a collapsed group (first page), or turns a group opened only for its pins into its first page. */
+  expandGroup: (groupId: string) => void;
+  /** One more page of an open group. The entry moves to the end, so it's the first refused if it doesn't fit. */
+  loadMore: (groupId: string) => void;
+  /**
+   * Closes the group. What was drawn below it goes too; the groups open below it are dropped by the server's
+   * answer (they're no longer drawn), so they come back collapsed. `hidden` = the nodes that disappear.
+   */
+  collapse: (groupId: string, hidden: readonly string[]) => void;
+  /** Closes the groups below this one (`groups`), keeping it open. */
+  collapseBelow: (groupId: string, groups: readonly string[], hidden: readonly string[]) => void;
+  /** Draws every parent of the node and opens the groups directly under it. */
+  expandNeighbors: (id: string, childGroups: readonly string[]) => void;
+  expandAllBelow: (id: string) => void;
+  /** Opens exactly the groups on the path to a node (as pins), then centers on it once it's drawn. */
+  openPath: (nodeId: string, steps: readonly { groupId: string; memberId: string }[]) => void;
+  /** The view the server applied (pruned, auto-opened, expand-all done) becomes the state. */
+  adoptView: (state: ViewState, notice?: string | null) => void;
+  dismissNotice: () => void;
   clearCenterWhenShown: () => void;
   /** Opens the panel, or closes it if it's already showing. */
   toggleBottomPanel: (panel: BottomPanel) => void;
@@ -63,8 +93,8 @@ export interface UiState {
   /** Tree mode: snap back to the clean tree (bumps `relayoutSeq`). */
   relayout: () => void;
   /**
-   * Filters changed: expand pages, neighborhoods and reveals were loaded under the old ones, so drop them, and
-   * focus. The table goes back to page 1.
+   * Filters changed. Open groups stay open (the server drops those that no longer exist); focus is dropped and
+   * the table goes back to page 1.
    */
   clearOverlays: () => void;
 }
@@ -74,8 +104,11 @@ export const initialUiState = {
   focusId: null,
   expanded: [],
   neighbors: [],
-  revealed: [],
+  expandAll: [],
   centerWhenShown: null,
+  collapsing: null,
+  anchor: null,
+  notice: null,
   bottomPanel: null,
   table: { page: 1, sort: DEFAULT_NODE_SORT },
   menu: null,
@@ -83,6 +116,22 @@ export const initialUiState = {
   jumpPending: false,
   relayoutSeq: 0,
 } satisfies Partial<UiState>;
+
+/** After hiding these nodes: a hidden selection moves to the group, a hidden focus is cleared. */
+function afterHiding(s: UiState, groupId: string, hidden: readonly string[]) {
+  const gone = new Set(hidden);
+  return {
+    menu: null,
+    selectedId: s.selectedId !== null && gone.has(s.selectedId) ? groupId : s.selectedId,
+    focusId: s.focusId !== null && gone.has(s.focusId) ? null : s.focusId,
+    collapsing: hidden.length > 0 ? { groupId, nodes: hidden, seq: (s.collapsing?.seq ?? 0) + 1 } : s.collapsing,
+  };
+}
+
+const opened = (id: string): GroupOpen => ({ id, pages: 1, pins: [] });
+
+/** This action's node stays put on screen through the re-layout it causes. */
+const anchored = (s: UiState, id: string) => ({ anchor: { id, seq: (s.anchor?.seq ?? 0) + 1 } });
 
 export const useUi = create<UiState>()((set) => ({
   ...initialUiState,
@@ -100,31 +149,73 @@ export const useUi = create<UiState>()((set) => ({
   relayout: () => {
     set((s) => ({ relayoutSeq: s.relayoutSeq + 1 }));
   },
-  expand: (aggregateId) => {
-    set((s) => ({
-      menu: null,
-      expanded: s.expanded.some((x) => x.id === aggregateId)
-        ? s.expanded.map((x) => (x.id === aggregateId ? { ...x, pages: x.pages + 1 } : x))
-        : [...s.expanded, { id: aggregateId, pages: 1 }],
-    }));
-  },
-  collapse: (aggregateId, members) => {
+  expandGroup: (groupId) => {
     set((s) => {
-      const gone = new Set(members);
+      const current = s.expanded.find((x) => x.id === groupId);
+      if (current && current.pages >= 1) return { menu: null };
       return {
+        ...anchored(s, groupId),
         menu: null,
-        expanded: s.expanded.filter((x) => x.id !== aggregateId),
-        neighbors: s.neighbors.filter((id) => !gone.has(id)),
-        selectedId: s.selectedId !== null && gone.has(s.selectedId) ? aggregateId : s.selectedId,
-        focusId: s.focusId !== null && gone.has(s.focusId) ? null : s.focusId,
+        expanded: current
+          ? s.expanded.map((x) => (x.id === groupId ? { ...x, pages: 1 } : x))
+          : [...s.expanded, opened(groupId)],
       };
     });
   },
-  expandNeighbors: (id) => {
-    set((s) => ({ menu: null, neighbors: s.neighbors.includes(id) ? s.neighbors : [...s.neighbors, id] }));
+  loadMore: (groupId) => {
+    set((s) => {
+      const current = s.expanded.find((x) => x.id === groupId);
+      const next = current ? { ...current, pages: current.pages + 1 } : opened(groupId);
+      return { ...anchored(s, groupId), menu: null, expanded: [...s.expanded.filter((x) => x.id !== groupId), next] };
+    });
   },
-  reveal: (id) => {
-    set((s) => ({ revealed: s.revealed.includes(id) ? s.revealed : [...s.revealed, id], centerWhenShown: id }));
+  collapse: (groupId, hidden) => {
+    set((s) => ({
+      ...afterHiding(s, groupId, hidden),
+      ...anchored(s, groupId),
+      expanded: s.expanded.filter((x) => x.id !== groupId),
+    }));
+  },
+  collapseBelow: (groupId, groups, hidden) => {
+    const closing = new Set(groups);
+    set((s) => ({
+      ...afterHiding(s, groupId, hidden),
+      ...anchored(s, groupId),
+      expanded: s.expanded.filter((x) => !closing.has(x.id)),
+    }));
+  },
+  expandNeighbors: (id, childGroups) => {
+    set((s) => {
+      const open = new Set(s.expanded.map((x) => x.id));
+      return {
+        ...anchored(s, id),
+        menu: null,
+        neighbors: s.neighbors.includes(id) ? s.neighbors : [...s.neighbors, id],
+        expanded: [...s.expanded, ...childGroups.filter((g) => !open.has(g)).map(opened)],
+      };
+    });
+  },
+  expandAllBelow: (id) => {
+    set((s) => ({ ...anchored(s, id), menu: null, expandAll: s.expandAll.includes(id) ? s.expandAll : [...s.expandAll, id] }));
+  },
+  openPath: (nodeId, steps) => {
+    set((s) => {
+      let expanded = s.expanded;
+      for (const { groupId, memberId } of steps) {
+        const current = expanded.find((x) => x.id === groupId);
+        if (!current) expanded = [...expanded, { id: groupId, pages: 0, pins: [memberId] }];
+        else if (!current.pins.includes(memberId)) {
+          expanded = expanded.map((x) => (x.id === groupId ? { ...x, pins: [...x.pins, memberId] } : x));
+        }
+      }
+      return { ...anchored(s, nodeId), expanded, centerWhenShown: nodeId };
+    });
+  },
+  adoptView: (state, notice) => {
+    set((s) => ({ expanded: state.expand, neighbors: state.neighbors, expandAll: [], notice: notice ?? s.notice }));
+  },
+  dismissNotice: () => {
+    set({ notice: null });
   },
   clearCenterWhenShown: () => {
     set({ centerWhenShown: null });
@@ -155,9 +246,6 @@ export const useUi = create<UiState>()((set) => ({
   },
   clearOverlays: () => {
     set((s) => ({
-      expanded: [],
-      neighbors: [],
-      revealed: [],
       centerWhenShown: null,
       focusId: null,
       menu: null,

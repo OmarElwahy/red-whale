@@ -29,9 +29,64 @@ export function initialLayout(cy: Core, savedIds: ReadonlySet<string>): void {
   cy.layout(options).run();
 }
 
+/** Up to this many nodes on the canvas, everything already placed takes part (pinned) when new nodes are laid out. */
+const CONTEXT_LIMIT = 800;
+
 /**
- * New nodes after an update: start each one next to a neighbor that's already placed, then run fcose on just
- * the new nodes and those neighbors, with the neighbors (and any saved positions) pinned. Nothing else moves.
+ * Starts each new node next to a placed neighbor, breadth-first, so a chain of new nodes (a group's members, each
+ * with its own groups below) unrolls outward instead of piling up at the origin. Siblings fan out on the side of
+ * their anchor that faces away from the anchor's other placed neighbors (members hang below their group).
+ */
+function seed(cy: Core, newNodes: NodeCollection, savedIds: ReadonlySet<string>): void {
+  const placed = new Set<string>(
+    cy
+      .nodes()
+      .difference(newNodes)
+      .map((n) => n.id()),
+  );
+  for (const n of newNodes) if (savedIds.has(n.id())) placed.add(n.id());
+  const children = new Map<string, number>();
+  let waiting = newNodes.filter((n) => !placed.has(n.id()));
+  for (let progress = true; progress && waiting.nonempty(); ) {
+    progress = false;
+    const placedNow: string[] = [];
+    waiting.forEach((n) => {
+      const anchor = n.neighborhood().nodes().filter((m) => placed.has(m.id()))[0];
+      if (!anchor) return;
+      const a = anchor.position();
+      // Away from the anchor's other placed neighbors.
+      const others = anchor.neighborhood().nodes().filter((m) => placed.has(m.id()) && m.id() !== n.id());
+      let away = Math.PI / 2;
+      if (others.nonempty()) {
+        let cx = 0;
+        let cy = 0;
+        others.forEach((m) => {
+          cx += m.position().x;
+          cy += m.position().y;
+        });
+        away = Math.atan2(a.y - cy / others.length, a.x - cx / others.length);
+      }
+      const i = children.get(anchor.id()) ?? 0;
+      children.set(anchor.id(), i + 1);
+      const ring = Math.floor(i / 9);
+      const slot = i % 9;
+      const angle = away + (slot % 2 === 0 ? 1 : -1) * Math.ceil(slot / 2) * 0.32;
+      const r = 90 + 60 * ring;
+      n.position({ x: a.x + r * Math.cos(angle), y: a.y + r * Math.sin(angle) });
+      placedNow.push(n.id());
+    });
+    for (const id of placedNow) placed.add(id);
+    if (placedNow.length > 0) {
+      progress = true;
+      waiting = waiting.filter((n) => !placed.has(n.id()));
+    }
+  }
+}
+
+/**
+ * New nodes after an update: start each one next to a neighbor that's already placed (breadth-first, so chains
+ * of new nodes unroll outward), then run fcose on the new nodes with everything already placed pinned, so they
+ * settle without landing on top of what's there. Nothing that was on the canvas moves.
  */
 export function layoutAdded(cy: Core, addedIds: readonly string[], savedIds: ReadonlySet<string>): void {
   let added: CollectionReturnValue = cy.collection();
@@ -40,19 +95,13 @@ export function layoutAdded(cy: Core, addedIds: readonly string[], savedIds: Rea
   if (newNodes.empty()) return;
 
   const anchors = newNodes.neighborhood().nodes().difference(newNodes);
-  const loose = newNodes.filter((n) => !savedIds.has(n.id()));
-  loose.forEach((n, i) => {
-    const anchor = n.neighborhood().nodes().intersection(anchors).nodes().first();
-    if (anchor.empty()) return;
-    // Golden-angle spiral around the anchor: deterministic and spread out.
-    const angle = i * 2.39996;
-    const r = 60 + 6 * Math.sqrt(i);
-    const { x, y } = anchor.position();
-    n.position({ x: x + r * Math.cos(angle), y: y + r * Math.sin(angle) });
-  });
+  seed(cy, newNodes, savedIds);
 
-  const fixed = anchors.union(newNodes.filter((n) => savedIds.has(n.id())));
-  const scope = newNodes.union(anchors);
+  // Small canvases: every placed node repels the newcomers. Big ones: only the direct neighbors, to stay fast.
+  const old = cy.nodes().difference(newNodes).not('.retiring');
+  const context = cy.nodes().length <= CONTEXT_LIMIT && anchors.nonempty() ? old : anchors;
+  const fixed = context.union(newNodes.filter((n) => savedIds.has(n.id())));
+  const scope = newNodes.union(context);
   // With no placed neighbor there's nothing to start from, so let fcose scatter the new nodes itself.
   const randomize = anchors.empty();
   const options: FcoseLayoutOptions = {
@@ -81,7 +130,11 @@ export function animateTo(
   targets: ReadonlyMap<string, Position>,
   { fit, duration }: { fit: boolean; duration: number },
 ): void {
-  const nodes = cy.nodes();
+  // Nodes sliding into a collapsed group are leaving: leave their animation alone (graph/diff.ts).
+  const nodes = cy
+    .nodes()
+    .filter((n) => !n.hasClass('retiring'))
+    .nodes();
   nodes.stop(true, false);
   const positions = Object.fromEntries(nodes.map((n) => [n.id(), targets.get(n.id()) ?? { ...n.position() }]));
   cy.layout({

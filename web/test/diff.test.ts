@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'vitest';
-import { applyDiff, byId, diffElements, emptyDiff } from '../src/graph/diff';
+import { RETIRING, applyDiff, byId, diffElements, emptyDiff } from '../src/graph/diff';
 import { toElements, type Element } from '../src/graph/elements';
-import { edge, headless, node } from './fixtures';
+import { aggregate, edge, headless, node } from './fixtures';
 
 const base = () =>
   toElements({
@@ -132,5 +132,64 @@ describe('applyDiff on a Cytoscape instance', () => {
   test('new nodes get a saved position when the server has one', () => {
     const cy = load(toElements({ nodes: [node('a', { posX: 40, posY: -8 })], edges: [] }));
     expect(cy.getElementById('a').position()).toEqual({ x: 40, y: -8 });
+  });
+});
+
+describe('collapsing: members slide into their group', () => {
+  const G = 'agg:000000000000000a:resolves_to:ip';
+  const withMembers = (): Element[] =>
+    toElements({
+      nodes: [node('a'), aggregate({ id: G, expanded: true }), node('m1'), node('m2')],
+      edges: [edge('a', G, { kind: 'group' }), edge(G, 'm1', { kind: 'member', relation: null }), edge(G, 'm2', { kind: 'member', relation: null })],
+    });
+  const collapsed = (): Element[] =>
+    toElements({ nodes: [node('a'), aggregate({ id: G })], edges: [edge('a', G, { kind: 'group' })] });
+
+  test('with a duration, members lose their edges at once, then slide to the group and go', async () => {
+    const cy = headless();
+    applyDiff(cy, diffElements(new Map(), withMembers()));
+    cy.getElementById(G).position({ x: 50, y: 60 });
+    applyDiff(cy, diffElements(byId(withMembers()), collapsed()), { into: G, nodes: new Set(['m1', 'm2']), duration: 20 });
+    expect(cy.getElementById('m1').hasClass(RETIRING)).toBe(true);
+    expect(cy.edges().map((e) => e.id())).toEqual([`a->${G}`]);
+    await new Promise((r) => setTimeout(r, 80));
+    expect(cy.getElementById('m1').empty()).toBe(true);
+    expect(cy.nodes().map((n) => n.id()).sort()).toEqual(['a', G].sort());
+  });
+
+  test('a layout that stops every node animation mid-slide (Tree re-run) does not leave them behind', async () => {
+    const cy = headless();
+    applyDiff(cy, diffElements(new Map(), withMembers()));
+    applyDiff(cy, diffElements(byId(withMembers()), collapsed()), { into: G, nodes: new Set(['m1', 'm2']), duration: 20 });
+    // What animateTo / a subtree drag used to do: stop without completing, so `complete` never runs.
+    cy.nodes().stop(true, false);
+    await new Promise((r) => setTimeout(r, 200));
+    expect(cy.nodes().map((n) => n.id()).sort()).toEqual(['a', G].sort());
+  });
+
+  test('a node still sliding when the next update arrives is removed then', () => {
+    const cy = headless();
+    applyDiff(cy, diffElements(new Map(), withMembers()));
+    applyDiff(cy, diffElements(byId(withMembers()), collapsed()), { into: G, nodes: new Set(['m1', 'm2']), duration: 10_000 });
+    expect(cy.nodes(`.${RETIRING}`).length).toBe(2);
+    const later = toElements({ nodes: [node('a'), aggregate({ id: G, count: 413 })], edges: [edge('a', G, { kind: 'group' })] });
+    applyDiff(cy, diffElements(byId(collapsed()), later));
+    expect(cy.nodes().map((n) => n.id()).sort()).toEqual(['a', G].sort());
+  });
+
+  test('without a duration (reduced motion) they go at once', () => {
+    const cy = headless();
+    applyDiff(cy, diffElements(new Map(), withMembers()));
+    applyDiff(cy, diffElements(byId(withMembers()), collapsed()), { into: G, nodes: new Set(['m1', 'm2']), duration: 0 });
+    expect(cy.getElementById('m1').empty()).toBe(true);
+  });
+
+  test('a member that comes straight back while sliding is added again cleanly', () => {
+    const cy = headless();
+    applyDiff(cy, diffElements(new Map(), withMembers()));
+    applyDiff(cy, diffElements(byId(withMembers()), collapsed()), { into: G, nodes: new Set(['m1', 'm2']), duration: 1000 });
+    applyDiff(cy, diffElements(byId(collapsed()), withMembers()));
+    expect(cy.getElementById('m1').hasClass(RETIRING)).toBe(false);
+    expect(cy.getElementById('m1').edgesWith(cy.getElementById(G)).length).toBe(1);
   });
 });

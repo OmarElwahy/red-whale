@@ -114,9 +114,11 @@ ingest order. "Newer" means a later `observed_at`, not a later ingest. Only `lab
 
 | Method & path | Purpose |
 |---|---|
-| `GET /graph?types=&minSeverity=&confidence=&tool=&tag=&excludeTag=&scope=&q=` | Filtered graph, **aggregated** (see §7) |
-| `GET /graph/expand/:aggregateId?…filters&page=&pageSize=` | Members of an aggregate node (paged, riskiest first) |
-| `GET /graph/neighbors/:nodeId?depth=1` | Neighborhood for focus mode / expanding a node |
+| `GET /graph?types=&minSeverity=&confidence=&tool=&tag=&excludeTag=&scope=&q=` | Filtered graph, **grouped**, every group collapsed (see §7) |
+| `POST /graph/view` | The same, with the analyst's view: open groups, neighbor expansions, expand-all, `keep` (§7). What the UI uses |
+| `GET /graph/path/:nodeId?…filters` | The groups to open (as pins) so that a node deep inside collapsed groups is drawn |
+| `GET /graph/expand/:aggregateId?…filters&page=&pageSize=` | Members of a group (paged, riskiest first). Not used by the UI since 5D; kept for scripts |
+| `GET /graph/neighbors/:nodeId?depth=1` | Neighborhood of a node, grouped, the node always drawn. Not used by the UI since 5D |
 | `GET /nodes/:id` | Node detail + edges + all observations (provenance) |
 | `PATCH /nodes/:id` | Update `tag`, `notes`, `confidence: "verified"`, `pos_x/pos_y` |
 | `PUT /layout` | Bulk-save node positions |
@@ -142,8 +144,16 @@ Request and response shapes are the Zod schemas in `shared/src/api.ts`. Details:
   Filters select nodes; edges are kept when both ends are kept. Unknown params are a 400.
 - **Scope:** every node carries `inScope` (`in` | `out` | `n/a`), its passive-mode decision (§10), computed on every
   read from the current rules, never stored. `scope=in,out,n/a` filters on it like any other node filter (so with
-  `scope=out` an out-of-scope subdomain whose apex is in scope is parentless, and lands in `agg:root:subdomain`).
+  `scope=out` an out-of-scope subdomain whose apex is in scope is parentless: a root, grouped as `agg:root:subdomain` above 25).
   `GET /nodes/:id` adds `scope: { decision, reason, rule }`. Rule and setting changes broadcast `scope.changed`.
+- **`POST /graph/view`** (a POST because the open groups don't fit in a query string; it only reads) takes
+  `{ filters, expand: [{ id, pages, pins }], neighbors, expandAll, keep: { edges, roots } }` (`graphViewRequestSchema`:
+  ≤ 2,000 open groups, `pages` ≤ 50, ≤ 100 pins each, ≤ 200 neighbor expansions, ≤ 10 expand-all). `filters` are the
+  same values as the query string (`"types": "ip,port"` or a list). The answer is `GET /graph`'s shape plus
+  `state` (the view as applied, which the UI adopts), `overBudget`, `autoOpened`, `autoFolded` and `expandAll`
+  (`{ nodeId, opened, hidden }`); edges carry a `kind` (§7).
+- **`GET /graph/path/:nodeId`**: `{ nodeId, inView, steps: [{ groupId, memberId }] }`, root first. `inView: false` when
+  the filters leave the node out; 404 for an unknown node.
 - **Search paths:** on `/graph` and `/graph/expand`, `q` keeps the matches **plus their ancestors** (walking up parent
   edges), so results show their path to the root. Only ancestors that pass the other filters are kept; a filtered-out
   parent ends the path. `/nodes` lists the matches only. The rule itself is `matchesQuery` in `shared/src/api.ts`, so the
@@ -160,47 +170,94 @@ Request and response shapes are the Zod schemas in `shared/src/api.ts`. Details:
 - Localhost only: requests whose `Host` isn't `127.0.0.1`/`localhost` on the API or Vite port, or whose `Origin`
   isn't our UI, get 403 (blocks DNS rebinding and other web pages calling the API).
 
-## 7. Aggregation
+## 7. Groups (aggregation)
 
-Server-side, per request. Rule: if a node has more than `AGG_THRESHOLD` (default 25) children of the same
-type via the same relation, replace them with one aggregate node:
+Server-side, per request (`server/src/graph/aggregate.ts`, `groupedView`; pure). The browser keeps only which groups are
+open; the server draws the view.
+
+**Rule.** The children of one parent with the **same relation and the same child type** form a group when there are
+**two or more** of them, at every level (subdomains under a domain, IPs under a subdomain, ports under an IP, URLs under a
+port or a URL, techs, vulnerabilities, …). A single child is drawn directly, with its real edge, and the walk goes on
+below it. Parentless nodes (roots, e.g. when a filter removes the domain) are drawn as they are up to
+`ROOT_GROUP_THRESHOLD` (25) per type and grouped above it as `agg:root:<type>`, so a single target domain is never
+"1 domain". Parts of the graph no root reaches (only cycles, e.g. url ⇄ url) are walked from their riskiest node.
 
 ```json
-{ "id": "agg:<parentId>:has_subdomain:subdomain", "type": "aggregate",
-  "label": "412 subdomains", "count": 412, "total": 420, "childType": "subdomain",
-  "relation": "has_subdomain", "maxSeverity": "high", "parentId": "<parentId>" }
+{ "id": "agg:<parentId>:has_subdomain:subdomain", "type": "aggregate", "label": "412 subdomains", "count": 412,
+  "childType": "subdomain", "relation": "has_subdomain", "parentId": "<parentId>", "maxSeverity": "critical",
+  "risk": { "critical": 2, "high": 1 }, "expanded": true, "shown": 100, "remaining": 312, "canLoadMore": true }
 ```
 
-Children with **effective severity** ≥ medium, or tagged `interesting`, are **not** collapsed (they stay visible).
-Effective severity = the highest severity of the node and everything reachable below it, so a subdomain whose
-URL has a critical finding stays visible. Every graph node carries `effectiveSeverity` (the UI can mute low-risk nodes).
-- `count` = members hidden in the aggregate; `total` = all members; `maxSeverity` = highest effective severity
-  among all members.
-- Anything reachable only through collapsed children is hidden until the aggregate is expanded.
-- Parentless nodes (e.g. when a filter removes the domain) aggregate the same way, as `agg:root:<childType>`.
-- `GET /graph/expand/:aggregateId` returns every member, riskiest first, then by value; the client de-duplicates by ID.
+- **Collapsed by default.** The walk goes down from the roots and stops at collapsed groups: anything below one is
+  hidden until it's opened. Groups have **no sticky members**: a risky member stays inside, and the group says so.
+- **An open group stays on the canvas** as its members' parent: parent → group (a `group` edge carrying the relation) →
+  each member (plain `member` edges). Real parent → child edges are unchanged in the database; on the canvas a real
+  edge (`relation`) is drawn only for a parent's single child of that kind.
+- **Effective severity** = the highest severity of a node and everything reachable below it; every graph node carries
+  `effectiveSeverity` (used by `minSeverity`, muting and ordering).
+- **Risk:** fill = `maxSeverity` (highest effective severity among the members); `risk` = the distinct nodes with their
+  **own** severity high or critical at or below the members, each counted once however many paths reach it (a shared
+  IP). Computed by walking up from each serious node once.
+- **Pages:** an open entry is `{ id, pages, pins }`: `pages` × 100 members (`GROUP_PAGE_SIZE`), riskiest first (effective
+  severity, then type, then value), plus `pins` (members opened on purpose, e.g. the path to a search result). Members
+  not drawn hang behind a `more:<groupId>` node ("+312 more", a `more` edge); loading more is one more page.
+- **A node with several parents** (an IP shared by two subdomains) is drawn once. Both groups open: an edge from each.
+  One open: it hangs under that one; the collapsed group still counts it and draws no edge to it (collapsed means closed).
+  A single-child parent links to it with the real edge.
+- **Recursive collapse:** the answer's `state` lists only open groups that are **drawn**. Closing a group stops the walk
+  above everything opened below it, so those entries drop out of `state`, and the UI adopts that: they come back collapsed.
+  The same rule drops groups that no longer exist after a filter change (gone, or down to one member), so a filter
+  change keeps every open group that still exists.
+- **Neighbor expansions** (`neighbors`): once the node is drawn, every parent of it is drawn too, with `neighbor` edges
+  (the only way to see a shared node's other parents). Applied after the main walk, until nothing changes.
+- **Expand all below** (`expandAll`, one-shot): opens every group below the node at any depth, first pages nearest-first,
+  then further pages, until the budget is full; answers `{ nodeId, opened, hidden }` (`hidden` = nodes below still not drawn).
+- **Auto-open** (`keep`): each request carries what the canvas showed directly (`relation` edge IDs and parentless node
+  IDs). A collapsed group holding one of them is new (a live update turned one child into two, or root number 26
+  arrived) and is opened with its first page, so nothing the analyst was looking at disappears when a scan finishes
+  (`autoOpened`). If it doesn't fit, it folds and the UI flashes it (`autoFolded`). A group the analyst collapsed never
+  matches: its members were drawn through `member` edges, not `relation` ones.
+- **Budget.** The browser never receives more than ~2,000 elements. The view state is a list of units, most important
+  first: the analyst's open groups in request order (each extra page its own unit; the UI moves a group to the end when it
+  loads more), neighbor expansions, expand-all, auto-opens. Granting a unit only adds elements, so the server binary-
+  searches the longest prefix that fits (a few walks); the rest are refused and listed in `overBudget` (`truncated: true`).
+  Each drawn group's `canLoadMore` says whether its next page would fit (estimated: each member, its edge, and what
+  hangs below it collapsed). As a last resort (the collapsed view alone over the cap) the result is cut in visiting order.
+- **Paths** (`GET /graph/path/:nodeId`): breadth-first from the roots in the walk's order, the first path to the node,
+  with a step `{ groupId, memberId }` per group on it. Opened as pins, it draws exactly that path and nothing more at
+  those levels.
+- `GET /graph/expand/:aggregateId` still returns a group's members, riskiest first, paged (for scripts).
 
-The browser never receives more than ~2,000 elements; if a response would exceed that, the server
-aggregates more aggressively and says so in the response (`truncated: true`): it lowers the threshold
-(10, 5, 2), then collapses sticky children too, and as a last resort cuts the result.
-
+Measured on `mock:large` (965 nodes, 400 subdomains): a view takes 15–25 ms on the server, expand-all from the domain
+included (1,945 elements, truncated).
 ## 8. Graph UI
 
 - **Wrapper:** `web/src/graph/CytoscapeGraph.tsx` creates the `cy` instance once; diffs incoming elements
   (add/remove/update by id) instead of rebuilding.
+- **The view** comes whole from `POST /graph/view` (§7); the client keeps only `{ expanded: [{ id, pages, pins }],
+  neighbors, expandAll }` (Zustand, `web/src/state/ui.ts`) and adopts the answer's `state` when it differs (pruned,
+  auto-opened, expand-all), seeding the cache under the new key so nothing is fetched twice. `keep` is read from the
+  last view when a request goes out and is not part of the query key. Helpers in `web/src/graph/groups.ts`.
 - **Layout modes** (header toggle **Force | Tree**; `web/src/graph/modes.ts`). Switching animates every node to its
   new place (400 ms, ease-out) and fits the view.
   - **Force:** `fcose`; nodes with saved positions are locked to them; new nodes are laid out around them, and
-    nothing already on the canvas moves. Only dragged nodes are saved (debounced `PUT /layout`).
+    nothing already on the canvas moves. New nodes start breadth-first from a placed neighbor (a group's members fan
+    out on the far side of the group, a chain of new nodes unrolls outward), then fcose settles them with every placed
+    node pinned (up to 800 nodes on the canvas; above that only their direct neighbors), so they don't land on what's
+    there. Only dragged nodes are saved (debounced `PUT /layout`); groups and "more" nodes are never saved (no DB row),
+    a dragged group stays where it was put for the session.
   - **Tree:** a top-down layered hierarchy over the parent edges (domain → subdomain → IP → port → URL →
     tech/vuln/…), computed by ELK `layered` (`elkjs`, in a Web Worker, loaded the first time Tree is used;
     `web/src/graph/tree.ts`). It handles DAGs: a shared IP sits below both parents. Roots = nodes with no parent
     on the canvas (a node only named as a parent is one), all on the top row. Siblings are ordered riskiest
-    first (effective severity; aggregates by `maxSeverity`), then by label, and ELK keeps that order, so the
-    tree is the same on every reload. Aggregates and expanded members are ordinary nodes in the tree.
+    first (effective severity; groups by `maxSeverity`, "more" nodes last), then by label, and ELK keeps that order, so
+    the tree is the same on every reload. Groups are ordinary tree levels (domain → "6 subdomains" → each subdomain →
+    "2 IPs" → …); opening or closing one re-runs the tree and animates there.
   - In Tree mode, anything that changes the tree (live update, expand, "show on graph", filter change, a
     severity or label change) re-runs the layout and animates there; new nodes grow out of their parent. Only a
-    switch, a filter change and **Re-layout** fit the view. Near the element cap ELK takes a few seconds; the
+    switch, a filter change and **Re-layout** fit the view. Otherwise the camera stays put and so does what you're
+    looking at: the new tree is shifted so the node you just expanded, collapsed or opened a path to keeps its exact place
+    on screen (with no such node, e.g. a live update, the node nearest the middle of the view does). Near the element cap ELK takes a few seconds; the
     header says "laying out tree…" meanwhile, and only the latest run lands.
   - Dragging in Tree mode carries the node's whole subtree (descendants via parent edges; a shared node goes with
     whichever parent moves). Tree positions are **never saved** and never pin anything; entering Tree remembers
@@ -221,33 +278,68 @@ aggregates more aggressively and says so in the response (`truncated: true`): it
     (τ = 60 ms) toward the cursor. Touch-screen pinch stays with Cytoscape.
   - **Labels at low zoom** (`labels.ts`): node and edge labels show only while they'd be at least 8 px on screen
     (with a little hysteresis). Crossing the threshold fades them through half opacity in 150 ms; at 0 opacity
-    Cytoscape skips them.
+    Cytoscape skips them. Node icons hide the same way below 7 px on screen (class `icon-hidden`, one swap, no fade);
+    the hatch and a group's badge stay.
+  - **Collapsing** slides the members that disappear into their group (220 ms, fading) before they go; edges go at once.
+  - **Expanding** is the reverse: every new node starts at its nearest ancestor that was already on the canvas (so a
+    group's members, and the groups under them, all come out of the group that was opened) and glides to its place
+    (Force: 400 ms ease-out after fcose places it; Tree: the tree animation carries it). Live updates grow the same way.
+    Centering on a node mid-glide (search, table, Show on graph) aims at where it stops.
   - `prefers-reduced-motion`: no momentum, no wheel easing, no animated layouts or camera moves.
   - Dev only: `await redwhale.bench()` in the browser console pans and zooms for 5 s and reports frame times
     (`redwhale.bench({ zoom: false })` pans only). Measured at 1,887 elements (decisions log, 2026-10-31).
-- **Visual language** (single file `web/src/graph/style.ts`):
-  - shape/icon by node type
+- **Visual language** (`web/src/graph/style.ts`, icons in `web/src/graph/icons.ts`):
+  - every node is a **circle with its type's icon** (Lucide, from `lucide-static` 1.59.0, ISC; one `?raw` import per
+    icon, inlined as SVG data URIs, so only the icons we use are bundled and nothing is fetched):
+
+    | Type | Icon | | Type | Icon |
+    |---|---|---|---|---|
+    | domain | globe | | vulnerability | bug |
+    | subdomain | network | | email | at-sign |
+    | ip | server | | secret | key-round |
+    | port | plug | | certificate | lock |
+    | url | link | | leak | database-zap |
+    | technology | layers | | | |
+
+    A type with no fitting icon gets short text instead (`{ text: 'JS' }`, drawn in the system font); none needs it
+    today. The map is a `Record<NodeType, …>`, so a new node type doesn't compile until it picks one.
+  - the icon is inked for the fill: white on none and critical, slate-950 on info, low, medium and high (WCAG ≥ 4.5:1 on
+    every fill, tested). Hatch, icon and badge are one background-image stack (bottom to top), built per node by
+    `imageLayers` through Cytoscape function mappers (memoized by data + class)
   - fill color by severity (none, info, low, medium, high, critical)
   - border by confidence: dashed = discovered, solid = corroborated, thick = verified
-  - aggregate nodes: larger, with count badge
+  - groups: larger (44 px), double border, the members' icon, label below ("12 subdomains"), fill = `maxSeverity`; an open
+    group is fainter (border 0.5, fill 0.7). A **badge** over the top-right corner counts the high/critical nodes below
+    (red with a critical among them, orange for high only, "99+" past 99); hovering the group shows "12 subdomains: 2
+    critical, 1 high below"
+  - "+N more": a dashed slate pill under an open group
   - tag `ignored` → faded; `interesting` → highlight ring
   - out of scope (`inScope = out`) → thin, semi-transparent diagonal stripes over the fill (`OUT_OF_SCOPE_HATCH`, an SVG
     `background-image`): the severity color reads between them, and it uses none of the other channels (fill,
     confidence border, `interesting` outline, selection/fresh underlay). The stripes scale with the node, so the marker
     shows at every zoom (a corner badge would vanish zoomed out). `in` and `n/a` are drawn as before
   - edges: arrow toward the child; the relation (`has_subdomain`, `resolves_to`, …) as a label along the edge, on
-    a small canvas-colored background so it reads over other edges
-- **Interactions:** click → side panel (details, provenance table, tag, notes); double-click aggregate →
-  expand; right-click → context menu (focus, expand neighbors, copy value, open URL; "run tool" disabled
-  until orchestrator exists).
+    a small canvas-colored background so it reads over other edges. Group → member edges are plain and quieter;
+    group → "more" edges dashed
+- **Legend:** the header's **Legend** button opens it (type → icon, severity, confidence, markers incl. group, badge, "more").
+- **Interactions:** click → side panel (details, provenance table, tag, notes; a group: members, relation, parent, max
+  severity, what's below, shown/total, and its controls). Double-click a group → expand / collapse; double-click "+N
+  more" → next page. Right-click → context menu: on a node focus, expand neighbors, **expand all below** (stops at the
+  budget; the header says how many groups it opened and how many nodes stay collapsed), copy value, open URL, collapse
+  its group; on a group focus, expand / collapse, collapse all below (closes the open groups under it, keeps it open),
+  load more; "run tool" disabled until the orchestrator exists. Expand, load more and expand-all are disabled at the
+  element budget (the group's `canLoadMore`).
 - **Focus mode:** the node + its N-hop neighborhood (1–3, either edge direction) stay bright, plus the edges among
-  them; everything else is faded. Computed on the canvas (`web/src/graph/emphasis.ts`), nothing is fetched; a
-  neighbor hidden in an aggregate counts as the aggregate. Esc or a background click clears it.
+  them; everything else is faded. Computed on the canvas (`web/src/graph/emphasis.ts`), nothing is fetched. A group is
+  **no hop of its own**: from a parent a step goes on through its groups to their members, from a member up through its
+  group to the parent (not to its siblings). Esc or a background click clears it.
 - **Filters & search:** left sidebar (`web/src/filters/`); state in Zustand (`web/src/state/view.ts`), where
   `filters` has the API's `GraphFilters` type and maps 1:1 to `GET /graph` (and `/graph/expand`) params. Counts
   next to each option are `/stats` workspace totals, labeled as such. Search is debounced (300 ms); Enter
-  searches at once, then selects + centers the riskiest visible match. Path nodes (kept above matches) are drawn dimmer.
-  Changing filters drops expanded pages, expanded neighborhoods and focus (they were loaded under the old filters).
+  searches at once, then selects the riskiest match anywhere (`GET /nodes?q=…&pageSize=1`) and, if it's inside
+  collapsed groups, opens exactly the groups on its path (`GET /graph/path`, as pins) and centers on it. Path nodes
+  (kept above matches) are drawn dimmer. Changing filters keeps open groups and neighbor expansions (the server drops
+  those that no longer exist, §7), drops focus, and sends the table to page 1.
 - **URL:** the view lives in the query string (`web/src/state/url.ts`): the filter params exactly as the API takes
   them, plus view-only `mute=1` and `hops=N`, which never reach the API. Bad values are dropped one by one.
 - **Mute low-risk:** fades nodes whose effective severity is below medium (aggregates by `maxSeverity`), and edges
@@ -262,21 +354,23 @@ aggregates more aggressively and says so in the response (`truncated: true`): it
   has a Scope group (in scope / out of scope / not targetable, workspace totals), and the side panel a Scope section
   (decision, reason, deciding rule and its note).
 - **Table view** (`web/src/table/`): TanStack Table (v9) over `GET /nodes` with the graph's filters, 50 per page,
-  sorted on the server (click a header; shift-click adds a column). Clicking a row selects the node and centers on it
-  if it's on the canvas. When the selection changes (e.g. a graph click), the table turns to the page that holds it
+  sorted on the server (click a header; shift-click adds a column). Clicking a row selects the node, opens exactly the
+  groups on its path if it's inside collapsed ones (as pins: "+N more" stands for the rest), and centers on it. When the selection changes (e.g. a graph click), the table turns to the page that holds it
   (`at=`) and highlights the row; once. Paging away afterwards doesn't jump back. Rows of nodes not on the canvas
   are dimmer.
-- **Hidden nodes:** selecting a node that isn't on the canvas (from the table or highlights, or after a filter
-  change) opens its side panel from `GET /nodes/:id` and leaves the canvas alone. The panel offers **Show on graph**,
-  which adds the node next to a neighbor that's on the canvas (with its edges to shown nodes only) and centers on it.
-  It is disabled, with the reason written out, when no neighbor is shown or the element budget is full. Shown nodes
-  are an overlay like expansions (`compose.ts` `reveals`), dropped on a filter change.
+- **Hidden nodes:** a selected node that isn't on the canvas (its group was collapsed, or a filter change) keeps its side
+  panel, built from `GET /nodes/:id`. The panel offers **Show on graph**, which opens the groups on its path (as a
+  table click does). It is disabled, with the reason written out, when the filters leave the node out
+  (`GET /graph/path` → `inView: false`) or the element budget is full.
 - **Live updates** (`web/src/api/live.ts`): one WebSocket to `/api/ws`, reconnecting with backoff (0.5 s doubling
   to 10 s, reset after a good connection); the header shows live / reconnecting. Each event invalidates every `api`
   query, coalesced over 200 ms; a reconnect refetches at once (events may have been missed). The wrapper diffs the
-  result in: only new nodes are laid out, nothing on the canvas moves. New nodes named by an event in the last 15 s,
-  and aggregates that grew, flash a cyan halo for 2.5 s.
-- **Highlights:** cards for every `interesting` node with its notes (markdown, no raw HTML); click = same as a row.
+  result in: only new nodes are laid out, nothing on the canvas moves. New members of an open group appear inside it;
+  a collapsed group's count goes up. New nodes named by an event in the last 15 s, groups that grew, and groups the
+  server folded instead of auto-opening (no room) flash a cyan halo for 2.5 s. Nothing on screen disappears because a
+  scan finished: a group that now holds a node the canvas showed directly opens (§7, `keep`).
+- **Highlights:** cards for every `interesting` node with its notes (markdown, no raw HTML); click = same as a row
+  (opens the path to it).
 - **Export:** JSON = a plain download of `GET /export` (the whole workspace). PNG = `cy.png({ full: true })` on the
   canvas color: everything loaded on the canvas, not just the viewport, as it looks (fading included), at 2× and at
   most 8,192 px a side.
@@ -305,7 +399,8 @@ Each phase ends with passing `pnpm typecheck` and `pnpm test`, and a short demo.
    - `pnpm mock`: the small **showcase**, `showcase.example` (`showcase.ts`): ~80 nodes from 12 fake tools with every
      node type, relation, severity (none → critical), confidence (`verified` and the tags/notes are applied with the
      PATCH route's own `updateNode`) and tag; an IP shared by two subdomains, an IPv6 address, a node only named as
-     a parent, and exactly one aggregate (a JS file with `AGG_THRESHOLD + 3` endpoints). Files in `data/mock/showcase/`.
+     a parent, and groups nested three deep (subdomains → the app's URLs → the 27 endpoints `app.js` links to, one of
+     them medium). Files in `data/mock/showcase/`.
    - `pnpm mock:large -- [--subdomains N] [--seed N] [--domain name.example]`: the seeded generator
      (`generate.ts`, `northwind.example`, seed 1337, 400 subdomains by default) for aggregation and performance
      testing. Files in `data/mock/large/`.
@@ -326,6 +421,10 @@ Each phase ends with passing `pnpm typecheck` and `pnpm test`, and a short demo.
 4. Highlights view (all `interesting` nodes), JSON export, PNG export (`cy.png()`).
 5. (5C) Graph feel (edges and labels always drawn, momentum, smooth wheel zoom, edge labels), Force | Tree layout
    modes, small showcase mock (`pnpm mock`) next to the large one (`pnpm mock:large`).
+6. (5D) Graph pass before 6B: an icon per node type inside a circle (Lucide, bundled), a header legend; collapsible
+   groups for every output (§7: same parent + relation + type, 2 or more, collapsed by default, the group stays as the
+   members' parent, recursive collapse, risk badge, auto-open on live updates, paths opened as pins, expand all
+   below), `POST /graph/view` and `GET /graph/path`.
 
 **Phase 6 — Running tools**
 1. (6A) **Scope guard** (§10): `checkScope` in `shared/`, `scope_rules`/`scope_log`/`scope_settings`, `authorize()` as
@@ -418,18 +517,18 @@ stays on.
 | 2026-10-29 | A parent reference counts as an observation by that tool, so it can corroborate the node (superseded 2026-10-30: parent rows no longer corroborate) |
 | 2026-10-29 | `file_hash` is over canonical JSON, not raw bytes, so CRLF/reindented copies are duplicates |
 | 2026-10-29 | pnpm 12 native builds are allowed via `allowBuilds` in `pnpm-workspace.yaml` (better-sqlite3, esbuild) |
-| 2026-10-30 | Aggregation keeps nodes visible by **effective severity** (worst finding below them), not only their own; `minSeverity` filters on it too |
+| 2026-10-30 | Aggregation keeps nodes visible by **effective severity** (worst finding below them), not only their own; `minSeverity` filters on it too (**superseded 2026-11-01**: there is no threshold of 25 and no sticky children any more: every set of 2+ children is a group, collapsed by default, and shows its risk instead (fill = `maxSeverity`, badge = high/critical below); `minSeverity` still filters on effective severity) |
 | 2026-10-30 | Parentless nodes over the threshold aggregate as `agg:root:<type>`; aggregate `maxSeverity` covers all members |
 | 2026-10-30 | Aggregate members and the node list are ordered riskiest first |
 | 2026-10-30 | No node deletion: the `ignored` tag + `excludeTag` filter hides nodes (provenance is never dropped) |
 | 2026-10-30 | API rejects foreign `Host`/`Origin` headers (403) in addition to binding 127.0.0.1 |
 | 2026-10-30 | Mock data: `northwind.example`, IPs from 198.18.0.0/15, seed 1337, 7 fake tools; generator in `server/src/mock/` |
 | 2026-10-30 | Graph fill color = the node's **own** severity (aggregates: `maxSeverity`); `effectiveSeverity` is kept for muting in Phase 5 |
-| 2026-10-30 | Node types are shown by shape only for now (no icons); `interesting` = fuchsia outline, so it never clashes with a severity fill or the confidence border |
+| 2026-10-30 | Node types are shown by shape only for now (no icons); `interesting` = fuchsia outline, so it never clashes with a severity fill or the confidence border (**superseded 2026-11-01**: every node is a circle with its type's icon; the `interesting` outline is unchanged) |
 | 2026-10-30 | shadcn/ui files are written by hand from the upstream source (no `shadcn init`), with system fonts only: no remote font or CDN imports |
-| 2026-10-30 | No `cytoscape-expand-collapse`: it collapses compound nodes client-side, but aggregates are built and paged by the server (§7). The UI merges expand pages into the canvas itself (`web/src/graph/compose.ts`) |
-| 2026-10-30 | The UI loads aggregates 100 members per page and keeps the canvas under 2,000 elements: "load more" / "expand neighbors" are disabled at the limit, and anything that would cross it is skipped |
-| 2026-10-30 | Collapsing a group also drops the neighborhoods expanded from its members; a fully loaded aggregate disappears, and its members' panel/menu offer "collapse group" |
+| 2026-10-30 | No `cytoscape-expand-collapse`: it collapses compound nodes client-side, but aggregates are built and paged by the server (§7). The UI merges expand pages into the canvas itself (`web/src/graph/compose.ts`) (**superseded 2026-11-01**: still true; the server now draws the whole view (`POST /graph/view`) and `compose.ts` is gone) |
+| 2026-10-30 | The UI loads aggregates 100 members per page and keeps the canvas under 2,000 elements: "load more" / "expand neighbors" are disabled at the limit, and anything that would cross it is skipped (**superseded 2026-11-01**: still 100 per page and ~2,000 elements, now enforced by the server, which refuses the newest asks first and reports them) |
+| 2026-10-30 | Collapsing a group also drops the neighborhoods expanded from its members; a fully loaded aggregate disappears, and its members' panel/menu offer "collapse group" (**superseded 2026-11-01**: a group stays on the canvas as its members' parent, open or not; collapsing is recursive and drops neighbor expansions whose node is no longer drawn) |
 | 2026-10-30 | Notes are saved explicitly (button / Ctrl+Enter), not on every keystroke, since each PATCH is broadcast. Markdown preview uses `react-markdown` with no raw HTML |
 | 2026-10-30 | Phase 4 focus = 1 hop, faded elsewhere, Esc or a background click clears it; the N-hop focus mode is Phase 5 step 1 |
 | 2026-10-30 | Only dragged nodes get saved positions (debounced `PUT /layout`, aggregates left out); positions from fcose runs are not saved |
@@ -444,7 +543,7 @@ stays on.
 | 2026-10-30 | `q` keeps matches plus their ancestors (that pass the other filters) on `/graph` and `/graph/expand`; `/nodes` stays matches-only. Path nodes are drawn dimmer than matches. No response field: the UI applies the shared `matchesQuery` |
 | 2026-10-30 | N-hop focus (1–3) is computed on the canvas, not with `/graph/neighbors`; it also keeps edges between two bright nodes. Supersedes the 1-hop-only focus from Phase 4 |
 | 2026-10-30 | "Hide ignored" is off by default; on, it is `excludeTag=ignored` in the API params and the URL. View state uses `replaceState` (no history entry per click) |
-| 2026-10-30 | Changing filters clears expanded aggregates, expanded neighborhoods and focus; the selection stays (its panel shows again if the node comes back; superseded 2026-10-30: the panel stays, see "hidden nodes") |
+| 2026-10-30 | Changing filters clears expanded aggregates, expanded neighborhoods and focus; the selection stays (its panel shows again if the node comes back; superseded 2026-10-30: the panel stays, see "hidden nodes") (**superseded 2026-11-01**: open groups and neighbor expansions survive a filter change; the server drops those that no longer exist. Focus is still cleared) |
 | 2026-10-30 | Phase 5 step 2: a table row for a node hidden from the canvas opens its side panel without touching the canvas. The panel's **Show on graph** adds it next to a shown neighbor; disabled with the reason when no neighbor is shown or the 2,000-element budget is full. The panel is built from `GET /nodes/:id`, so it also stays open for a selected node a filter change hid |
 | 2026-10-30 | `GET /nodes?at=<id>` returns the page holding that node; the table follows the selection once per change, never on later paging |
 | 2026-10-30 | Table: TanStack Table v9 (`@tanstack/react-table` 9.3.1, the current major); its bundled agent skills are not installed |
@@ -471,3 +570,19 @@ stays on.
 | 2026-10-31 | `inScope` is computed on every read (passive mode), never stored; `scope=` is one more node filter on `/graph`, `/graph/expand`, `/nodes`; `/stats` has `byScope`. Ingest never rejects out-of-scope findings. Migration `0002_scope` adds tables only (plus the settings row), so it is not breaking and needs no backfill |
 | 2026-10-31 | Out-of-scope marker: a diagonal hatch over the fill (stripes 1.6/24 of the node wide, every 5/24, canvas color at 0.55 opacity). Chosen over a corner badge because it stays visible at any zoom; checked by screenshot at every severity and at zoom 2.4, 0.7 and 0.35 (at 0.35 it reads as a darker tint on the dark none/info fills). Cost, A/B in one headless-Chrome session at 1,887 elements (`mock:large --subdomains 260`, aggregation off, 76 of 647 nodes out of scope): hatch as shipped ≈ no hatch after warm-up (pan+zoom p95 136 vs 136 ms), every node hatched ≈ +60 % p95. **Open:** that session's baseline was ~50 ms p50, far off the 7 ms measured earlier the same day (the machine was busy), so re-run `await redwhale.bench()` in Firefox before relying on it |
 | 2026-10-31 | **For 6C:** tools that follow redirects (httpx `-follow-redirects`, crawlers, nuclei with redirects) must re-check scope on **every hop**, not just the first URL. A hop that leaves scope ends that chain and is logged; the tool must not fetch it. Same for any host a tool discovers and then contacts on its own |
+| 2026-11-01 | Phase 5D: node types are an **icon inside a circle**, not shapes. Icons from `lucide-static` **1.59.0** (ISC; 1.66.0 was the newest, 1.59.0 the newest at least two weeks old), one `?raw` import per icon in `web/src/graph/icons.ts` (the one type → icon map), inlined as SVG data URIs: only the 11 used icons are bundled, nothing is fetched. A type with no fitting icon gets short text (none today). Chosen: domain globe, subdomain network, ip server, port plug, url link, technology layers, vulnerability bug, email at-sign, secret key-round, certificate lock, leak database-zap |
+| 2026-11-01 | Icon ink per fill: white on none and critical, slate-950 on info, low, medium, high (≥ 4.5:1 on every fill, unit-tested). Hatch, icon and badge are one Cytoscape background-image stack built by function mappers (hatch under the icon). Icons hide below 7 px on screen; the hatch and the badge stay. Legend opened from the header (closed by default) |
+| 2026-11-01 | Phase 5D groups (§7): a group = same parent + same relation + same child type with **2 or more** members, at every level; one child is drawn directly. **Collapsed by default**; an open group **stays** as its members' parent (parent → group carries the relation, group → member plain). Roots group only above **25** per type (`ROOT_GROUP_THRESHOLD`), so one target domain is never "1 domain". Supersedes AGG_THRESHOLD 25, sticky children and "a fully loaded aggregate disappears" |
+| 2026-11-01 | The server draws the whole view: `POST /api/graph/view` with `{ filters, expand: [{ id, pages, pins }], neighbors, expandAll, keep }` (a POST: ~2,000 open group IDs don't fit in a URL), answering with the view and the `state` it applied, which the client adopts (seeded into the cache under the new key). Smallest change that keeps one implementation of the grouping rule and the budget: the client-side merge of `/graph/expand` pages would have needed a second copy of both. `GET /graph` = the same with nothing open; `/graph/expand` and `/graph/neighbors` stay for scripts |
+| 2026-11-01 | Group risk badge = distinct nodes with their **own** severity high or critical at or below the members, each counted once however many paths reach it; red if a critical is among them, orange for high only; tooltip "2 critical, 1 high below". Fill = `maxSeverity` (highest effective severity among members) |
+| 2026-11-01 | Recursive collapse needs no client walk: the answer's `state` only lists open groups that are drawn, so groups opened below a closed one drop out and come back collapsed. The same rule keeps open groups across a filter change when they still exist (a group down to one member no longer exists) |
+| 2026-11-01 | Live updates never hide what's on screen: each view request carries `keep` (the canvas's `relation` edges and parentless nodes). A collapsed group holding one of them (1 child became 2, or root #26 arrived) opens with its first page; if it doesn't fit it folds and flashes. A group the analyst collapsed never matches (its members were drawn through `member` edges). A selected or focused node is on the canvas, so it is covered by the same rule |
+| 2026-11-01 | Search Enter, table rows, highlights and "Show on graph" open **exactly the path**: `GET /graph/path/:id` (first breadth-first path from a root, a step per group on it) opened as **pins** (`pages: 0`), so a node that is member #250 of a 400-member group opens with its siblings behind "+399 more", not 300 of them. The search jump asks the server for the riskiest match (`/nodes?q=&pageSize=1`) since it may be inside a collapsed group |
+| 2026-11-01 | Budget: units in priority order (analyst opens in request order, one unit per page; neighbor expansions; expand-all, first pages then further pages; auto-opens last); the server binary-searches the longest prefix within ~2,000 elements and reports the rest in `overBudget`. Each group's `canLoadMore` is an estimate of its next page (members, their edges, what hangs below them collapsed). Measured on `mock:large` (965 nodes): 15–25 ms per view, expand-all from the domain included |
+| 2026-11-01 | "Expand neighbors" kept (the only way to see a shared node's other parents): draws every parent of the node with `neighbor` edges, and opens the groups directly under it. "Expand all below" added next to it: every group below at any depth, until the budget, with a header line "opened N groups; M nodes below are still collapsed (element limit)". Groups' menu: expand / collapse / collapse all below / load more |
+| 2026-11-01 | Focus mode steps through groups: parent → group → member is one hop (from a member: up to the parent, not to its siblings) |
+| 2026-11-01 | Force layout of new nodes: seeded breadth-first from placed neighbors (a group's members fan out on its far side; chains of new nodes unroll outward), then fcose with every placed node pinned (≤ 800 nodes on the canvas, else only the direct neighbors). Before, a chain of new nodes started at the origin and fcose didn't see the rest of the canvas, which piled groups' members on top of existing nodes. Collapsing slides the members into their group (220 ms) before removing them. The removal never waits on the animation: layouts stop node animations without completing them (a Tree re-run right after a collapse), which first left members on the canvas without edges or clicks; a timer removes them regardless, the next diff sweeps any left, and layouts leave sliding nodes alone |
+| 2026-11-01 | Showcase mock: one more link on the app's page (`/login`), one fewer quiet endpoint (27 in all), so it nests groups three deep (subdomains → app's URLs → app.js endpoints) and stays at 80 nodes |
+| 2026-11-01 | Icon cost, A/B in headless Chrome (software rendering; same noisy machine as the 6A hatch A/B) at 1,945 elements (`mock:large`, expand all below the domain): with icons p50 ~55 ms / p95 ~350–360 ms; no background images p50 ~49–55 / p95 ~215 ms. Icons pre-rasterized to PNG gave p50 14–35 / p95 140–505 ms: too noisy to choose. **Open:** re-run `await redwhale.bench()` in Firefox on real graphics before changing anything; the lever if it's too slow is `ICON_MIN_PX` (hide icons sooner when zooming out) |
+| 2026-11-01 | Expanding grows out of the opened node (the counterpart of the collapse slide): new nodes start at their nearest ancestor already on the canvas, walking up through other new nodes (`growOrigins`), and glide to their place (Force: 400 ms ease-out; Tree: via the tree animation). Before, Tree started only direct children at their parent (deeper new nodes flew in from the origin) and Force had no animation. Applies to live updates too; none with reduced motion |
+| 2026-11-01 | Tree re-runs no longer shift what the analyst is looking at: a layered tree re-centers parents over their children, so the expanded group jumped ~210 px sideways on every expand (the camera never moved, but it read as if it did). The new tree is translated so the anchor (the node the last expand/collapse/path acted on, used once) keeps its place; otherwise the node nearest the view's middle. Fit only on switch, filter change and Re-layout, as before. Force mode never moved anything (measured 0 px) |

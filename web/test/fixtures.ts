@@ -1,11 +1,13 @@
 // Small builders for API graph objects, validated with the shared schemas so tests can't drift from the API.
 import {
   aggregateNodeSchema,
-  graphEdgeSchema,
   graphNodeSchema,
+  moreNodeSchema,
+  viewEdgeSchema,
   type AggregateNode,
-  type GraphEdge,
   type GraphNode,
+  type MoreNode,
+  type ViewEdge,
 } from '@redwhale/shared';
 import cytoscape, { type Core } from 'cytoscape';
 import { graphStylesheet } from '../src/graph/style';
@@ -38,17 +40,33 @@ export function aggregate(over: Partial<AggregateNode> = {}): AggregateNode {
     type: 'aggregate',
     label: '412 subdomains',
     count: 412,
-    total: 420,
     childType: 'subdomain',
     relation: 'has_subdomain',
     parentId: '0123456789abcdef',
     maxSeverity: 'high',
+    risk: { critical: 0, high: 0 },
+    expanded: false,
+    shown: 0,
+    remaining: 412,
+    canLoadMore: true,
     ...over,
   });
 }
 
-export function edge(source: string, target: string, over: Partial<GraphEdge> = {}): GraphEdge {
-  return graphEdgeSchema.parse({ id: `${source}->${target}`, source, target, relation: 'has_subdomain', ...over });
+export function more(groupId: string, remaining: number): MoreNode {
+  return moreNodeSchema.parse({ id: `more:${groupId}`, type: 'more', groupId, label: `+${String(remaining)} more`, remaining });
+}
+
+/** A real edge by default (`kind: 'relation'`); pass `kind` for group, member, more and neighbor edges. */
+export function edge(source: string, target: string, over: Partial<ViewEdge> = {}): ViewEdge {
+  return viewEdgeSchema.parse({
+    id: `${source}->${target}`,
+    source,
+    target,
+    relation: 'has_subdomain',
+    kind: 'relation',
+    ...over,
+  });
 }
 
 /** A canvas-less Cytoscape with our stylesheet applied, so computed styles can be read back. */

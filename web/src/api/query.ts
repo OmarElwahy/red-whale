@@ -1,5 +1,5 @@
 // Query-string building and TanStack Query keys. Filters map 1:1 to GET /api/graph params (§6, §8).
-import type { GraphFilters } from '@redwhale/shared';
+import type { GraphFilters, GroupOpen } from '@redwhale/shared';
 
 /** `{ types: ['ip','port'], q: 'dev' }` → `types=ip%2Cport&q=dev`. Keys are sorted so equal filters give equal strings. */
 export function graphSearchParams(filters: GraphFilters): URLSearchParams {
@@ -23,11 +23,10 @@ export function withParams(path: string, params: URLSearchParams): string {
 
 export const queryKeys = {
   all: ['api'] as const,
-  graph: (filters: GraphFilters) => ['api', 'graph', graphSearchParams(filters).toString()] as const,
-  /** Members depend on the filters too: /graph/expand applies them. */
-  expand: (aggregateId: string, page: number, filters: GraphFilters) =>
-    ['api', 'expand', aggregateId, page, graphSearchParams(filters).toString()] as const,
-  neighbors: (nodeId: string) => ['api', 'neighbors', nodeId] as const,
+  /** The grouped view: the filters, then the open groups, neighbor expansions and expand-all requests. */
+  view: (filters: GraphFilters, expand: readonly GroupOpen[], neighbors: readonly string[], expandAll: readonly string[]) =>
+    ['api', 'graph', graphSearchParams(filters).toString(), JSON.stringify({ expand, neighbors, expandAll })] as const,
+  path: (nodeId: string, filters: GraphFilters) => ['api', 'path', nodeId, graphSearchParams(filters).toString()] as const,
   node: (id: string) => ['api', 'node', id] as const,
   /** One page of the table (GET /api/nodes). */
   nodes: (filters: GraphFilters, page: number, sort: string) =>

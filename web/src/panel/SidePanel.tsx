@@ -1,5 +1,5 @@
 // Right-hand panel for the selected node (docs/architecture.md §8): details, provenance, tag and notes from
-// GET /api/nodes/:id; for an aggregate, its size and the expand / load more / collapse controls.
+// GET /api/nodes/:id; for a group, its size, what's below it, and the expand / load more / collapse controls.
 import type { AggregateNode, GraphNode, Tag } from '@redwhale/shared';
 import { useId, type ReactNode } from 'react';
 import { useNodeDetail, usePatchNode } from '@/api/hooks';
@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { RuleText, ScopeDecisionValue } from '@/components/ScopeDecision';
 import { SeverityValue } from '@/components/SeverityValue';
 import { Button } from '@/components/ui/button';
-import type { GroupState } from '@/graph/compose';
+import { riskText } from '@/graph/icons';
 import type { MenuAction } from '@/menu/items';
 import { formatTime, formatValue } from './format';
 import { NotesEditor } from './NotesEditor';
@@ -16,14 +16,15 @@ import { TagPicker } from './TagPicker';
 
 export interface SidePanelProps {
   target: GraphNode | AggregateNode;
-  /** The aggregate's expansion, or the group a node was expanded from. */
-  group: GroupState | undefined;
-  /** Label of the aggregate's parent node, when it's on the canvas. */
+  /** For a node: the open group it hangs under. */
+  memberOf?: AggregateNode;
+  /** Label of the group's parent node, when it's on the canvas. */
   parentLabel?: string;
-  canLoadPage: boolean;
+  /** For an open group: groups are open below it. */
+  hasOpenBelow?: boolean;
   /**
-   * Set when the node isn't on the graph (e.g. picked in the table while it's inside an aggregate). `blocked` is
-   * why it can't be shown, or null when it can.
+   * Set when the node isn't on the graph (e.g. picked in the table while it's inside a collapsed group). `blocked`
+   * is why it can't be shown, or null when it can.
    */
   reveal?: { blocked: string | null; onReveal: () => void };
   onAction: (action: MenuAction) => void;
@@ -51,45 +52,72 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function AggregatePanel({ target, group, parentLabel, canLoadPage, onAction }: SidePanelProps & { target: AggregateNode }) {
-  const loaded = group?.members.length ?? 0;
+function AggregatePanel({ target, parentLabel, hasOpenBelow = false, onAction }: SidePanelProps & { target: AggregateNode }) {
+  const risk = riskText(target.risk);
+  const full = 'The canvas is at its ~2,000-element limit';
   return (
     <>
       <Section title="Group">
         <dl className="grid grid-cols-[6rem_1fr] gap-x-2 gap-y-1 text-xs">
           <Field label="Members">
-            {target.total} {target.childType}
+            {target.count} {target.childType}
           </Field>
-          <Field label="Hidden">{target.count}</Field>
           {target.relation && <Field label="Relation">{target.relation}</Field>}
           {parentLabel !== undefined && <Field label="Parent">{parentLabel}</Field>}
           <Field label="Max severity">
             <SeverityValue severity={target.maxSeverity} />
           </Field>
-          {group && <Field label="Loaded">{`${String(loaded)} of ${String(group.total)}`}</Field>}
+          <Field label="Below it">{risk === '' ? 'nothing high or critical' : risk}</Field>
+          {target.expanded && <Field label="Shown">{`${String(target.shown)} of ${String(target.count)}`}</Field>}
         </dl>
       </Section>
-      <Section title="Expand">
-        <div className="flex gap-2">
-          <Button
-            size="sm"
-            disabled={!canLoadPage}
-            title={canLoadPage ? 'Double-click the group does the same' : 'The canvas is at its ~2,000-element limit'}
-            onClick={() => {
-              onAction('expand');
-            }}
-          >
-            {group ? `Load more (${String(group.remaining)} left)` : 'Expand'}
-          </Button>
-          {group && (
+      <Section title={target.expanded ? 'Open' : 'Collapsed'}>
+        <div className="flex flex-wrap gap-2">
+          {target.expanded ? (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                title="Double-click the group does the same"
+                onClick={() => {
+                  onAction('collapse');
+                }}
+              >
+                Collapse
+              </Button>
+              {target.remaining > 0 && (
+                <Button
+                  size="sm"
+                  disabled={!target.canLoadMore}
+                  title={target.canLoadMore ? 'Double-click the "more" node does the same' : full}
+                  onClick={() => {
+                    onAction('load-more');
+                  }}
+                >
+                  {`Load more (${String(target.remaining)} left)`}
+                </Button>
+              )}
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!hasOpenBelow}
+                onClick={() => {
+                  onAction('collapse-below');
+                }}
+              >
+                Collapse all below
+              </Button>
+            </>
+          ) : (
             <Button
               size="sm"
-              variant="outline"
+              disabled={!target.canLoadMore}
+              title={target.canLoadMore ? 'Double-click the group does the same' : full}
               onClick={() => {
-                onAction('collapse');
+                onAction('expand');
               }}
             >
-              Collapse
+              Expand
             </Button>
           )}
         </div>
@@ -102,7 +130,7 @@ function RevealSection({ blocked, onReveal }: NonNullable<SidePanelProps['reveal
   return (
     <Section title="Graph">
       <p className="text-muted-foreground text-xs">
-        This node isn't on the graph right now (it's inside a group, or the filters leave it out).
+        This node isn't on the graph right now (it's inside a collapsed group, or the filters leave it out).
       </p>
       <div>
         <Button size="sm" disabled={blocked !== null} onClick={onReveal}>
@@ -114,7 +142,7 @@ function RevealSection({ blocked, onReveal }: NonNullable<SidePanelProps['reveal
   );
 }
 
-function NodePanel({ target, group, reveal, onAction }: SidePanelProps & { target: GraphNode }) {
+function NodePanel({ target, memberOf, reveal, onAction }: SidePanelProps & { target: GraphNode }) {
   const detail = useNodeDetail(target.id);
   const patch = usePatchNode(target.id);
   const node = detail.data?.node;
@@ -167,14 +195,14 @@ function NodePanel({ target, group, reveal, onAction }: SidePanelProps & { targe
           <Field label="First seen">{formatTime(node.firstSeen)}</Field>
           <Field label="Last seen">{formatTime(node.lastSeen)}</Field>
         </dl>
-        {group && (
+        {memberOf && (
           <div className="flex items-center gap-2 text-xs">
-            <span className="text-muted-foreground">Shown from an expanded group.</span>
+            <span className="text-muted-foreground">In the group “{memberOf.label}”.</span>
             <Button
               size="sm"
               variant="outline"
               onClick={() => {
-                onAction('collapse');
+                onAction('collapse-parent');
               }}
             >
               Collapse group

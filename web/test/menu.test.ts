@@ -1,21 +1,20 @@
 import { describe, expect, test } from 'vitest';
-import type { GroupState } from '../src/graph/compose';
 import { menuItems, safeHttpUrl, type MenuContext } from '../src/menu/items';
-import { aggregate, node } from './fixtures';
+import { aggregate, more, node } from './fixtures';
 
 const ctx = (over: Partial<MenuContext> = {}): MenuContext => ({
   group: undefined,
-  canLoadPage: true,
   canExpandNeighbors: true,
+  hasRoom: true,
   ...over,
 });
-const group: GroupState = { aggregateId: 'agg:root:ip', pages: 1, members: ['a'], total: 250, remaining: 150 };
+const openGroup = aggregate({ id: 'agg:root:ip', childType: 'ip', count: 250, expanded: true, shown: 100, remaining: 150 });
 const actions = (items: ReturnType<typeof menuItems>) => items.map((i) => i.action);
 
 describe('menuItems', () => {
-  test('an ordinary node: focus, expand neighbors, copy, and a disabled run tool', () => {
+  test('an ordinary node: focus, expand neighbors, expand all below, copy, and a disabled run tool', () => {
     const items = menuItems(node('a'), ctx());
-    expect(actions(items)).toEqual(['focus', 'expand-neighbors', 'copy-value', 'run-tool']);
+    expect(actions(items)).toEqual(['focus', 'expand-neighbors', 'expand-all-below', 'copy-value', 'run-tool']);
     expect(items.find((i) => i.action === 'run-tool')).toMatchObject({ disabled: true, label: 'Run tool (coming later)' });
   });
 
@@ -32,30 +31,47 @@ describe('menuItems', () => {
     expect(actions(menuItems(node('u', { type: 'url', value: 'javascript:alert(1)' }), ctx()))).not.toContain('open-url');
   });
 
-  test('a node from an expanded group can collapse it', () => {
-    expect(actions(menuItems(node('a'), ctx({ group })))).toContain('collapse');
+  test('a member of an open group can collapse it', () => {
+    expect(actions(menuItems(node('a'), ctx({ group: openGroup })))).toContain('collapse-parent');
   });
 
-  test('expand neighbors is disabled, with a reason, at the element limit', () => {
-    const item = menuItems(node('a'), ctx({ canExpandNeighbors: false })).find((i) => i.action === 'expand-neighbors');
-    expect(item?.disabled).toBe(true);
-    expect(item?.hint).toMatch(/2,000/);
+  test('expand neighbors and expand all below are disabled, with a reason, at the element limit', () => {
+    const items = menuItems(node('a'), ctx({ canExpandNeighbors: false, hasRoom: false }));
+    for (const action of ['expand-neighbors', 'expand-all-below']) {
+      const item = items.find((i) => i.action === action);
+      expect(item?.disabled).toBe(true);
+      expect(item?.hint).toMatch(/2,000/);
+    }
   });
 
-  test('an aggregate: expand with its size, no copy or neighbors', () => {
-    const items = menuItems(aggregate({ total: 420 }), ctx());
+  test('a collapsed group: expand with its size, no copy or neighbors', () => {
+    const items = menuItems(aggregate({ count: 420 }), ctx());
     expect(actions(items)).toEqual(['focus', 'expand', 'run-tool']);
     expect(items[1]?.label).toBe('Expand (420)');
   });
 
-  test('an expanded aggregate: load more with what is left, and collapse', () => {
-    const items = menuItems(aggregate(), ctx({ group }));
-    expect(actions(items)).toEqual(['focus', 'expand', 'collapse', 'run-tool']);
-    expect(items[1]?.label).toBe('Load more (150 left)');
+  test('a collapsed group that does not fit can not be expanded', () => {
+    expect(menuItems(aggregate({ canLoadMore: false }), ctx())[1]).toMatchObject({ action: 'expand', disabled: true });
+  });
+
+  test('an open group: collapse, collapse all below, and load more with what is left', () => {
+    const items = menuItems(openGroup, ctx({ hasOpenBelow: true }));
+    expect(actions(items)).toEqual(['focus', 'collapse', 'collapse-below', 'load-more', 'run-tool']);
+    expect(items[3]?.label).toBe('Load more (150 left)');
+    expect(items[2]?.disabled).toBeUndefined();
+  });
+
+  test('collapse all below is disabled when nothing is open below', () => {
+    expect(menuItems(openGroup, ctx()).find((i) => i.action === 'collapse-below')).toMatchObject({ disabled: true });
   });
 
   test('load more is disabled at the element limit', () => {
-    expect(menuItems(aggregate(), ctx({ group, canLoadPage: false }))[1]).toMatchObject({ disabled: true });
+    const full = { ...openGroup, canLoadMore: false };
+    expect(menuItems(full, ctx()).find((i) => i.action === 'load-more')).toMatchObject({ disabled: true });
+  });
+
+  test('a "more" node only loads more of its group', () => {
+    expect(actions(menuItems(more(openGroup.id, 150), ctx({ group: openGroup })))).toEqual(['load-more']);
   });
 });
 

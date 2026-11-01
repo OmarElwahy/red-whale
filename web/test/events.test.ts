@@ -1,8 +1,8 @@
 import type { Core } from 'cytoscape';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { toElements } from '../src/graph/elements';
-import { bindGraphEvents, syncSelection, type GraphHandlers } from '../src/graph/events';
-import { aggregate, edge, headless, node } from './fixtures';
+import { bindGraphEvents, groupTitle, syncSelection, type GraphHandlers } from '../src/graph/events';
+import { aggregate, edge, headless, more, node } from './fixtures';
 
 const AGG = 'agg:0123456789abcdef:has_subdomain:subdomain';
 
@@ -10,8 +10,15 @@ function setup() {
   const cy = headless();
   cy.add(
     toElements({
-      nodes: [node('a', { type: 'domain' }), node('b'), node('c'), node('d'), aggregate({ id: AGG })],
-      edges: [edge('a', 'b'), edge('a', 'c'), edge('c', 'd'), edge('a', AGG)],
+      nodes: [
+        node('a', { type: 'domain' }),
+        node('b'),
+        node('c'),
+        node('d'),
+        aggregate({ id: AGG, expanded: true, shown: 1, remaining: 411, risk: { critical: 2, high: 1 } }),
+        more(AGG, 411),
+      ],
+      edges: [edge('a', 'b'), edge('a', 'c'), edge('c', 'd'), edge('a', AGG, { kind: 'group' }), edge(AGG, `more:${AGG}`, { kind: 'more', relation: null })],
     }),
   );
   return cy;
@@ -20,7 +27,7 @@ function setup() {
 function spies() {
   return {
     onSelect: vi.fn<GraphHandlers['onSelect']>(),
-    onExpand: vi.fn<GraphHandlers['onExpand']>(),
+    onDoubleTap: vi.fn<GraphHandlers['onDoubleTap']>(),
     onContextMenu: vi.fn<GraphHandlers['onContextMenu']>(),
     onMoved: vi.fn<GraphHandlers['onMoved']>(),
   };
@@ -45,14 +52,21 @@ describe('bindGraphEvents', () => {
     expect(h.onSelect.mock.calls).toEqual([['b'], [null]]);
   });
 
-  test('double-clicking an aggregate expands it', () => {
+  test('double-clicking a group or a "more" node reports it', () => {
     cy.getElementById(AGG).emit('dbltap');
-    expect(h.onExpand).toHaveBeenCalledWith(AGG);
+    cy.getElementById(`more:${AGG}`).emit('dbltap');
+    expect(h.onDoubleTap.mock.calls).toEqual([[AGG], [`more:${AGG}`]]);
   });
 
-  test('double-clicking an ordinary node does not expand anything', () => {
+  test('double-clicking an ordinary node does nothing', () => {
     cy.getElementById('b').emit('dbltap');
-    expect(h.onExpand).not.toHaveBeenCalled();
+    expect(h.onDoubleTap).not.toHaveBeenCalled();
+  });
+
+  test('a group says what serious findings are below it', () => {
+    expect(groupTitle(cy.getElementById(AGG))).toBe('412 subdomains: 2 critical, 1 high below');
+    cy.getElementById(AGG).data('riskTitle', '');
+    expect(groupTitle(cy.getElementById(AGG))).toBe('412 subdomains');
   });
 
   test('right-click opens the menu at the rendered position of the click', () => {
@@ -77,7 +91,7 @@ describe('bindGraphEvents', () => {
     cy.getElementById('b').emit('tap');
     cy.getElementById(AGG).emit('dbltap');
     expect(h.onSelect).not.toHaveBeenCalled();
-    expect(h.onExpand).not.toHaveBeenCalled();
+    expect(h.onDoubleTap).not.toHaveBeenCalled();
   });
 });
 

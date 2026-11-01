@@ -12,14 +12,27 @@ export const MUTED = 'muted';
 /** With a search, the nodes kept only as the path up to a match (the server's `q` keeps ancestors). */
 export const SEARCH_PATH = 'search-path';
 
+const GROUP = 'node[kind = "aggregate"]';
+
 /**
- * The node, every node within `hops` steps of it (edges in either direction), and the edges among them.
- * Empty when the node isn't on the canvas.
+ * One hop out from these nodes, either direction. A group is no hop of its own: from a parent the step goes on
+ * through its groups to their members, and from a member up through its group to the parent, so parent → group →
+ * member is one step (otherwise 1-hop focus on a domain would show only its groups).
+ */
+function hop(nodes: NodeCollection): NodeCollection {
+  const down = nodes.outgoers(GROUP).outgoers('node');
+  const up = nodes.incomers(GROUP).incomers('node');
+  return nodes.neighborhood().nodes().union(down).union(up);
+}
+
+/**
+ * The node, every node within `hops` steps of it (edges in either direction, groups stepped through), and the
+ * edges among them. Empty when the node isn't on the canvas.
  */
 export function focusNeighborhood(cy: Core, id: string, hops: number): Collection {
   let nodes: NodeCollection = cy.getElementById(id).nodes();
   if (nodes.empty()) return cy.collection();
-  for (let i = 0; i < hops; i++) nodes = nodes.union(nodes.neighborhood().nodes());
+  for (let i = 0; i < hops; i++) nodes = nodes.union(hop(nodes));
   const edges = nodes.connectedEdges().filter((e) => nodes.has(e.source()) && nodes.has(e.target()));
   return nodes.union(edges);
 }

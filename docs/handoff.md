@@ -4,7 +4,7 @@ Paste this file into a new chat to continue where we left off. It holds the cont
 other docs. Source of truth for design details is still `docs/architecture.md` (incl. the decisions log),
 `docs/contract.md` and `CLAUDE.md` — attach `docs/architecture.md` too if the question is technical.
 
-_Last updated: 2026-10-31_
+_Last updated: 2026-11-01_
 
 ## Who / what
 
@@ -22,7 +22,7 @@ _Last updated: 2026-10-31_
 TypeScript (pinned 6.0.x) · pnpm monorepo `shared/` `server/` `web/` · Zod · Fastify + WebSocket on
 127.0.0.1:4100 · SQLite via better-sqlite3 + Drizzle · Vite + React on 127.0.0.1:5173 · Cytoscape.js + fcose ·
 Zustand · TanStack Query + Table · Tailwind + shadcn/ui · react-markdown · Vitest · elkjs (Tree layout, in a Web Worker).
-Dropped: `cytoscape-expand-collapse` (aggregation is server-side). Docker/Dockerode comes in Phase 6B. Added in 6A: `tldts` (bundled Public Suffix List, for the scope guard).
+Dropped: `cytoscape-expand-collapse` (aggregation is server-side). Docker/Dockerode comes in Phase 6B. Added in 6A: `tldts` (bundled Public Suffix List, for the scope guard). Added in 5D: `lucide-static` 1.59.0 (ISC, node-type icons, bundled per icon).
 
 ## Status
 
@@ -36,6 +36,7 @@ Dropped: `cytoscape-expand-collapse` (aggregation is server-side). Docker/Docker
 | 5A | Filters sidebar, search, URL state, N-hop focus, mute low-risk | ✅ done |
 | 5B | Synced table, WebSocket live updates, Highlights view, JSON/PNG export | ✅ code + tests done; manual browser check pending |
 | 5C | Graph feel (edges/labels always drawn, momentum, smooth zoom, edge labels), Force/Tree layouts, small showcase mock | ✅ code + tests done; manual check pending |
+| 5D | Graph pass: an icon per node type in a circle, header legend; collapsible groups for every output (2+ siblings of one kind = a group, collapsed by default, stays as the members' parent, recursive collapse, risk badge, auto-open on live updates, paths opened as pins, expand all below), `POST /graph/view`, `GET /graph/path` | ✅ code + tests done; checked in headless Chrome; manual check pending |
 | 6A | Scope guard: rules + `checkScope`, `authorize()` → `ScopedTarget`, dockerode/child_process lint guard, scope API + log, `inScope` on nodes, Scope panel, banner, out-of-scope hatch, mocks seed a scope | ✅ code + tests done; manual check pending |
 | 6B+ | Docker orchestrator (runner behind `authorize()`), presets, auto-chaining (redirects re-check scope per hop), diffing, reports, CVE monitor, local LLM scoring, JS agent | later |
 
@@ -69,6 +70,24 @@ Dropped: `cytoscape-expand-collapse` (aggregation is server-side). Docker/Docker
 - Edge labels show the relation; labels fade (two steps) below 8 px on screen; two-finger scroll = zoom.
 - Measured at ~1,900 elements: panning p95 7 ms, zooming p95 21 ms (headless Chrome, Intel iGPU). No edge hiding.
 
+## Recent decisions (Phase 5D, icons and groups)
+
+- Every node is a circle with its type's icon (Lucide, bundled, no CDN); icon ink is white on none/critical fills and
+  near-black on info/low/medium/high (≥ 4.5:1). No type needs a text label today (the 11 contract types all have icons;
+  JS files and endpoints are `url` nodes). Legend opens from the header.
+- Group = same parent + same relation + same child type, **2 or more**, at every level; one child is drawn directly.
+  Collapsed by default; double-click opens it and the group **stays** as the parent; double-click again closes it and
+  everything opened below it. Roots group only above 25 per type.
+- No sticky risky children: the group's fill is its riskiest member, and a badge counts the distinct high/critical nodes
+  below it (each once), with a tooltip "2 critical, 1 high below".
+- Live update that turns one shown child into two: the new group **opens automatically** if the old child was on the
+  canvas (so nothing I'm looking at disappears); if there's no room, it folds and flashes.
+- Search / table / highlights / "Show on graph" open **exactly the path** to the node (pinned members, "+N more" for the
+  rest). Filters keep open groups that still exist.
+- "Expand neighbors" kept (shows a shared node's other parents); "Expand all below" added (stops at the 2,000 budget and
+  says how many nodes stay collapsed).
+- Server draws the whole view (`POST /api/graph/view`); the browser only keeps which groups are open.
+
 ## Recent decisions (Phase 6A, scope guard)
 
 - Default deny; exclude always wins; `*.example.com` ≠ `example.com`. A domain in scope **never** puts its IPs in scope
@@ -84,6 +103,10 @@ Dropped: `cytoscape-expand-collapse` (aggregation is server-side). Docker/Docker
 - For 6C: redirect-following tools must re-check scope on every hop.
 
 ## Open items to remember
+
+- 5D manual check: `pnpm mock`, open groups at three levels, search deep, live ingest into an open group (see the
+  5D chat for the exact steps). Re-run `await redwhale.bench()` with icons on (icons are one more background image
+  per node; the 6A hatch A/B on a busy machine said every-node images cost up to +60 % p95).
 
 - Tree layout near the 2,000 cap takes ~4.4 s (ELK in a worker, UI stays smooth, header shows progress).
   dagre would be ~0.85 s but freezes the UI and can't keep sibling order. Decide whether that's acceptable.

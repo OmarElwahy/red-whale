@@ -7,7 +7,6 @@ import {
   SCOPE_DECISIONS,
   TAGS,
   exportResponseSchema,
-  graphResponseSchema,
   highlightsResponseSchema,
   ingestResponseSchema,
   scansResponseSchema,
@@ -16,7 +15,7 @@ import {
 } from '@redwhale/shared';
 import { describe, expect, test } from 'vitest';
 import { EXAMPLES, INVALID_DIR, counts, exampleDoc, exampleText, jsonFiles } from '../helpers';
-import { body, error, idOf, ingestExamples, testApi } from './helpers';
+import { body, error, idOf, ingestExamples, isReal, openAll, testApi } from './helpers';
 
 const zeros = (keys: readonly string[]) => Object.fromEntries(keys.map((k) => [k, 0]));
 
@@ -81,7 +80,7 @@ describe('POST /api/ingest', () => {
     });
     const r = body(res, 201, ingestResponseSchema);
     expect(r).toMatchObject({ status: 'ingested', created: { nodes: 5, edges: 4 }, observations: 5, warnings: [] });
-    expect(body(await api.get('/api/graph'), 200, graphResponseSchema).nodes).toHaveLength(5);
+    expect((await openAll(api)).nodes.filter(isReal)).toHaveLength(5);
   });
 
   test('the same file again → 200 duplicate, nothing changes', async () => {

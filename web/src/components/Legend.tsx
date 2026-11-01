@@ -1,7 +1,10 @@
-// What the shapes, colors and borders mean. Built from the same tables as the stylesheet (graph/style.ts).
+// What the icons, colors and borders mean. Built from the same tables as the stylesheet (graph/style.ts) and the
+// icon map (graph/icons.ts), so the legend can't drift from the canvas. Opened from the header.
 import { CONFIDENCE_LEVELS, NODE_TYPES } from '@redwhale/shared';
-import { useId, useState, type ReactNode } from 'react';
+import { useId, type ReactNode } from 'react';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { badgeImage, glyphImage } from '@/graph/icons';
 import {
   AGGREGATE_BORDER,
   COLORS,
@@ -12,7 +15,7 @@ import {
   SEARCH_PATH_OPACITY,
   SEVERITY_COLOR,
   SEVERITY_KEYS,
-  SHAPE_BY_TYPE,
+  ICON_SCALE,
   SHAPE_PATHS,
   type Shape,
 } from '@/graph/style';
@@ -28,6 +31,10 @@ interface SwatchProps {
   hatch?: boolean;
   opacity?: number;
   size?: number;
+  /** An icon (data URI) in the middle, as the canvas draws it. */
+  icon?: string;
+  /** A risk badge (data URI) over the top-right corner. */
+  badge?: string;
 }
 
 function Swatch({
@@ -39,6 +46,8 @@ function Swatch({
   hatch = false,
   opacity = 1,
   size = 18,
+  icon,
+  badge,
 }: SwatchProps) {
   const d = SHAPE_PATHS[shape];
   // useId() may contain characters that break a url(#…) reference.
@@ -83,6 +92,10 @@ function Swatch({
       {borderStyle === 'double' && (
         <path d={d} transform="scale(0.7)" fill="none" stroke={COLORS.border} strokeWidth={1} vectorEffect="non-scaling-stroke" />
       )}
+      {icon !== undefined && (
+        <image href={icon} x={-ICON_SCALE} y={-ICON_SCALE} width={2 * ICON_SCALE} height={2 * ICON_SCALE} />
+      )}
+      {badge !== undefined && <image href={badge} x={0.45} y={-1.55} width={1.1} height={1.1} />}
     </svg>
   );
 }
@@ -107,59 +120,69 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 const CONFIDENCE_HINT = { discovered: '1 tool', corroborated: '2+ tools', verified: 'analyst' } as const;
 
-export function Legend({ className }: { className?: string }) {
-  const [open, setOpen] = useState(true);
+export function Legend({ className, onClose }: { className?: string; onClose: () => void }) {
   return (
-    <Card className={cn('w-72 gap-3 py-3 text-xs shadow-lg', className)}>
-      <CardHeader className="px-3">
-        <button
-          type="button"
-          className="flex w-full items-center justify-between text-left"
-          aria-expanded={open}
-          onClick={() => {
-            setOpen((o) => !o);
-          }}
-        >
-          <CardTitle className="text-sm">Legend</CardTitle>
-          <span className="text-muted-foreground">{open ? 'hide' : 'show'}</span>
-        </button>
+    <Card aria-label="Legend" className={cn('w-72 gap-3 py-3 text-xs shadow-lg', className)}>
+      <CardHeader className="flex flex-row items-center justify-between px-3">
+        <CardTitle className="text-sm">Legend</CardTitle>
+        <Button size="sm" variant="ghost" aria-label="Close legend" onClick={onClose}>
+          ✕
+        </Button>
       </CardHeader>
-      {open && (
-        <CardContent className="flex flex-col gap-3 px-3">
-          <Section title="Type (shape)">
-            {NODE_TYPES.map((t) => (
-              <Row key={t} swatch={<Swatch shape={SHAPE_BY_TYPE[t]} />}>
-                {t}
-              </Row>
-            ))}
-          </Section>
-          <Section title="Severity (fill)">
-            {SEVERITY_KEYS.map((s) => (
-              <Row key={s} swatch={<Swatch fill={SEVERITY_COLOR[s]} />}>
-                {s}
-              </Row>
-            ))}
-          </Section>
-          <Section title="Confidence (border)">
-            {CONFIDENCE_LEVELS.map((c) => (
-              <Row
-                key={c}
-                swatch={<Swatch borderStyle={CONFIDENCE_BORDER[c].style} borderWidth={CONFIDENCE_BORDER[c].width} />}
-              >
-                {c} <span className="text-muted-foreground normal-case">({CONFIDENCE_HINT[c]})</span>
-              </Row>
-            ))}
-          </Section>
-          <Section title="Markers">
-            <Row swatch={<Swatch borderStyle={AGGREGATE_BORDER.style} size={22} />}>group (count)</Row>
-            <Row swatch={<Swatch ring />}>interesting</Row>
-            <Row swatch={<Swatch hatch fill={SEVERITY_COLOR.high} />}>out of scope</Row>
-            <Row swatch={<Swatch opacity={IGNORED_OPACITY} />}>ignored</Row>
-            <Row swatch={<Swatch opacity={SEARCH_PATH_OPACITY} />}>search path</Row>
-            <Row swatch={<Swatch opacity={MUTED_OPACITY} />}>muted (low-risk)</Row>
-          </Section>
-        </CardContent>
-      )}
+      <CardContent className="flex flex-col gap-3 px-3">
+        <Section title="Type (icon)">
+          {NODE_TYPES.map((t) => (
+            <Row key={t} swatch={<Swatch icon={glyphImage(t, 'none')} size={26} />}>
+              {t}
+            </Row>
+          ))}
+        </Section>
+        <Section title="Severity (fill)">
+          {SEVERITY_KEYS.map((s) => (
+            <Row key={s} swatch={<Swatch fill={SEVERITY_COLOR[s]} />}>
+              {s}
+            </Row>
+          ))}
+        </Section>
+        <Section title="Confidence (border)">
+          {CONFIDENCE_LEVELS.map((c) => (
+            <Row
+              key={c}
+              swatch={<Swatch borderStyle={CONFIDENCE_BORDER[c].style} borderWidth={CONFIDENCE_BORDER[c].width} />}
+            >
+              {c} <span className="text-muted-foreground normal-case">({CONFIDENCE_HINT[c]})</span>
+            </Row>
+          ))}
+        </Section>
+        <Section title="Markers">
+          <Row
+            swatch={<Swatch borderStyle={AGGREGATE_BORDER.style} icon={glyphImage('subdomain', 'none')} size={24} />}
+          >
+            group (double-click)
+          </Row>
+          <Row
+            swatch={
+              <Swatch
+                borderStyle={AGGREGATE_BORDER.style}
+                fill={SEVERITY_COLOR.critical}
+                icon={glyphImage('ip', 'critical')}
+                badge={badgeImage(2, 'critical')}
+                size={24}
+              />
+            }
+          >
+            high/critical below
+          </Row>
+          <Row swatch={<Swatch shape="round-rectangle" fill={COLORS.more} borderStyle="dashed" borderWidth={1} />}>
+            +N more (load)
+          </Row>
+          <Row swatch={<Swatch ring />}>interesting</Row>
+          <Row swatch={<Swatch hatch fill={SEVERITY_COLOR.high} />}>out of scope</Row>
+          <Row swatch={<Swatch opacity={IGNORED_OPACITY} />}>ignored</Row>
+          <Row swatch={<Swatch opacity={SEARCH_PATH_OPACITY} />}>search path</Row>
+          <Row swatch={<Swatch opacity={MUTED_OPACITY} />}>muted (low-risk)</Row>
+        </Section>
+      </CardContent>
     </Card>
   );
 }

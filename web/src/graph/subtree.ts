@@ -38,7 +38,7 @@ export function bindSubtreeDrag(cy: Core, enabled: () => boolean): SubtreeDrag {
     const node = e.target as NodeSingular;
     carrier = node;
     // Anything still animating to its tree position would fight the drag.
-    cy.nodes().stop(true, false);
+    cy.nodes().not('.retiring').stop(true, false);
     below = node.successors().nodes().difference(node);
     last = { ...node.position() };
     node.on('position', onPosition);

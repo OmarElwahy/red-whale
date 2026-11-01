@@ -2,22 +2,24 @@ import {
   aggregateNodeSchema,
   edgeId,
   graphNodeSchema,
+  moreNodeSchema,
   nodeId,
+  viewEdgeSchema,
   type AggregateNode,
   type GraphEdge,
   type GraphNode,
+  type GroupOpen,
   type NodeType,
   type Relation,
   type Severity,
-  type Tag,
 } from '@redwhale/shared';
 import { describe, expect, test } from 'vitest';
-import { AGG_THRESHOLD, aggregateGraph, type AggregateResult } from '../src/graph/aggregate';
+import { groupPath, groupedView, type ViewOptions, type ViewResult } from '../src/graph/aggregate';
 import { effectiveSeverities, type Graph } from '../src/graph/store';
 
 const T = '2026-10-29T10:00:00.000Z';
 
-function node(type: NodeType, value: string, extra: { severity?: Severity; tag?: Tag } = {}): GraphNode {
+function node(type: NodeType, value: string, extra: { severity?: Severity } = {}): GraphNode {
   return {
     id: nodeId(type, value),
     type,
@@ -27,7 +29,7 @@ function node(type: NodeType, value: string, extra: { severity?: Severity; tag?:
     effectiveSeverity: extra.severity ?? null,
     confidence: 'discovered',
     sourceCount: 1,
-    tag: extra.tag ?? null,
+    tag: null,
     inScope: 'out',
     posX: null,
     posY: null,
@@ -46,224 +48,378 @@ function graph(nodes: GraphNode[], edges: GraphEdge[]): Graph {
   return { nodes: nodes.map((n) => ({ ...n, effectiveSeverity: eff.get(n.id) ?? null })), edges };
 }
 
+function view(g: Graph, options: Partial<ViewOptions> = {}): ViewResult {
+  const maxElements = options.maxElements ?? 2000;
+  const r = groupedView(g, { ...options, maxElements });
+  // Invariants for every result: valid shapes, unique IDs, no dangling edges, within the cap.
+  const ids = r.nodes.map((n) => n.id);
+  expect(new Set(ids).size).toBe(ids.length);
+  for (const n of r.nodes) {
+    (n.type === 'aggregate' ? aggregateNodeSchema : n.type === 'more' ? moreNodeSchema : graphNodeSchema).parse(n);
+  }
+  for (const e of r.edges) {
+    viewEdgeSchema.parse(e);
+    expect(ids).toContain(e.source);
+    expect(ids).toContain(e.target);
+  }
+  expect(new Set(r.edges.map((e) => e.id)).size).toBe(r.edges.length);
+  expect(r.nodes.length + r.edges.length).toBeLessThanOrEqual(maxElements);
+  return r;
+}
+
+const open = (id: string, pages = 1, pins: string[] = []): GroupOpen => ({ id, pages, pins });
+const groups = (r: ViewResult) => r.nodes.filter((n): n is AggregateNode => n.type === 'aggregate');
+const group = (r: ViewResult, id: string) => groups(r).find((g) => g.id === id);
+const shown = (r: ViewResult) => new Set(r.nodes.map((n) => n.id));
+const edgeKinds = (r: ViewResult, kind: string) => r.edges.filter((e) => e.kind === kind);
+
 const domain = node('domain', 'example.com');
 const subs = (n: number, prefix = 'host') =>
   Array.from({ length: n }, (_, i) => node('subdomain', `${prefix}${String(i).padStart(4, '0')}.example.com`));
 const fanOut = (children: GraphNode[], parent = domain, relation: Relation = 'has_subdomain') =>
   children.map((c) => edge(parent, relation, c));
+const SUBS = `agg:${domain.id}:has_subdomain:subdomain`;
+const ipsOf = (s: GraphNode) => `agg:${s.id}:resolves_to:ip`;
+const portsOf = (ip: GraphNode) => `agg:${ip.id}:has_port:port`;
 
-function run(g: Graph, options: Partial<Parameters<typeof aggregateGraph>[1]> = {}): AggregateResult {
-  const r = aggregateGraph(g, { threshold: AGG_THRESHOLD, maxElements: 2000, ...options });
-  // Invariants for every result: valid shapes, unique IDs, no dangling edges, within the cap.
-  const ids = r.nodes.map((n) => n.id);
-  expect(new Set(ids).size).toBe(ids.length);
-  for (const n of r.nodes) (n.type === 'aggregate' ? aggregateNodeSchema : graphNodeSchema).parse(n);
-  for (const e of r.edges) {
-    expect(ids).toContain(e.source);
-    expect(ids).toContain(e.target);
-  }
-  expect(new Set(r.edges.map((e) => e.id)).size).toBe(r.edges.length);
-  expect(r.nodes.length + r.edges.length).toBeLessThanOrEqual(options.maxElements ?? 2000);
-  return r;
+/** domain → 3 subdomains → 2 IPs each → 2 ports each: a group at three levels. */
+function threeLevels() {
+  const ss = subs(3);
+  const ips = ss.map((s, i) => [node('ip', `198.18.${String(i)}.1`), node('ip', `198.18.${String(i)}.2`)] as const);
+  const ports = ips.flat().map((ip) => [node('port', `${ip.value}:80/tcp`), node('port', `${ip.value}:443/tcp`)] as const);
+  const g = graph(
+    [domain, ...ss, ...ips.flat(), ...ports.flat()],
+    [
+      ...fanOut(ss),
+      ...ss.flatMap((s, i) => (ips[i] ?? []).map((ip) => edge(s, 'resolves_to', ip))),
+      ...ips.flat().flatMap((ip, i) => (ports[i] ?? []).map((p) => edge(ip, 'has_port', p))),
+    ],
+  );
+  return { g, ss, ips, ports };
 }
 
-const aggregates = (r: AggregateResult) => r.nodes.filter((n): n is AggregateNode => n.type === 'aggregate');
-const visibleIds = (r: AggregateResult) => new Set(r.nodes.map((n) => n.id));
-
-describe('threshold', () => {
-  test('25 children stay as they are', () => {
-    const children = subs(25);
-    const r = run(graph([domain, ...children], fanOut(children)));
-    expect(aggregates(r)).toEqual([]);
-    expect(r.nodes).toHaveLength(26);
-    expect(r.edges).toHaveLength(25);
-    expect(r).toMatchObject({ truncated: false, threshold: 25 });
+describe('the rule', () => {
+  test('one child is drawn directly, with its real edge', () => {
+    const [only] = subs(1) as [GraphNode];
+    const r = view(graph([domain, only], fanOut([only])));
+    expect(groups(r)).toEqual([]);
+    expect(r.edges).toEqual([{ ...edge(domain, 'has_subdomain', only), kind: 'relation' }]);
   });
 
-  test('26 children fold into one aggregate', () => {
-    const children = subs(26);
-    const r = run(graph([domain, ...children], fanOut(children)));
-    expect(r.nodes.map((n) => n.id)).toEqual([domain.id, `agg:${domain.id}:has_subdomain:subdomain`]);
-    expect(aggregates(r)[0]).toEqual({
-      id: `agg:${domain.id}:has_subdomain:subdomain`,
-      type: 'aggregate',
-      label: '26 subdomains',
-      count: 26,
-      total: 26,
-      childType: 'subdomain',
-      relation: 'has_subdomain',
+  test('two or more children become one collapsed group, carrying the relation', () => {
+    const ss = subs(12);
+    const r = view(graph([domain, ...ss], fanOut(ss)));
+    expect(r.nodes.map((n) => n.id)).toEqual([domain.id, SUBS]);
+    expect(group(r, SUBS)).toMatchObject({
+      label: '12 subdomains',
+      count: 12,
+      expanded: false,
+      shown: 0,
+      remaining: 12,
       parentId: domain.id,
-      maxSeverity: null,
+      relation: 'has_subdomain',
+      childType: 'subdomain',
+      canLoadMore: true,
     });
     expect(r.edges).toEqual([
-      {
-        id: `edge:agg:${domain.id}:has_subdomain:subdomain`,
-        source: domain.id,
-        target: `agg:${domain.id}:has_subdomain:subdomain`,
-        relation: 'has_subdomain',
-      },
+      { id: `edge:${SUBS}`, source: domain.id, target: SUBS, relation: 'has_subdomain', kind: 'group' },
     ]);
   });
 
-  test('the threshold is configurable', () => {
-    const children = subs(6);
-    expect(aggregates(run(graph([domain, ...children], fanOut(children)), { threshold: 5 }))).toHaveLength(1);
+  test('collapsed by default at every level; opening one level shows the next level collapsed', () => {
+    const { g, ss } = threeLevels();
+    const r = view(g, { expand: [open(SUBS)] });
+    expect(group(r, SUBS)).toMatchObject({ expanded: true, shown: 3, remaining: 0 });
+    for (const s of ss) {
+      expect(shown(r).has(s.id)).toBe(true);
+      expect(group(r, ipsOf(s))).toMatchObject({ expanded: false, count: 2 });
+    }
+    expect(r.nodes.filter((n) => n.type === 'ip')).toEqual([]);
+  });
+
+  test('an open group stays as the parent: parent → group → member, plain member edges, no real edges', () => {
+    const { g, ss } = threeLevels();
+    const r = view(g, { expand: [open(SUBS)] });
+    expect(edgeKinds(r, 'member').map((e) => e.target).sort()).toEqual(ss.map((s) => s.id).sort());
+    for (const e of edgeKinds(r, 'member')) expect(e).toMatchObject({ source: SUBS, relation: null });
+    expect(edgeKinds(r, 'relation')).toEqual([]);
+  });
+
+  test('three levels open: domain → subdomains → IPs → ports', () => {
+    const { g, ss, ips } = threeLevels();
+    const [s0] = ss as [GraphNode];
+    const [ip0] = ips[0] as readonly [GraphNode, GraphNode];
+    const r = view(g, { expand: [open(SUBS), open(ipsOf(s0)), open(portsOf(ip0))] });
+    expect(r.nodes.filter((n) => n.type === 'port')).toHaveLength(2);
+    expect(r.state.expand.map((x) => x.id)).toEqual([SUBS, ipsOf(s0), portsOf(ip0)]);
+  });
+
+  test('closing a group drops everything opened below it from the state (recursive collapse)', () => {
+    const { g, ss, ips } = threeLevels();
+    const [s0] = ss as [GraphNode];
+    const [ip0] = ips[0] as readonly [GraphNode, GraphNode];
+    // The client removed SUBS but still had the groups below it.
+    const r = view(g, { expand: [open(ipsOf(s0)), open(portsOf(ip0))] });
+    expect(r.nodes.map((n) => n.id)).toEqual([domain.id, SUBS]);
+    expect(r.state.expand).toEqual([]);
   });
 });
 
-describe('sticky children stay visible', () => {
-  test('severity medium or worse, or tagged interesting; maxSeverity covers every member', () => {
-    const children = subs(30);
-    const [high, interesting, low] = [
-      node('subdomain', 'high.example.com', { severity: 'high' }),
-      node('subdomain', 'tagged.example.com', { tag: 'interesting' }),
-      node('subdomain', 'low.example.com', { severity: 'low' }),
-    ];
-    const all = [...children, high, interesting, low];
-    const r = run(graph([domain, ...all], fanOut(all)));
-    const ids = visibleIds(r);
-    expect(ids.has(high.id) && ids.has(interesting.id)).toBe(true);
-    expect(ids.has(low.id)).toBe(false);
-    expect(aggregates(r)[0]).toMatchObject({ count: 31, total: 33, maxSeverity: 'high', label: '31 subdomains' });
+describe('pages and pins', () => {
+  const ss = subs(250);
+  const g = graph([domain, ...ss], fanOut(ss));
+
+  test('100 members per page, then a "more" node', () => {
+    const r = view(g, { expand: [open(SUBS)] });
+    expect(r.nodes.filter((n) => n.type === 'subdomain')).toHaveLength(100);
+    expect(r.nodes.find((n) => n.type === 'more')).toEqual({
+      id: `more:${SUBS}`,
+      type: 'more',
+      groupId: SUBS,
+      label: '+150 more',
+      remaining: 150,
+    });
+    expect(group(r, SUBS)).toMatchObject({ shown: 100, remaining: 150, canLoadMore: true });
+    const r2 = view(g, { expand: [open(SUBS, 3)] });
+    expect(r2.nodes.filter((n) => n.type === 'subdomain')).toHaveLength(250);
+    expect(r2.nodes.some((n) => n.type === 'more')).toBe(false);
   });
 
-  test('a subdomain whose URL has a high vulnerability stays visible (effective severity)', () => {
-    const children = subs(30);
-    const [risky] = children;
-    if (!risky) throw new Error('no children');
-    const url = node('url', `https://${risky.value}/`);
-    const vuln = node('vulnerability', 'CVE-2021-41773', { severity: 'high' });
-    const g = graph(
-      [domain, ...children, url, vuln],
-      [...fanOut(children), edge(risky, 'serves', url), edge(url, 'has_vulnerability', vuln)],
-    );
-    const r = run(g);
-    expect([...visibleIds(r)]).toEqual(expect.arrayContaining([risky.id, url.id, vuln.id]));
-    expect(aggregates(r)[0]).toMatchObject({ count: 29, total: 30, maxSeverity: 'high' });
+  test('a pin shows one member beyond the loaded pages; pages 0 shows only the pins', () => {
+    const deep = ss[240] as GraphNode;
+    const r = view(g, { expand: [open(SUBS, 0, [deep.id])] });
+    expect(r.nodes.filter((n) => n.type === 'subdomain').map((n) => n.id)).toEqual([deep.id]);
+    expect(group(r, SUBS)).toMatchObject({ expanded: true, shown: 1, remaining: 249 });
+    expect(r.state.expand).toEqual([open(SUBS, 0, [deep.id])]);
   });
 
-  test('pinned nodes always stay visible', () => {
-    const children = subs(30);
-    const pin = children[7];
-    if (!pin) throw new Error('no child');
-    const r = run(graph([domain, ...children], fanOut(children)), { pinned: [pin.id] });
-    expect(visibleIds(r).has(pin.id)).toBe(true);
+  test('pins that are not members are dropped from the state', () => {
+    const r = view(g, { expand: [open(SUBS, 0, [domain.id, 'nope'])] });
+    expect(r.state.expand).toEqual([open(SUBS, 0, [])]);
   });
 });
 
-describe('what folding hides', () => {
-  test('a node reachable only through folded children is hidden; one with a visible parent is shown', () => {
-    const children = subs(30);
-    const visibleSub = node('subdomain', 'tagged.example.com', { tag: 'interesting' });
-    const [hiddenSub] = children;
-    if (!hiddenSub) throw new Error('no child');
-    const privateIp = node('ip', '198.18.0.1');
-    const sharedIp = node('ip', '198.18.0.2');
-    const g = graph(
-      [domain, ...children, visibleSub, privateIp, sharedIp],
-      [
-        ...fanOut([...children, visibleSub]),
-        edge(hiddenSub, 'resolves_to', privateIp),
-        edge(hiddenSub, 'resolves_to', sharedIp),
-        edge(visibleSub, 'resolves_to', sharedIp),
-      ],
+describe('a node with several parents', () => {
+  const [a, b] = subs(2) as [GraphNode, GraphNode];
+  const shared = node('ip', '198.18.0.20');
+  const ipA = node('ip', '198.18.0.1');
+  const ipB = node('ip', '198.18.0.2');
+  const g = graph(
+    [domain, a, b, shared, ipA, ipB],
+    [...fanOut([a, b]), edge(a, 'resolves_to', ipA), edge(a, 'resolves_to', shared), edge(b, 'resolves_to', shared), edge(b, 'resolves_to', ipB)],
+  );
+
+  test('both groups open: drawn once, with an edge from each group', () => {
+    const r = view(g, { expand: [open(SUBS), open(ipsOf(a)), open(ipsOf(b))] });
+    expect(r.nodes.filter((n) => n.id === shared.id)).toHaveLength(1);
+    expect(edgeKinds(r, 'member').filter((e) => e.target === shared.id).map((e) => e.source).sort()).toEqual(
+      [ipsOf(a), ipsOf(b)].sort(),
     );
-    const ids = visibleIds(run(g));
-    expect(ids.has(privateIp.id)).toBe(false);
-    expect(ids.has(sharedIp.id)).toBe(true);
   });
 
-  test('different relations and child types under one parent are separate aggregates', () => {
-    const children = subs(30);
-    const ips = Array.from({ length: 30 }, (_, i) => node('ip', `198.18.1.${String(i + 1)}`));
-    const r = run(graph([domain, ...children, ...ips], [...fanOut(children), ...fanOut(ips, domain, 'resolves_to')]));
-    expect(aggregates(r).map((a) => a.id)).toEqual([
-      `agg:${domain.id}:has_subdomain:subdomain`,
-      `agg:${domain.id}:resolves_to:ip`,
-    ]);
-    expect(aggregates(r).map((a) => a.label)).toEqual(['30 subdomains', '30 IPs']);
+  test('one group open: it hangs under that one; the collapsed group still counts it and draws no edge to it', () => {
+    const r = view(g, { expand: [open(SUBS), open(ipsOf(a))] });
+    expect(edgeKinds(r, 'member').filter((e) => e.target === shared.id).map((e) => e.source)).toEqual([ipsOf(a)]);
+    expect(group(r, ipsOf(b))).toMatchObject({ expanded: false, count: 2, shown: 0 });
   });
 
-  test('a folded member that another visible parent links to is drawn and not counted', () => {
-    const children = subs(30);
-    const [shared] = children;
-    if (!shared) throw new Error('no child');
-    const otherDomain = node('domain', 'example.org');
-    const r = run(graph([domain, otherDomain, ...children], [...fanOut(children), edge(otherDomain, 'has_subdomain', shared)]));
-    expect(visibleIds(r).has(shared.id)).toBe(true);
-    expect(aggregates(r)[0]).toMatchObject({ count: 29, total: 30 });
-    expect(r.edges.map((e) => [e.source, e.target])).toContainEqual([domain.id, shared.id]);
+  test('expand neighbors draws every parent with its edge, even one hidden in a collapsed group', () => {
+    // Only `a` is shown (pinned), so `b` is hidden until the shared IP's neighbors are expanded.
+    const r = view(g, { expand: [open(SUBS, 0, [a.id]), open(ipsOf(a))], neighbors: [shared.id] });
+    expect(shown(r).has(b.id)).toBe(true);
+    expect(edgeKinds(r, 'neighbor').map((e) => e.source).sort()).toEqual([a.id, b.id].sort());
+    expect(r.state.neighbors).toEqual([shared.id]);
+  });
+
+  test('a neighbor expansion whose node is not drawn is dropped', () => {
+    const r = view(g, { neighbors: [shared.id] });
+    expect(r.state.neighbors).toEqual([]);
   });
 });
 
 describe('roots', () => {
-  test('more than the threshold parentless nodes of one type fold into agg:root:<type>', () => {
-    const children = subs(40);
-    const r = run(graph(children, []));
-    expect(aggregates(r)).toEqual([
-      expect.objectContaining({ id: 'agg:root:subdomain', parentId: null, relation: null, count: 40, label: '40 subdomains' }),
-    ]);
+  test('up to 25 parentless nodes of a type are drawn as they are', () => {
+    const r = view(graph(subs(25), []));
+    expect(groups(r)).toEqual([]);
+    expect(r.nodes).toHaveLength(25);
+  });
+
+  test('a single target domain is never "1 domain"', () => {
+    const r = view(graph([domain], []));
+    expect(r.nodes).toEqual([domain]);
+  });
+
+  test('more than 25 fold into agg:root:<type>', () => {
+    const r = view(graph(subs(26), []));
+    expect(r.nodes.map((n) => n.id)).toEqual(['agg:root:subdomain']);
+    expect(group(r, 'agg:root:subdomain')).toMatchObject({ count: 26, parentId: null, relation: null });
     expect(r.edges).toEqual([]);
   });
 
-  test('a graph made only of a cycle is still returned, without looping forever', () => {
-    const a = node('url', 'https://a.example.com/');
-    const b = node('url', 'https://a.example.com/b');
-    const r = run(graph([a, b], [edge(a, 'has_url', b), edge(b, 'has_url', a)]));
-    expect(visibleIds(r)).toEqual(new Set([a.id, b.id]));
-    expect(r.edges).toHaveLength(2);
+  test('a part of the graph with no root (a cycle) is walked from its riskiest node', () => {
+    const [x, y] = [node('url', 'https://a.example.com/'), node('url', 'https://b.example.com/', { severity: 'low' })];
+    const r = view(graph([x, y], [edge(x, 'has_url', y), edge(y, 'has_url', x)]));
+    expect(shown(r)).toEqual(new Set([x.id, y.id]));
   });
 });
 
-describe('order', () => {
-  test('riskiest first, then by value', () => {
-    const plain = node('subdomain', 'a.example.com');
-    const crit = node('subdomain', 'z.example.com', { severity: 'critical' });
-    const med = node('subdomain', 'm.example.com', { severity: 'medium' });
-    const r = run(graph([domain, plain, crit, med], fanOut([plain, crit, med])));
-    expect(r.nodes.map((n) => n.id)).toEqual([domain.id, crit.id, med.id, plain.id]);
+describe('the risk badge', () => {
+  test('distinct high/critical nodes anywhere below the group, each counted once', () => {
+    const [a, b] = subs(2) as [GraphNode, GraphNode];
+    const shared = node('ip', '198.18.0.20');
+    const other = node('ip', '198.18.0.21');
+    const port = node('port', '198.18.0.20:443/tcp');
+    const crit = node('vulnerability', 'CVE-2021-41773', { severity: 'critical' });
+    const high = node('vulnerability', 'redis-no-auth', { severity: 'high' });
+    const medium = node('vulnerability', 'headers', { severity: 'medium' });
+    const g = graph(
+      [domain, a, b, shared, other, port, crit, high, medium],
+      [
+        ...fanOut([a, b]),
+        edge(a, 'resolves_to', shared),
+        edge(b, 'resolves_to', shared),
+        edge(b, 'resolves_to', other),
+        edge(shared, 'has_port', port),
+        edge(port, 'has_vulnerability', crit),
+        edge(other, 'has_vulnerability', high),
+        edge(a, 'has_vulnerability', medium),
+      ],
+    );
+    const r = view(g, { expand: [open(SUBS)] });
+    // The critical one is reachable through both subdomains: counted once.
+    expect(group(r, SUBS)).toMatchObject({ risk: { critical: 1, high: 1 }, maxSeverity: 'critical' });
+    expect(group(r, ipsOf(b))).toMatchObject({ risk: { critical: 1, high: 1 } });
   });
 
-  test('the same input always gives the same output', () => {
-    const children = subs(100);
-    const g = graph([domain, ...children], fanOut(children));
-    expect(run(g)).toEqual(run({ nodes: [...g.nodes].reverse(), edges: [...g.edges].reverse() }));
+  test('a group with nothing serious below has a zero badge', () => {
+    const ss = subs(3);
+    expect(group(view(graph([domain, ...ss], fanOut(ss))), SUBS)?.risk).toEqual({ critical: 0, high: 0 });
   });
 });
 
-describe('the element cap', () => {
-  // 30 domains × 20 subdomains each: under the threshold, but 30 + 600 + 600 = 1230 elements.
-  const domains = Array.from({ length: 30 }, (_, i) => node('domain', `d${String(i)}.example`));
-  const children = domains.flatMap((d) =>
-    Array.from({ length: 20 }, (_, i) => node('subdomain', `h${String(i)}.${d.value}`)),
-  );
-  const edges = domains.flatMap((d, i) => fanOut(children.slice(i * 20, i * 20 + 20), d));
-  const g = graph([...domains, ...children], edges);
+describe('the element budget', () => {
+  const ss = subs(60);
+  const g = graph([domain, ...ss], fanOut(ss));
 
-  // 30 parentless domains would fold into agg:root:domain, so the tests pin them.
-  test('under the cap: nothing changes', () => {
-    const r = run(g, { maxElements: 2000, pinned: domains.map((d) => d.id) });
-    expect(r).toMatchObject({ truncated: false, threshold: 25 });
-    expect(r.nodes).toHaveLength(630);
+  test('an open group that does not fit is refused, said so, and left out of the state', () => {
+    const r = view(g, { maxElements: 50, expand: [open(SUBS)] });
+    expect(r).toMatchObject({ truncated: true, overBudget: [SUBS] });
+    expect(group(r, SUBS)).toMatchObject({ expanded: false, canLoadMore: false });
+    expect(r.state.expand).toEqual([]);
   });
 
-  test('over the cap: the threshold is lowered and the response says so', () => {
-    const r = run(g, { maxElements: 1000, pinned: domains.map((d) => d.id) });
-    expect(r).toMatchObject({ truncated: true, threshold: 10 });
-    expect(aggregates(r)).toHaveLength(30);
+  test('the newest asks are refused first; a "load more" loses its extra page only', () => {
+    const [a, b] = subs(2, 'x') as [GraphNode, GraphNode];
+    const kids = (s: GraphNode) =>
+      Array.from({ length: 150 }, (_, i) => node('ip', `198.${s === a ? '18' : '19'}.${String(i >> 8)}.${String(i & 255)}`));
+    const ka = kids(a);
+    const kb = kids(b);
+    const big = graph(
+      [domain, a, b, ...ka, ...kb],
+      [...fanOut([a, b]), ...ka.map((k) => edge(a, 'resolves_to', k)), ...kb.map((k) => edge(b, 'resolves_to', k))],
+    );
+    const r = view(big, { maxElements: 420, expand: [open(SUBS), open(ipsOf(a)), open(ipsOf(b), 2)] });
+    expect(r.state.expand).toEqual([open(SUBS), open(ipsOf(a)), open(ipsOf(b), 1)]);
+    expect(r.overBudget).toEqual([ipsOf(b)]);
+  });
+});
+
+describe('auto-open (live updates)', () => {
+  const [x, y] = subs(2) as [GraphNode, GraphNode];
+  const before = edge(domain, 'has_subdomain', x);
+  const after = graph([domain, x, y], fanOut([x, y]));
+
+  test('a group that now holds what the canvas showed directly opens, so nothing on screen disappears', () => {
+    const r = view(after, { keep: { edges: [before.id], roots: [] } });
+    expect(r.autoOpened).toEqual([SUBS]);
+    expect(shown(r).has(x.id) && shown(r).has(y.id)).toBe(true);
+    expect(r.state.expand).toEqual([open(SUBS)]);
   });
 
-  test('sticky children fold too when lowering the threshold is not enough', () => {
-    const stickyChildren = children.map((c) => ({ ...c, effectiveSeverity: 'high' as const, severity: 'high' as const }));
-    const r = run({ nodes: [...domains, ...stickyChildren], edges }, { maxElements: 100, pinned: domains.map((d) => d.id) });
-    expect(r).toMatchObject({ truncated: true, threshold: 2 });
-    expect(aggregates(r)).toHaveLength(30);
+  test('without it on the canvas, the group folds as usual', () => {
+    const r = view(after, { keep: { edges: [], roots: [] } });
+    expect(r.autoOpened).toEqual([]);
+    expect(group(r, SUBS)?.expanded).toBe(false);
   });
 
-  test('as a last resort the result is cut to the cap', () => {
-    const r = run(g, { maxElements: 20, pinned: domains.map((d) => d.id) });
+  test('over the budget it folds, and says so (the UI flashes it)', () => {
+    const r = view(after, { maxElements: 4, keep: { edges: [before.id], roots: [] } });
+    expect(r.autoFolded).toEqual([SUBS]);
+    expect(group(r, SUBS)?.expanded).toBe(false);
+  });
+
+  test('parentless nodes on the canvas open their new root group', () => {
+    const roots = subs(26);
+    const r = view(graph(roots, []), { keep: { edges: [], roots: [(roots[0] as GraphNode).id] } });
+    expect(r.autoOpened).toEqual(['agg:root:subdomain']);
+  });
+});
+
+describe('expand all below', () => {
+  test('opens every group below the node, at every level', () => {
+    const { g } = threeLevels();
+    const r = view(g, { expandAll: [domain.id] });
+    expect(r.nodes.filter((n) => n.type === 'port')).toHaveLength(12);
+    expect(groups(r).every((x) => x.expanded)).toBe(true);
+    expect(r.expandAll).toEqual([{ nodeId: domain.id, opened: 10, hidden: 0 }]);
+    expect(r.state.expand).toHaveLength(10);
+  });
+
+  test('loads further pages of big groups too, after every first page, until the budget is full', () => {
+    const ss = subs(250);
+    const g = graph([domain, ...ss], fanOut(ss));
+    const all = view(g, { expandAll: [domain.id] });
+    expect(all.nodes.filter((n) => n.type === 'subdomain')).toHaveLength(250);
+    expect(all.expandAll).toEqual([{ nodeId: domain.id, opened: 1, hidden: 0 }]);
+    expect(all.state.expand).toEqual([open(SUBS, 3)]);
+    const some = view(g, { maxElements: 420, expandAll: [domain.id] });
+    expect(some.state.expand).toEqual([open(SUBS, 2)]);
+    expect(some.expandAll).toEqual([{ nodeId: domain.id, opened: 1, hidden: 50 }]);
+    expect(some.truncated).toBe(true);
+  });
+
+  test('stops at the budget and says how many nodes below are still not shown', () => {
+    const { g } = threeLevels();
+    const r = view(g, { maxElements: 30, expandAll: [domain.id] });
+    const [result] = r.expandAll;
+    expect(result?.hidden).toBeGreaterThan(0);
+    expect(result?.opened).toBeLessThan(10);
     expect(r.truncated).toBe(true);
-    expect(r.nodes.length + r.edges.length).toBeLessThanOrEqual(20);
+  });
+});
+
+describe('groupPath', () => {
+  test('a step for each group on the way down, from the root', () => {
+    const { g, ss, ips, ports } = threeLevels();
+    const [s1] = [ss[1] as GraphNode];
+    const ip = (ips[1] as readonly [GraphNode, GraphNode])[1];
+    const port = (ports[3] as readonly [GraphNode, GraphNode])[0];
+    expect(groupPath(g, port.id)).toEqual([
+      { groupId: SUBS, memberId: s1.id },
+      { groupId: ipsOf(s1), memberId: ip.id },
+      { groupId: portsOf(ip), memberId: port.id },
+    ]);
+    // Opening exactly those as pins draws the port and nothing else at those levels.
+    const steps = groupPath(g, port.id) ?? [];
+    const r = view(g, { expand: steps.map((s) => open(s.groupId, 0, [s.memberId])) });
+    expect(shown(r).has(port.id)).toBe(true);
+    expect(r.nodes.filter((n) => n.type === 'port')).toHaveLength(1);
+  });
+
+  test('groups of one are not groups: no step', () => {
+    const [only] = subs(1) as [GraphNode];
+    expect(groupPath(graph([domain, only], fanOut([only])), only.id)).toEqual([]);
+  });
+
+  test('a root group is a step', () => {
+    const roots = subs(30);
+    expect(groupPath(graph(roots, []), (roots[7] as GraphNode).id)).toEqual([
+      { groupId: 'agg:root:subdomain', memberId: (roots[7] as GraphNode).id },
+    ]);
+  });
+
+  test('null when the node is not in the graph', () => {
+    expect(groupPath(graph([domain], []), 'nope')).toBeNull();
   });
 });
 

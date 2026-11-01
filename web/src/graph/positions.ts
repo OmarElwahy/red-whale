@@ -1,5 +1,5 @@
 // Saves dragged node positions (docs/architecture.md §8): drags are collected, then sent as one PUT /api/layout
-// after a short pause. Aggregates aren't stored nodes, so their positions are never sent (the server would
+// after a short pause. Groups and "more" nodes aren't stored nodes, so their positions are never sent (the server would
 // reject the whole batch for an unknown ID).
 import { ApiError } from '@/api/client';
 import type { Position } from '@/api/hooks';
@@ -15,7 +15,8 @@ export interface PositionSaverOptions {
   onSaved?: () => void;
 }
 
-export const isAggregateId = (id: string): boolean => id.startsWith('agg:');
+/** Groups and "more" nodes are drawn by the server's view, not stored: they have no position to save. */
+export const isAggregateId = (id: string): boolean => id.startsWith('agg:') || id.startsWith('more:');
 
 export class PositionSaver {
   private pending = new Map<string, Position>();

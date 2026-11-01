@@ -2,7 +2,7 @@
 import websocket from '@fastify/websocket';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { Db } from './db/client';
-import { AGG_THRESHOLD, MAX_ELEMENTS } from './graph/aggregate';
+import { MAX_ELEMENTS } from './graph/aggregate';
 import { HttpError } from './http';
 import type { RouteContext } from './routes/context';
 import { dataRoutes } from './routes/data';
@@ -19,7 +19,6 @@ export interface AppOptions {
   db: Db;
   /** The port the server listens on; only used to decide which Host headers are ours. */
   port?: number;
-  threshold?: number;
   maxElements?: number;
   logger?: boolean;
 }
@@ -73,7 +72,6 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
     app,
     db: options.db,
     broadcaster,
-    threshold: options.threshold ?? AGG_THRESHOLD,
     maxElements: options.maxElements ?? MAX_ELEMENTS,
   };
   graphRoutes(ctx);

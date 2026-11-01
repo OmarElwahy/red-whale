@@ -19,8 +19,8 @@ afterEach(() => {
 /** What the canvas shows before the update: a domain, two subdomains, and an aggregate of 40 more. */
 const before = (): Element[] =>
   toElements({
-    nodes: [node('a', { type: 'domain' }), node('b'), node('c'), aggregate({ id: AGG, count: 40, total: 42 })],
-    edges: [edge('a', 'b'), edge('a', 'c'), edge('a', AGG)],
+    nodes: [node('a', { type: 'domain' }), node('b'), node('c'), aggregate({ id: AGG, count: 40 })],
+    edges: [edge('a', 'b'), edge('a', 'c'), edge('a', AGG, { kind: 'group' })],
   });
 
 /** After a new scan: two new subdomains (a critical one stays visible), a URL under b, and 3 more in the group. */
@@ -33,9 +33,9 @@ const after = (): Element[] =>
       node('d', { severity: 'critical' }),
       node('e', { tag: 'interesting' }),
       node('u', { type: 'url' }),
-      aggregate({ id: AGG, count: 43, total: 47, label: '43 subdomains' }),
+      aggregate({ id: AGG, count: 43, label: '43 subdomains' }),
     ],
-    edges: [edge('a', 'b'), edge('a', 'c'), edge('a', 'd'), edge('a', 'e'), edge('b', 'u'), edge('a', AGG)],
+    edges: [edge('a', 'b'), edge('a', 'c'), edge('a', 'd'), edge('a', 'e'), edge('b', 'u'), edge('a', AGG, { kind: 'group' })],
   });
 
 function placed(): Core {
@@ -90,8 +90,8 @@ describe('a live update on the canvas', () => {
 
   test('an aggregate that shrank or stayed the same does not flash', () => {
     const smaller = toElements({
-      nodes: [node('a', { type: 'domain' }), node('b'), node('c'), aggregate({ id: AGG, count: 39, total: 42 })],
-      edges: [edge('a', 'b'), edge('a', 'c'), edge('a', AGG)],
+      nodes: [node('a', { type: 'domain' }), node('b'), node('c'), aggregate({ id: AGG, count: 39 })],
+      edges: [edge('a', 'b'), edge('a', 'c'), edge('a', AGG, { kind: 'group' })],
     });
     const diff = diffElements(byId(before()), smaller);
     expect(diff.update.map((el) => el.data.id)).toEqual([AGG]);

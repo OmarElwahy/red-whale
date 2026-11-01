@@ -7,6 +7,5 @@ export interface RouteContext {
   app: FastifyInstance;
   db: Db;
   broadcaster: Broadcaster;
-  threshold: number;
   maxElements: number;
 }

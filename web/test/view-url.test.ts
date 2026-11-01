@@ -78,15 +78,16 @@ describe('filters → GET /api/graph params', () => {
     expect(Object.keys(graphFiltersSchema.shape)).not.toContain('hops');
   });
 
-  test('changing filters drops expansions, neighborhoods and focus, but keeps the selection', () => {
-    useUi.setState({ expanded: [{ id: 'agg:root:ip', pages: 2 }], neighbors: ['n1'], focusId: 'n1', selectedId: 'n1' });
+  test('changing filters keeps open groups and neighbor expansions (the server drops what no longer exists), drops focus, keeps the selection', () => {
+    const expanded = [{ id: 'agg:root:ip', pages: 2, pins: [] }];
+    useUi.setState({ expanded, neighbors: ['n1'], focusId: 'n1', selectedId: 'n1' });
     view().toggle('types', 'ip');
-    expect(useUi.getState()).toMatchObject({ expanded: [], neighbors: [], focusId: null, selectedId: 'n1' });
+    expect(useUi.getState()).toMatchObject({ expanded, neighbors: ['n1'], focusId: null, selectedId: 'n1' });
   });
 
   test('a no-op change keeps expansions', () => {
     view().setQuery('dev');
-    useUi.setState({ expanded: [{ id: 'agg:root:ip', pages: 1 }] });
+    useUi.setState({ expanded: [{ id: 'agg:root:ip', pages: 1, pins: [] }] });
     view().setQuery('dev ');
     view().setMute(true);
     view().setHops(2);
@@ -94,8 +95,10 @@ describe('filters → GET /api/graph params', () => {
     expect(useUi.getState().expanded).toHaveLength(1);
   });
 
-  test('expand pages are cached per filter set', () => {
-    expect(queryKeys.expand('agg:root:ip', 1, {})).not.toEqual(queryKeys.expand('agg:root:ip', 1, { q: 'dev' }));
+  test('views are cached per filter set and per open groups', () => {
+    const open = [{ id: 'agg:root:ip', pages: 1, pins: [] }];
+    expect(queryKeys.view({}, open, [], [])).not.toEqual(queryKeys.view({ q: 'dev' }, open, [], []));
+    expect(queryKeys.view({}, open, [], [])).not.toEqual(queryKeys.view({}, [], [], []));
   });
 });
 
