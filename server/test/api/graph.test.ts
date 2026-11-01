@@ -78,7 +78,9 @@ describe('GET /api/graph', () => {
     expect(agg).toMatchObject({ count: 60, remaining: 60, expanded: false, parentId: DOMAIN, relation: 'has_subdomain' });
     expect((agg?.risk.critical ?? 0) + (agg?.risk.high ?? 0)).toBeGreaterThan(0);
     expect(g.nodes.filter((n) => n.type === 'subdomain')).toEqual([]);
-    expect(g.edges).toContainEqual({ id: `edge:${SUB_AGG}`, source: DOMAIN, target: SUB_AGG, relation: 'has_subdomain', kind: 'group' });
+    expect(g.edges).toContainEqual(
+      expect.objectContaining({ id: `edge:${SUB_AGG}`, source: DOMAIN, target: SUB_AGG, relation: 'has_subdomain', kind: 'group' }),
+    );
   });
 
   describe('filters', () => {

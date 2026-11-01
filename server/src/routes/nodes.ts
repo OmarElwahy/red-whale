@@ -5,6 +5,7 @@ import {
   nodeListQuerySchema,
   nodePatchSchema,
   type Confidence,
+  type EdgeConfidence,
   type NodeType,
   type ObservationRole,
   type Relation,
@@ -36,6 +37,8 @@ interface EdgeRow {
   id: string;
   relation: Relation;
   direction: 'in' | 'out';
+  source_count: number;
+  confidence: EdgeConfidence;
   first_seen: string;
   last_seen: string;
   other_id: string;
@@ -63,7 +66,7 @@ export function nodeDetail(db: Db, id: string) {
 
   const edgeRows = db.$client
     .prepare(
-      `SELECT e.id, e.relation, e.first_seen, e.last_seen,
+      `SELECT e.id, e.relation, e.source_count, e.confidence, e.first_seen, e.last_seen,
               CASE WHEN e.source_id = @id THEN 'out' ELSE 'in' END AS direction,
               o.id AS other_id, o.type AS other_type, o.value AS other_value, o.label AS other_label,
               o.severity AS other_severity, o.confidence AS other_confidence
@@ -117,6 +120,8 @@ export function nodeDetail(db: Db, id: string) {
         severity: e.other_severity,
         confidence: e.other_confidence,
       },
+      sourceCount: e.source_count,
+      confidence: e.confidence,
       firstSeen: e.first_seen,
       lastSeen: e.last_seen,
     })),

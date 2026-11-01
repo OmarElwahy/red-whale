@@ -118,6 +118,7 @@ export function graphRoutes({ app, db, maxElements }: RouteContext): void {
     const sub: Graph = {
       nodes: full.nodes.filter((n) => reached.has(n.id)),
       edges: full.edges.filter((e) => reached.has(e.source) && reached.has(e.target)),
+      edgeTools: full.edgeTools,
     };
     const result = groupedView(sub, { maxElements, entries: [center] });
     return { ...result, totals: { nodes: sub.nodes.length, edges: sub.edges.length }, center };

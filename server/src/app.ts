@@ -6,6 +6,7 @@ import { MAX_ELEMENTS } from './graph/aggregate';
 import { HttpError } from './http';
 import type { RouteContext } from './routes/context';
 import { dataRoutes } from './routes/data';
+import { edgeRoutes } from './routes/edges';
 import { graphRoutes } from './routes/graph';
 import { nodeRoutes } from './routes/nodes';
 import { scopeRoutes } from './routes/scope';
@@ -76,6 +77,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   };
   graphRoutes(ctx);
   nodeRoutes(ctx);
+  edgeRoutes(ctx);
   dataRoutes(ctx);
   scopeRoutes(ctx);
   app.get('/api/ws', { websocket: true }, (socket) => {

@@ -14,12 +14,14 @@ import {
 } from '@redwhale/shared';
 import { asc, sql } from 'drizzle-orm';
 import type { Db } from '../db/client';
-import { edges, nodes, observations } from '../db/schema';
+import { edgeObservations, edges, nodes, observations } from '../db/schema';
 import { currentScope } from '../scope/store';
 
 export interface Graph {
   nodes: GraphNode[];
   edges: GraphEdge[];
+  /** Edge ID → the distinct tools that reported it, sorted. Server-side only (group edges carry their union). */
+  edgeTools: ReadonlyMap<string, readonly string[]>;
 }
 
 /** -1 for null, so "no severity" sorts below info. */
@@ -79,10 +81,28 @@ export function loadGraph(db: Db): Graph {
     .orderBy(asc(nodes.id))
     .all();
   const edgeRows = db
-    .select({ id: edges.id, source: edges.sourceId, target: edges.targetId, relation: edges.relation })
+    .select({
+      id: edges.id,
+      source: edges.sourceId,
+      target: edges.targetId,
+      relation: edges.relation,
+      sourceCount: edges.sourceCount,
+      confidence: edges.confidence,
+    })
     .from(edges)
     .orderBy(asc(edges.id))
     .all();
+  const edgeTools = new Map<string, string[]>();
+  const toolRows = db
+    .selectDistinct({ edgeId: edgeObservations.edgeId, tool: edgeObservations.tool })
+    .from(edgeObservations)
+    .orderBy(asc(edgeObservations.edgeId), asc(edgeObservations.tool))
+    .all();
+  for (const { edgeId, tool } of toolRows) {
+    const list = edgeTools.get(edgeId);
+    if (list) list.push(tool);
+    else edgeTools.set(edgeId, [tool]);
+  }
   const effective = effectiveSeverities(nodeRows, edgeRows);
   // Computed on every read, never stored: a rule change applies to the next request.
   const scope = compileScope(currentScope(db));
@@ -95,6 +115,7 @@ export function loadGraph(db: Db): Graph {
       lastSeen,
     })),
     edges: edgeRows,
+    edgeTools,
   };
 }
 
@@ -165,7 +186,11 @@ export function applyFilters(
   }
   if (kept.length === graph.nodes.length) return graph;
   const ids = new Set(kept.map((n) => n.id));
-  return { nodes: kept, edges: graph.edges.filter((e) => ids.has(e.source) && ids.has(e.target)) };
+  return {
+    nodes: kept,
+    edges: graph.edges.filter((e) => ids.has(e.source) && ids.has(e.target)),
+    edgeTools: graph.edgeTools,
+  };
 }
 
 /** Loads the graph and applies the filters. */

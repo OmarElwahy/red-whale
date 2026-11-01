@@ -346,7 +346,28 @@ interface Rendered {
   edges: ViewEdge[];
 }
 
-function render(ix: Index, w: Walk, risk: ReadonlyMap<string, Risk>, maxElements: number): Rendered {
+/** The provenance fields of a view edge that stands for no single real edge. */
+const NO_PROVENANCE = { sourceCount: null, confidence: null, tools: null, edgeCount: null } as const;
+
+/** A real edge drawn on the canvas: its own provenance, no group fields. */
+function realEdge(e: GraphEdge, kind: 'relation' | 'neighbor'): ViewEdge {
+  return { ...e, kind, tools: null, edgeCount: null };
+}
+
+/** Every tool that reported any of these edges, sorted. */
+function toolUnion(edgeTools: Graph['edgeTools'], list: Iterable<GraphEdge>): string[] {
+  const tools = new Set<string>();
+  for (const e of list) for (const t of edgeTools.get(e.id) ?? []) tools.add(t);
+  return [...tools].sort();
+}
+
+function render(
+  ix: Index,
+  w: Walk,
+  risk: ReadonlyMap<string, Risk>,
+  maxElements: number,
+  edgeTools: Graph['edgeTools'],
+): Rendered {
   const groupNodes = new Map<string, AggregateNode>();
   const extraNodes: MoreNode[] = [];
   const edges: ViewEdge[] = [];
@@ -364,7 +385,7 @@ function render(ix: Index, w: Walk, risk: ReadonlyMap<string, Risk>, maxElements
       const child = set.members[0];
       if (set.isGroup || !child || !w.visible.has(child.id)) continue;
       const e = set.edgeOf.get(child.id);
-      if (e) addEdge({ ...e, kind: 'relation' });
+      if (e) addEdge(realEdge(e, 'relation'));
     }
   }
 
@@ -372,13 +393,24 @@ function render(ix: Index, w: Walk, risk: ReadonlyMap<string, Risk>, maxElements
     const shown = g.members.length;
     const remaining = g.set.members.length - shown;
     if (g.set.parentId !== null) {
-      addEdge({ id: `edge:${id}`, source: g.set.parentId, target: id, relation: g.set.relation, kind: 'group' });
+      addEdge({
+        ...NO_PROVENANCE,
+        id: `edge:${id}`,
+        source: g.set.parentId,
+        target: id,
+        relation: g.set.relation,
+        kind: 'group',
+        tools: toolUnion(edgeTools, g.set.edgeOf.values()),
+        edgeCount: g.set.edgeOf.size,
+      });
     }
-    for (const m of g.members) addEdge({ id: `member:${id}:${m}`, source: id, target: m, relation: null, kind: 'member' });
+    for (const m of g.members) {
+      addEdge({ ...NO_PROVENANCE, id: `member:${id}:${m}`, source: id, target: m, relation: null, kind: 'member' });
+    }
     if (g.open && remaining > 0) {
       const moreId = `more:${id}`;
       extraNodes.push({ id: moreId, type: 'more', groupId: id, label: `+${String(remaining)} more`, remaining });
-      addEdge({ id: `edge:${moreId}`, source: id, target: moreId, relation: null, kind: 'more' });
+      addEdge({ ...NO_PROVENANCE, id: `edge:${moreId}`, source: id, target: moreId, relation: null, kind: 'more' });
     }
     const r = risk.get(id);
     groupNodes.set(id, {
@@ -397,7 +429,7 @@ function render(ix: Index, w: Walk, risk: ReadonlyMap<string, Risk>, maxElements
       canLoadMore: false,
     });
   }
-  for (const e of w.neighborEdges) addEdge({ ...e, kind: 'neighbor' });
+  for (const e of w.neighborEdges) addEdge(realEdge(e, 'neighbor'));
 
   const nodes: ViewNode[] = [];
   for (const id of w.order) {
@@ -540,7 +572,7 @@ export function groupedView(graph: Graph, options: ViewOptions): ViewResult {
   const attempt = (n: number) => {
     const { open, neighbors } = applyUnits(units.slice(0, n));
     const w = walk(ix, open, neighbors, entries);
-    const r = render(ix, w, risk, options.maxElements);
+    const r = render(ix, w, risk, options.maxElements, graph.edgeTools);
     return { w, r, open, size: r.nodes.length + r.edges.length };
   };
 

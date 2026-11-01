@@ -12,7 +12,7 @@ import {
 } from '@redwhale/shared';
 import { asc, desc, eq, sql } from 'drizzle-orm';
 import type { Db } from '../db/client';
-import { edges, nodes, observations, scans } from '../db/schema';
+import { edgeObservations, edges, nodes, observations, scans } from '../db/schema';
 import { loadGraph, riskFirst } from '../graph/store';
 import { ingestDocument } from '../ingest/ingest';
 import { HttpError, parseInput } from '../http';
@@ -139,6 +139,8 @@ export function dataRoutes({ app, db, broadcaster }: RouteContext): void {
           source: edges.sourceId,
           target: edges.targetId,
           relation: edges.relation,
+          sourceCount: edges.sourceCount,
+          confidence: edges.confidence,
           firstSeen: edges.firstSeen,
           lastSeen: edges.lastSeen,
         })
@@ -158,6 +160,17 @@ export function dataRoutes({ app, db, broadcaster }: RouteContext): void {
         })
         .from(observations)
         .orderBy(asc(observations.id))
+        .all(),
+      edgeObservations: db
+        .select({
+          edgeId: edgeObservations.edgeId,
+          scanId: edgeObservations.scanId,
+          tool: edgeObservations.tool,
+          data: edgeObservations.data,
+          observedAt: edgeObservations.observedAt,
+        })
+        .from(edgeObservations)
+        .orderBy(asc(edgeObservations.id))
         .all(),
     };
     // 2026-10-30T12:34:56.789Z → redwhale-export-2026-10-30T12-34-56Z.json (no colons: Windows can't save them).

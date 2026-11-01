@@ -39,13 +39,20 @@ function node(type: NodeType, value: string, extra: { severity?: Severity } = {}
 }
 
 function edge(source: GraphNode, relation: Relation, target: GraphNode): GraphEdge {
-  return { id: edgeId(source.id, relation, target.id), source: source.id, target: target.id, relation };
+  return {
+    id: edgeId(source.id, relation, target.id),
+    source: source.id,
+    target: target.id,
+    relation,
+    sourceCount: 1,
+    confidence: 'discovered',
+  };
 }
 
 /** Builds a graph and fills in effective severity, as loadGraph does. */
-function graph(nodes: GraphNode[], edges: GraphEdge[]): Graph {
+function graph(nodes: GraphNode[], edges: GraphEdge[], edgeTools: Graph['edgeTools'] = new Map()): Graph {
   const eff = effectiveSeverities(nodes, edges);
-  return { nodes: nodes.map((n) => ({ ...n, effectiveSeverity: eff.get(n.id) ?? null })), edges };
+  return { nodes: nodes.map((n) => ({ ...n, effectiveSeverity: eff.get(n.id) ?? null })), edges, edgeTools };
 }
 
 function view(g: Graph, options: Partial<ViewOptions> = {}): ViewResult {
@@ -103,7 +110,7 @@ describe('the rule', () => {
     const [only] = subs(1) as [GraphNode];
     const r = view(graph([domain, only], fanOut([only])));
     expect(groups(r)).toEqual([]);
-    expect(r.edges).toEqual([{ ...edge(domain, 'has_subdomain', only), kind: 'relation' }]);
+    expect(r.edges).toEqual([{ ...edge(domain, 'has_subdomain', only), kind: 'relation', tools: null, edgeCount: null }]);
   });
 
   test('two or more children become one collapsed group, carrying the relation', () => {
@@ -122,7 +129,17 @@ describe('the rule', () => {
       canLoadMore: true,
     });
     expect(r.edges).toEqual([
-      { id: `edge:${SUBS}`, source: domain.id, target: SUBS, relation: 'has_subdomain', kind: 'group' },
+      {
+        id: `edge:${SUBS}`,
+        source: domain.id,
+        target: SUBS,
+        relation: 'has_subdomain',
+        kind: 'group',
+        sourceCount: null,
+        confidence: null,
+        tools: [],
+        edgeCount: 12,
+      },
     ]);
   });
 

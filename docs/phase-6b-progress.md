@@ -13,8 +13,8 @@ corroborated edges). The approved plan is summarized under "Decisions" below.
 |---|---|---|
 | 1 | `edge_observations` table + migration `0003_edge_observations` + ingest writing it, tests | done |
 | 2 | Derived edge fields (first/last seen, source_count, confidence) + order/idempotency tests | done |
-| 3 | API: `GET /edges/:id`, edge fields on `/nodes/:id` and `/graph`, group-edge tool union, export | in progress |
-| 4 | UI: edge side panel, thicker corroborated edges | todo |
+| 3 | API: `GET /edges/:id`, edge fields on `/nodes/:id` and `/graph`, group-edge tool union, export | done |
+| 4 | UI: edge side panel, thicker corroborated edges | in progress |
 | 5 | Mock data + coverage test (edge confidence) | todo |
 | 6 | Docs: architecture.md §4 §5 §6 §8 §9, decisions log, handoff.md | todo |
 
@@ -54,12 +54,23 @@ corroborated edges). The approved plan is summarized under "Decisions" below.
 - Tests: derive.test.ts `deriveEdgeState`; ingest.test.ts `describe('edge provenance')`.
 - The 4 contract examples have no corroborated edge (each edge comes from one tool); asserted in a test.
 
+## Notes from step 3
+
+- `Graph` (server/src/graph/store.ts) has a required `edgeTools` map (edge ID → sorted distinct tools), passed through
+  `applyFilters` and the neighbors route; `render()` in aggregate.ts builds view edges via `realEdge()` /
+  `NO_PROVENANCE` and fills group edges with `toolUnion()` over `set.edgeOf` (all members under the filters).
+- `ViewEdge` fields `sourceCount`, `confidence`, `tools`, `edgeCount` are **required and nullable** (same style as
+  `relation`). web/test/fixtures.ts `edge()` fills them per kind.
+- New `server/src/routes/edges.ts` (`edgeDetail`, `edgeRoutes`), registered in app.ts. Tests:
+  server/test/api/edges.test.ts (detail, 404, 403, node-detail fields, group union incl. a filter, export).
+
 ## Next action
 
-Step 3 (API). In `shared/src/api.ts`: `graphEdgeSchema` + `sourceCount`, `confidence` (EDGE_CONFIDENCE_LEVELS);
-`viewEdgeSchema` + `sourceCount`/`confidence`/`tools`/`edgeCount` (nullable, see Decisions); node-detail edges +
-`sourceCount`/`confidence`; new `edgeDetailResponseSchema`; export + `edgeObservations`, edges with the new fields.
-Server: `loadGraph` (server/src/graph/store.ts) selects the edge fields and an internal per-edge tool list;
-`render()` in server/src/graph/aggregate.ts fills group edges (union over `set.edgeOf`); new
-`server/src/routes/edges.ts` registered next to nodeRoutes; `nodeDetail` SQL selects source_count/confidence;
-export in routes/data.ts. Tests in server/test/api/.
+Step 4 (UI). `web/src/state/ui.ts`: add `selectedEdgeId` + `selectEdge(id)` (mutually exclusive with `selectedId`;
+Esc/background clears both). `web/src/graph/events.ts`: `tap` on `edge[kind = "relation"], edge[kind = "neighbor"],
+edge[kind = "group"]` → selectEdge. `web/src/graph/elements.ts`: pass sourceCount/tools/edgeCount into edge data
+and a `corroborated` class when sourceCount ≥ 2; `web/src/graph/style.ts`: thicker width for `edge.corroborated`
++ a selected-edge style. `web/src/api/hooks.ts`: `useEdgeDetail(id)` (GET /api/edges/:id, edgeDetailResponseSchema).
+New `web/src/panel/EdgePanel.tsx` (relation, from → to clickable = select node, first/last seen, confidence,
+provenance table) and a group-edge variant from the view edge; render it where SidePanel is chosen (find in App.tsx).
+Legend row "thicker edge = 2+ tools". Tests in web/test (panel, elements/style, ui-state).

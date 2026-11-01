@@ -59,12 +59,19 @@ export function more(groupId: string, remaining: number): MoreNode {
 
 /** A real edge by default (`kind: 'relation'`); pass `kind` for group, member, more and neighbor edges. */
 export function edge(source: string, target: string, over: Partial<ViewEdge> = {}): ViewEdge {
+  const kind = over.kind ?? 'relation';
+  const real = kind === 'relation' || kind === 'neighbor';
   return viewEdgeSchema.parse({
     id: `${source}->${target}`,
     source,
     target,
     relation: 'has_subdomain',
-    kind: 'relation',
+    kind,
+    // Provenance as the server sends it: a real edge has its own; a group edge the union of its members'.
+    sourceCount: real ? 1 : null,
+    confidence: real ? 'discovered' : null,
+    tools: kind === 'group' ? ['subfinder'] : null,
+    edgeCount: kind === 'group' ? 2 : null,
     ...over,
   });
 }

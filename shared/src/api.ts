@@ -3,6 +3,7 @@
 import { z } from 'zod';
 import {
   CONFIDENCE_LEVELS,
+  EDGE_CONFIDENCE_LEVELS,
   NODE_TYPES,
   OBSERVATION_ROLES,
   RELATIONS,
@@ -245,11 +246,17 @@ export const moreNodeSchema = z.strictObject({
 });
 export type MoreNode = z.infer<typeof moreNodeSchema>;
 
+/** Computed from the edge's observations: distinct tools that reported the relation (1 → discovered, 2+ → corroborated). */
+const edgeSourceCount = z.number().int().min(0);
+const edgeConfidence = z.enum(EDGE_CONFIDENCE_LEVELS);
+
 export const graphEdgeSchema = z.strictObject({
   id: z.string(),
   source: z.string(),
   target: z.string(),
   relation: z.enum(RELATION_TYPES),
+  sourceCount: edgeSourceCount,
+  confidence: edgeConfidence,
 });
 export type GraphEdge = z.infer<typeof graphEdgeSchema>;
 
@@ -268,6 +275,15 @@ export const viewEdgeSchema = z.strictObject({
   /** Null on `member` and `more` edges. */
   relation: z.enum(RELATION_TYPES).nullable(),
   kind: z.enum(VIEW_EDGE_KINDS),
+  /** The real edge's provenance, on `relation` and `neighbor` edges; null on the others. */
+  sourceCount: edgeSourceCount.nullable(),
+  confidence: edgeConfidence.nullable(),
+  /**
+   * On `group` edges only (null elsewhere): every tool that reported any of the group's member edges (sorted), and
+   * how many member edges that is (one per member, under the current filters).
+   */
+  tools: z.array(z.string()).nullable(),
+  edgeCount: z.number().int().min(0).nullable(),
 });
 export type ViewEdge = z.infer<typeof viewEdgeSchema>;
 
@@ -483,6 +499,8 @@ export const nodeDetailResponseSchema = z.strictObject({
       relation: z.enum(RELATION_TYPES),
       direction: z.enum(['in', 'out']),
       other: nodeRef,
+      sourceCount: edgeSourceCount,
+      confidence: edgeConfidence,
       firstSeen: timestamp,
       lastSeen: timestamp,
     }),
@@ -500,6 +518,35 @@ export const nodeDetailResponseSchema = z.strictObject({
     }),
   ),
 });
+
+const edgeEnd = graphNodeSchema.pick({ id: true, type: true, label: true });
+
+/** GET /edges/:id: the relation, both ends, derived fields and every scan that reported it. */
+export const edgeDetailResponseSchema = z.strictObject({
+  edge: z.strictObject({
+    id: z.string(),
+    relation: z.enum(RELATION_TYPES),
+    /** The parent. */
+    source: edgeEnd,
+    /** The child. */
+    target: edgeEnd,
+    sourceCount: edgeSourceCount,
+    confidence: edgeConfidence,
+    firstSeen: timestamp,
+    lastSeen: timestamp,
+  }),
+  /** Provenance: every scan that reported this relation, oldest first. */
+  observations: z.array(
+    z.strictObject({
+      scanId: z.string(),
+      tool: z.string(),
+      command: z.string(),
+      data: z.record(z.string(), z.unknown()),
+      observedAt: timestamp,
+    }),
+  ),
+});
+export type EdgeDetailResponse = z.infer<typeof edgeDetailResponseSchema>;
 
 export const nodeListResponseSchema = z.strictObject({
   items: z.array(graphNodeSchema),
@@ -581,6 +628,15 @@ export const exportResponseSchema = z.strictObject({
       tool: z.string(),
       role: z.enum(OBSERVATION_ROLES),
       severity,
+      data: z.record(z.string(), z.unknown()),
+      observedAt: timestamp,
+    }),
+  ),
+  edgeObservations: z.array(
+    z.strictObject({
+      edgeId: z.string(),
+      scanId: z.string(),
+      tool: z.string(),
       data: z.record(z.string(), z.unknown()),
       observedAt: timestamp,
     }),
