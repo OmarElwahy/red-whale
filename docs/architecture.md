@@ -61,8 +61,16 @@ keys sorted, no whitespace — so re-ingesting a file, even reformatted, is a no
 Indexes: `type`, `severity`, `confidence`, `tag`.
 
 **edges**
-`id` (pk, deterministic) · `source_id` → nodes · `target_id` → nodes · `relation` · `first_seen` · `last_seen`
-Unique: (`source_id`, `relation`, `target_id`). Indexes on `source_id`, `target_id`.
+`id` (pk, deterministic) · `source_id` → nodes · `target_id` → nodes · `relation` ·
+`confidence` (`discovered` | `corroborated`; edges are never `verified`) · `source_count` (distinct tools) · `first_seen` · `last_seen`
+Unique: (`source_id`, `relation`, `target_id`). Indexes on `source_id`, `target_id`. Everything after `relation` is derived
+from the edge's observations.
+
+**edge_observations** — edge provenance: every scan that reported a relation (a finding naming that parent)
+`id` · `edge_id` → edges · `scan_id` → scans · `tool` · `data` (json, `{}` for now) · `observed_at` (= the scan's `finished_at`)
+Unique: (`edge_id`, `scan_id`); indexes on `edge_id`, `scan_id`, `observed_at`. An edge reported several times in one
+file gets one row. So for every edge we can answer "which scan first/last reported this relation?" (groundwork for
+scan diffing, 6E).
 
 **observations** — provenance: every time any tool reported a node, as a finding **or as a parent**
 `id` · `node_id` → nodes · `scan_id` → scans · `tool` · `role` (`finding` | `parent`) · `severity` (nullable) ·
@@ -90,17 +98,21 @@ downgraded automatically. Parent rows are kept as provenance and count as sighti
 the `tool` filter), but never toward `source_count`, so a node that tools only name as a parent stays `discovered`
 with `source_count` 0.
 
+Edge confidence: `source_count = COUNT(DISTINCT tool)` over **all** of the edge's observations (every one is a report of
+the relation; there is no parent-only role for edges); `1 → discovered`, `≥2 → corroborated`. No analyst `verified`.
+
 Schema changes: until there is real engagement data, migrations don't backfill. A migration that can't carry old
 rows forward is listed in `BREAKING_MIGRATIONS` (`server/src/db/client.ts`), and `openDb` refuses to run it on a
 database that already holds observations ("Database is from an older schema. Delete data/redwhale.db and run
-pnpm mock (or re-ingest your files).").
+pnpm mock (or re-ingest your files)."). Breaking so far: `0001_observation_role`, `0003_edge_observations`.
 
 ## 5. Ingest pipeline
 
 1. Parse file → validate with Zod (reject the whole file with a clear error list on failure).
 2. Hash the file; if `scans.file_hash` exists, stop (idempotent).
 3. In **one transaction**: insert scan → for each finding, upsert parent node (if any) and child node,
-   upsert edge, insert observation → recompute confidence/severity for touched nodes.
+   upsert edge, insert observation; for every finding that names a parent, one edge observation per edge →
+   recompute derived fields for touched nodes and edges.
 4. After commit, broadcast `{ type: "graph.updated", nodeIds, edgeIds }` over WebSocket.
 
 Merging `data`: keep per-tool details in `observations.data`; `nodes.data` holds a shallow merge where
@@ -109,6 +121,9 @@ newer values win. Severity = max severity across observations.
 All derived node fields (`source_count`, `confidence`, `severity`, `data`, `first_seen`, `last_seen`) are recomputed
 from the node's full observation set, ordered by (`observed_at`, `tool`, `scan_id`), so the result doesn't depend on
 ingest order. "Newer" means a later `observed_at`, not a later ingest. Only `label` is set once, at first insert.
+
+Derived edge fields (`source_count`, `confidence`, `first_seen`, `last_seen`) are recomputed the same way, from the
+edge's full set of `edge_observations` in the same order (`recomputeEdges`, `deriveEdgeState`).
 
 ## 6. API (all under `/api`, JSON, validated with Zod)
 
@@ -119,7 +134,8 @@ ingest order. "Newer" means a later `observed_at`, not a later ingest. Only `lab
 | `GET /graph/path/:nodeId?…filters` | The groups to open (as pins) so that a node deep inside collapsed groups is drawn |
 | `GET /graph/expand/:aggregateId?…filters&page=&pageSize=` | Members of a group (paged, riskiest first). Not used by the UI since 5D; kept for scripts |
 | `GET /graph/neighbors/:nodeId?depth=1` | Neighborhood of a node, grouped, the node always drawn. Not used by the UI since 5D |
-| `GET /nodes/:id` | Node detail + edges + all observations (provenance) |
+| `GET /nodes/:id` | Node detail + edges (each with `sourceCount`, `confidence`, first/last seen) + all observations (provenance) |
+| `GET /edges/:id` | Edge detail: relation, both ends (`id`, `type`, `label`), derived fields, every edge observation (provenance) |
 | `PATCH /nodes/:id` | Update `tag`, `notes`, `confidence: "verified"`, `pos_x/pos_y` |
 | `PUT /layout` | Bulk-save node positions |
 | `GET /nodes?…&page=&sort=&at=` | Paged flat list for the table view |
@@ -142,6 +158,17 @@ Request and response shapes are the Zod schemas in `shared/src/api.ts`. Details:
   take comma-separated lists (or repeated params); `q` is a case-insensitive substring of value or label;
   `minSeverity` compares **effective severity** (§7), so the path from the root down to a finding stays in the result.
   Filters select nodes; edges are kept when both ends are kept. Unknown params are a 400.
+  **Known limit (`tool`):** it keeps nodes that tool saw, so it also keeps an edge between two such nodes that the tool
+  itself never reported (decisions log, 2026-11-01).
+- **Edge provenance on graph edges:** graph edges (`/graph/expand`, export) carry `sourceCount` and `confidence`. View edges
+  (`/graph`, `/graph/view`) carry `edgeId`, `sourceCount`, `confidence`, `tools` and `edgeCount`, always present, null where
+  they don't apply: `relation`/`neighbor` edges are real (`edgeId` = their ID, their own `sourceCount`/`confidence`);
+  a `member` edge (group → member) stands for the real parent → member edge (`edgeId` = that edge, its provenance); a
+  `group` edge (parent → group) carries `tools` (the sorted union of every member edge's tools under the current filters,
+  drawn or not) and `edgeCount` (how many member edges); `more` edges carry nothing.
+- **`GET /edges/:id`**: `{ edge: { id, relation, source, target, sourceCount, confidence, firstSeen, lastSeen },
+  observations: [{ scanId, tool, command, data, observedAt }] }`, oldest first; 404 for an unknown id. Takes a real edge
+  ID (a view edge's `edgeId`), not a view ID like `edge:agg:…`.
 - **Scope:** every node carries `inScope` (`in` | `out` | `n/a`), its passive-mode decision (§10), computed on every
   read from the current rules, never stored. `scope=in,out,n/a` filters on it like any other node filter (so with
   `scope=out` an out-of-scope subdomain whose apex is in scope is parentless: a root, grouped as `agg:root:subdomain` above 25).
@@ -163,7 +190,8 @@ Request and response shapes are the Zod schemas in `shared/src/api.ts`. Details:
   severity sort last in both directions. `pageSize` ≤ 500. `at=<nodeId>` returns the page that holds that node
   (under the same filters and sort) instead of `page`; if the node isn't listed, `page` is used.
 - `GET /highlights` takes no params (a filter param is a 400): it is the analyst's list, whatever the view.
-- `GET /export` downloads as `redwhale-export-<UTC time, no colons>.json`.
+- `GET /export` downloads as `redwhale-export-<UTC time, no colons>.json`; it holds nodes, edges (with derived fields), scans,
+  `observations` and `edgeObservations` (`edgeId, scanId, tool, data, observedAt`).
 - `PUT /layout` takes `{ positions: [{ id, x, y }] }` (≤ 5,000); an unknown or duplicate ID rejects the whole batch.
 - `POST /ingest`: 201 ingested, 200 duplicate, 422 `{ error, issues }` with the exact validation errors, 400 bad JSON,
   415 not `application/json`, 413 over 50 MB. Errors are always `{ error, issues? }`.
@@ -321,7 +349,18 @@ included (1,945 elements, truncated).
   - edges: arrow toward the child; the relation (`has_subdomain`, `resolves_to`, …) as a label along the edge, on
     a small canvas-colored background so it reads over other edges. Group → member edges are plain and quieter;
     group → "more" edges dashed
-- **Legend:** the header's **Legend** button opens it (type → icon, severity, confidence, markers incl. group, badge, "more").
+  - edge width by provenance (`EDGE_WIDTH`, `CORROBORATED_EDGE`, `MEMBER_EDGE`): an edge whose real edge 2+ tools
+    reported is slightly thicker (1.5 → 2.5 px; group → member 1 → 2 px). Parent → group edges are never thicker: a union
+    of tools across members corroborates no single relation. Nothing else about edges changes
+- **Legend:** the header's **Legend** button opens it (type → icon, severity, confidence, markers incl. group, badge, "more",
+  edge widths).
+- **Edge panel** (`web/src/panel/EdgePanel.tsx`): clicking an edge selects it (one selection: a node or an edge, never
+  both; `selectedEdgeId` in `web/src/state/ui.ts`) and opens its panel, same style as a node's. A real edge
+  (`relation`, `neighbor`, or a group → member edge, which stands for it) shows relation, from → to (each end clickable:
+  a node is picked like a table row, a group selected and centered), confidence (N tools), first/last seen and a
+  provenance table (tool, command, time; a row opens the raw data), from `GET /edges/:id`; it stays open when the edge
+  leaves the canvas. A parent → group edge shows its relation, both ends, "N edges, one per member" and the tools
+  behind them, from the view (no fetch); it closes with its group. Group → "more" edges aren't clickable.
 - **Interactions:** click → side panel (details, provenance table, tag, notes; a group: members, relation, parent, max
   severity, what's below, shown/total, and its controls). Double-click a group → expand / collapse; double-click "+N
   more" → next page. Right-click → context menu: on a node focus, expand neighbors, **expand all below** (stops at the
@@ -430,18 +469,22 @@ Each phase ends with passing `pnpm typecheck` and `pnpm test`, and a short demo.
 1. (6A) **Scope guard** (§10): `checkScope` in `shared/`, `scope_rules`/`scope_log`/`scope_settings`, `authorize()` as
    the only producer of `ScopedTarget`, the dockerode/child_process lint guard, the scope API, `inScope` on every node
    and the `scope` filter, the Scope panel, banner and out-of-scope hatch. Both mocks seed a scope. No tool runs yet.
-2. (6B) Orchestrator: Dockerode in `server/src/runner/docker.ts` (the one file allowed to import it), containerized
+2. (6B) **Edge provenance** (§4–6, §8): `edge_observations` (one row per edge per scan), derived edge fields
+   (`first_seen`, `last_seen`, `source_count`, `confidence`), `GET /edges/:id`, provenance on node-detail and view edges
+   (group edges: the members' tools), the edge panel, thicker corroborated edges. Groundwork for 6E.
+3. (6C) Orchestrator: Dockerode in `server/src/runner/docker.ts` (the one file allowed to import it), containerized
    tool groups; every run takes a `ScopedTarget` from `authorize()` called right before it, and `assertScoped()`s it.
-3. (6C) Presets & auto-chaining; redirect-following tools re-check scope on every hop (decisions log, 2026-10-31).
+4. (6D) Presets & auto-chaining; redirect-following tools re-check scope on every hop (decisions log, 2026-10-31).
+5. (6E) Diffing between scans: what a scan added, lost or changed, for nodes and edges (both have per-scan provenance).
 
 **Phase 7+ — Later (not now)**
-Diffing between scans · reports · CVE monitoring · local LLM scoring · JS analysis agent.
+Reports · CVE monitoring · local LLM scoring · JS analysis agent.
 
 **Later improvements (logged, not scheduled)**
 - Filter-aware `/stats` (counts that follow the active filters, i.e. faceted counts). Today the sidebar shows
   workspace totals.
 - Scope rules and settings in `GET /export` (today the export has each node's `inScope`, not the rules behind it).
-- A `scope.logged` WS event, so other tabs' log panels refresh when a run is authorized (6B).
+- A `scope.logged` WS event, so other tabs' log panels refresh when a run is authorized (6C).
 
 ## 10. Scope guard
 
@@ -489,7 +532,7 @@ exactly what a tool may run against. Three locks against forging one:
 `recordCheck()` is the test box's path: the same decision, logged as `check`, no `ScopedTarget`.
 
 **Who may run things** (`eslint.config.js`, proven by `server/test/guard.test.ts`): `dockerode`/`docker-modem` may be
-imported (statically, `import()` or `require`) only by `server/src/runner/docker.ts`, which doesn't exist until 6B;
+imported (statically, `import()` or `require`) only by `server/src/runner/docker.ts`, which doesn't exist until 6C;
 `node:child_process` only under `server/src/runner/`, by `server/src/mock/python.ts` (the team validator) and in tests.
 The test also scans every source file for `dockerode`, so `pnpm test` catches it even without `pnpm lint`.
 
@@ -563,13 +606,13 @@ stays on.
 | 2026-10-31 | Phase 6A scope guard (§10): default deny; rule kinds domain / wildcard / ip / cidr, include or exclude; **exclude always wins**; `*.example.com` never matches `example.com`. Hostnames meet only domain/wildcard rules and IPs only ip/cidr rules, so a domain in scope never puts its IPs in scope. Non-targetable types (technology, vulnerability, email, secret, certificate, leak) are `n/a`. An unparseable value is `out` (fails closed) |
 | 2026-10-31 | A port is judged by its IP in **both** modes (so the graph can mark it); passive and active differ only by the passive-only setting (default on: every active check is `out`) |
 | 2026-10-31 | Broad includes are refused with no override: include CIDRs at most /8 (IPv4) or /32 (IPv6), so `0.0.0.0/0`/`::/0` too; wildcard includes on a Public Suffix List entry (`*.com`, `*.co.uk`, `*.com.eg`, `*.github.io`). The PSL comes from `tldts` 7.4.18 (bundled, no network; 7.4.19 was 11 days old). Excludes can be any size. CIDRs with host bits set are refused with the network suggested, not silently masked |
-| 2026-10-31 | `authorize()` is the only producer of the branded `ScopedTarget` (type brand on an unexported `unique symbol` + lint ban on casts + a runtime `WeakSet` checked by `assertScoped()`). It logs every call as `run`. The runner (6B) must call it **immediately before** each run, never reuse an earlier target |
+| 2026-10-31 | `authorize()` is the only producer of the branded `ScopedTarget` (type brand on an unexported `unique symbol` + lint ban on casts + a runtime `WeakSet` checked by `assertScoped()`). It logs every call as `run`. The runner (6B; **renumbered 2026-11-01: now 6C**) must call it **immediately before** each run, never reuse an earlier target |
 | 2026-10-31 | Only `server/src/runner/docker.ts` may import `dockerode`/`docker-modem` (static, `import()`, `require`); `node:child_process` only under `server/src/runner/`, in `server/src/mock/python.ts` and tests. Enforced by ESLint and proven by `server/test/guard.test.ts`, which also scans the sources for `dockerode` |
 | 2026-10-31 | Checks are logged too, with `scope_log.source` = `check` \| `run`: a record of every target anyone tested, and the log can be demoed before the runner exists. `POST /scope/check` logs (the UI's test box, on Enter/button only, never per keystroke); `GET /scope/check` doesn't, because a GET must not write (an `<img>` on any page can send one with no `Origin`). The log panel shows `run` by default with an "include checks" toggle |
 | 2026-10-31 | Scope rules are soft-deleted (`removed_at`), removing is one-way (add again to restore) and kind/value/action never change, so the log's `rule_id` always points at what decided. The mock wipe is the one place scope rows are deleted (log, rules; passive-only back on) |
 | 2026-10-31 | `inScope` is computed on every read (passive mode), never stored; `scope=` is one more node filter on `/graph`, `/graph/expand`, `/nodes`; `/stats` has `byScope`. Ingest never rejects out-of-scope findings. Migration `0002_scope` adds tables only (plus the settings row), so it is not breaking and needs no backfill |
 | 2026-10-31 | Out-of-scope marker: a diagonal hatch over the fill (stripes 1.6/24 of the node wide, every 5/24, canvas color at 0.55 opacity). Chosen over a corner badge because it stays visible at any zoom; checked by screenshot at every severity and at zoom 2.4, 0.7 and 0.35 (at 0.35 it reads as a darker tint on the dark none/info fills). Cost, A/B in one headless-Chrome session at 1,887 elements (`mock:large --subdomains 260`, aggregation off, 76 of 647 nodes out of scope): hatch as shipped ≈ no hatch after warm-up (pan+zoom p95 136 vs 136 ms), every node hatched ≈ +60 % p95. **Open:** that session's baseline was ~50 ms p50, far off the 7 ms measured earlier the same day (the machine was busy), so re-run `await redwhale.bench()` in Firefox before relying on it |
-| 2026-10-31 | **For 6C:** tools that follow redirects (httpx `-follow-redirects`, crawlers, nuclei with redirects) must re-check scope on **every hop**, not just the first URL. A hop that leaves scope ends that chain and is logged; the tool must not fetch it. Same for any host a tool discovers and then contacts on its own |
+| 2026-10-31 | **For 6C** (**renumbered 2026-11-01: now 6D**)**:** tools that follow redirects (httpx `-follow-redirects`, crawlers, nuclei with redirects) must re-check scope on **every hop**, not just the first URL. A hop that leaves scope ends that chain and is logged; the tool must not fetch it. Same for any host a tool discovers and then contacts on its own |
 | 2026-11-01 | Phase 5D: node types are an **icon inside a circle**, not shapes. Icons from `lucide-static` **1.59.0** (ISC; 1.66.0 was the newest, 1.59.0 the newest at least two weeks old), one `?raw` import per icon in `web/src/graph/icons.ts` (the one type → icon map), inlined as SVG data URIs: only the 11 used icons are bundled, nothing is fetched. A type with no fitting icon gets short text (none today). Chosen: domain globe, subdomain network, ip server, port plug, url link, technology layers, vulnerability bug, email at-sign, secret key-round, certificate lock, leak database-zap |
 | 2026-11-01 | Icon ink per fill: white on none and critical, slate-950 on info, low, medium, high (≥ 4.5:1 on every fill, unit-tested). Hatch, icon and badge are one Cytoscape background-image stack built by function mappers (hatch under the icon). Icons hide below 7 px on screen; the hatch and the badge stay. Legend opened from the header (closed by default) |
 | 2026-11-01 | Phase 5D groups (§7): a group = same parent + same relation + same child type with **2 or more** members, at every level; one child is drawn directly. **Collapsed by default**; an open group **stays** as its members' parent (parent → group carries the relation, group → member plain). Roots group only above **25** per type (`ROOT_GROUP_THRESHOLD`), so one target domain is never "1 domain". Supersedes AGG_THRESHOLD 25, sticky children and "a fully loaded aggregate disappears" |
@@ -586,3 +629,9 @@ stays on.
 | 2026-11-01 | Icon cost, A/B in headless Chrome (software rendering; same noisy machine as the 6A hatch A/B) at 1,945 elements (`mock:large`, expand all below the domain): with icons p50 ~55 ms / p95 ~350–360 ms; no background images p50 ~49–55 / p95 ~215 ms. Icons pre-rasterized to PNG gave p50 14–35 / p95 140–505 ms: too noisy to choose. **Open:** re-run `await redwhale.bench()` in Firefox on real graphics before changing anything; the lever if it's too slow is `ICON_MIN_PX` (hide icons sooner when zooming out) |
 | 2026-11-01 | Expanding grows out of the opened node (the counterpart of the collapse slide): new nodes start at their nearest ancestor already on the canvas, walking up through other new nodes (`growOrigins`), and glide to their place (Force: 400 ms ease-out; Tree: via the tree animation). Before, Tree started only direct children at their parent (deeper new nodes flew in from the origin) and Force had no animation. Applies to live updates too; none with reduced motion |
 | 2026-11-01 | Tree re-runs no longer shift what the analyst is looking at: a layered tree re-centers parents over their children, so the expanded group jumped ~210 px sideways on every expand (the camera never moved, but it read as if it did). The new tree is translated so the anchor (the node the last expand/collapse/path acted on, used once) keeps its place; otherwise the node nearest the view's middle. Fit only on switch, filter change and Re-layout, as before. Force mode never moved anything (measured 0 px) |
+| 2026-11-01 | Phases renumbered: **6B edge provenance**, 6C orchestrator (was 6B), 6D presets & auto-chaining (was 6C), **6E scan diffing** (was in Phase 7+). Older entries that name 6B/6C as the runner/presets are annotated |
+| 2026-11-01 | Phase 6B: edge provenance like node observations. `edge_observations` (edge, scan, tool, `data` `{}` for now, `observed_at` = the scan's `finished_at`), unique (edge, scan), so an edge reported several times in one file is one row. Every finding that names a parent records one for its scan's tool. Edges get `source_count` (distinct tools over **all** edge observations: there is no parent-only role for edges) and `confidence` `discovered` \| `corroborated` (never `verified`), and `first_seen`/`last_seen` become derived; all four are recomputed from the full set ordered (`observed_at`, `tool`, `scan_id`), like nodes, so ingest order never matters. Closes the "edges have no provenance" open item |
+| 2026-11-01 | Migration `0003_edge_observations` is **breaking** (in `BREAKING_MIGRATIONS`): old edges have no provenance and there are no backfills, so `openDb` refuses a database with observations from before it (same message). drizzle-kit's generated SQL copied the new columns out of the old table (would fail); it is a hand-written DROP/CREATE of `edges`, as `0001` did |
+| 2026-11-01 | View edges always carry `edgeId`, `sourceCount`, `confidence`, `tools`, `edgeCount` (nullable, like `relation`). A **group → member edge stands for the real parent → member edge**: it carries that edge's ID and provenance, is clickable and drawn thicker when corroborated. Changed from the 6B plan (member edges unclickable) because the mocks' corroborated `has_subdomain` edges are all inside groups, so otherwise no corroborated edge could be seen. Parent → group edges carry the sorted union of every member edge's tools under the current filters (drawn or not) and the member-edge count; they are **never drawn thicker**: tools across members corroborate no single relation. Per-edge tool lists otherwise stay on the server (`Graph.edgeTools`) |
+| 2026-11-01 | **Known limit:** the `tool` filter still selects nodes (an edge is kept when both ends are), so it can keep an edge between two nodes that tool saw even if that tool never reported the edge. Kept as is for 6B; edge-level filtering can come with diffing (6E) if needed |
+| 2026-11-01 | Edge widths: 1.5 px, 2.5 px when 2+ tools reported the real edge (group → member 1 → 2 px); the selected-edge style is unchanged. One selection at a time (node or edge). The edge panel is fetched (`GET /edges/:id`) and survives the edge leaving the canvas; a parent → group edge's panel is built from the view and closes with its group. Group → "more" edges are not selectable |

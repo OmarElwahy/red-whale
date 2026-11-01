@@ -16,7 +16,7 @@ corroborated edges). The approved plan is summarized under "Decisions" below.
 | 3 | API: `GET /edges/:id`, edge fields on `/nodes/:id` and `/graph`, group-edge tool union, export | done |
 | 4 | UI: edge side panel, thicker corroborated edges | done |
 | 5 | Mock data + coverage test (edge confidence) | done |
-| 6 | Docs: architecture.md §4 §5 §6 §8 §9, decisions log, handoff.md | in progress |
+| 6 | Docs: architecture.md §4 §5 §6 §8 §9, decisions log, handoff.md | done |
 
 ## Decisions (made along the way; user may overrule)
 
@@ -87,7 +87,17 @@ corroborated edges). The approved plan is summarized under "Decisions" below.
 - showcase.test.ts: "covers every edge confidence" (reads `EDGE_CONFIDENCE_LEVELS`; every edge has observations;
   source_count = distinct tools). mock.test.ts: "edges reported by two tools and by one" for --subdomains 1 and 400.
 
+## Notes from step 6
+
+- architecture.md §4, §5, §6, §8, §9 (renumbered) and 6 decisions-log rows; older rows naming 6B/6C as runner/presets
+  are annotated "renumbered", not rewritten. handoff.md: status, 6B decisions, open item closed, manual check added.
+  Code comments / the Scope panel's empty-log text now say the runner is Phase 6C.
+- Smoke: `pnpm mock --db <scratch>` → 80 nodes, 83 edges (8 corroborated, 75 discovered), 91 edge observations.
+
 ## Next action
+
+**6B is complete on `phase-6b`.** Waiting for the user's manual check and merge (don't merge into main).
+If anything else is asked, it's a new task. (Original step-6 instructions, done:)
 
 Step 6 (docs). architecture.md: §4 (edges columns, `edge_observations` table, edge confidence rule, 0003 breaking),
 §5 (ingest step 3 + edge recompute), §6 (`GET /edges/:id`, edge fields on /nodes/:id and graph/view edges incl.

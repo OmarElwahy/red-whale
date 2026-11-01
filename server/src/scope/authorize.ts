@@ -1,5 +1,5 @@
 // The scope guard's gate (docs/architecture.md §10). authorize() is the ONLY producer of ScopedTarget, and the
-// tool runner (Phase 6B, server/src/runner/) will only accept a ScopedTarget, so no code path can run a tool
+// tool runner (Phase 6C, server/src/runner/) will only accept a ScopedTarget, so no code path can run a tool
 // against a target that wasn't checked against the current scope and logged.
 //
 // Three locks, so a forged target fails even if one is bypassed:

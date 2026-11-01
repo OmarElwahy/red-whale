@@ -424,7 +424,7 @@ function LogColumn() {
         <p className="text-muted-foreground text-xs">
           {withChecks
             ? 'Nothing logged yet.'
-            : 'No tool has been authorized to run yet (tools run from Phase 6B). Tick “include checks” to see tested targets.'}
+            : 'No tool has been authorized to run yet (tools run from Phase 6C). Tick “include checks” to see tested targets.'}
         </p>
       )}
       <ol aria-label="Scope log" className="flex flex-col text-xs">

@@ -9,7 +9,7 @@ import tseslint from 'typescript-eslint';
 // only the runner talks to Docker (or starts programs), and only authorize() makes a ScopedTarget.
 // server/test/guard.test.ts proves these rules fire, and separately scans the sources for 'dockerode'.
 
-/** The one file that may import Docker's client. It doesn't exist until Phase 6B. */
+/** The one file that may import Docker's client. It doesn't exist until Phase 6C. */
 export const RUNNER_FILE = 'server/src/runner/docker.ts';
 export const AUTHORIZE_FILE = 'server/src/scope/authorize.ts';
 

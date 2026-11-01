@@ -22,7 +22,7 @@ _Last updated: 2026-11-01_
 TypeScript (pinned 6.0.x) · pnpm monorepo `shared/` `server/` `web/` · Zod · Fastify + WebSocket on
 127.0.0.1:4100 · SQLite via better-sqlite3 + Drizzle · Vite + React on 127.0.0.1:5173 · Cytoscape.js + fcose ·
 Zustand · TanStack Query + Table · Tailwind + shadcn/ui · react-markdown · Vitest · elkjs (Tree layout, in a Web Worker).
-Dropped: `cytoscape-expand-collapse` (aggregation is server-side). Docker/Dockerode comes in Phase 6B. Added in 6A: `tldts` (bundled Public Suffix List, for the scope guard). Added in 5D: `lucide-static` 1.59.0 (ISC, node-type icons, bundled per icon).
+Dropped: `cytoscape-expand-collapse` (aggregation is server-side). Docker/Dockerode comes in Phase 6C. Added in 6A: `tldts` (bundled Public Suffix List, for the scope guard). Added in 5D: `lucide-static` 1.59.0 (ISC, node-type icons, bundled per icon).
 
 ## Status
 
@@ -38,7 +38,8 @@ Dropped: `cytoscape-expand-collapse` (aggregation is server-side). Docker/Docker
 | 5C | Graph feel (edges/labels always drawn, momentum, smooth zoom, edge labels), Force/Tree layouts, small showcase mock | ✅ code + tests done; manual check pending |
 | 5D | Graph pass: an icon per node type in a circle, header legend; collapsible groups for every output (2+ siblings of one kind = a group, collapsed by default, stays as the members' parent, recursive collapse, risk badge, auto-open on live updates, paths opened as pins, expand all below), `POST /graph/view`, `GET /graph/path` | ✅ code + tests done; checked in headless Chrome; manual check pending |
 | 6A | Scope guard: rules + `checkScope`, `authorize()` → `ScopedTarget`, dockerode/child_process lint guard, scope API + log, `inScope` on nodes, Scope panel, banner, out-of-scope hatch, mocks seed a scope | ✅ code + tests done; manual check pending |
-| 6B+ | Docker orchestrator (runner behind `authorize()`), presets, auto-chaining (redirects re-check scope per hop), diffing, reports, CVE monitor, local LLM scoring, JS agent | later |
+| 6B | Edge provenance: `edge_observations` (one per edge per scan), derived edge first/last seen, source_count, confidence (discovered/corroborated); `GET /edges/:id`; provenance on node-detail and graph edges (group edges: union of members' tools); edge side panel; corroborated edges thicker | ✅ code + tests done on branch `phase-6b` (not merged); manual check pending |
+| 6C+ | 6C Docker orchestrator (runner behind `authorize()`), 6D presets + auto-chaining (redirects re-check scope per hop), 6E scan diffing; then reports, CVE monitor, local LLM scoring, JS agent | later |
 
 ## How I work with Claude Code
 
@@ -100,7 +101,16 @@ Dropped: `cytoscape-expand-collapse` (aggregation is server-side). Docker/Docker
 - Out-of-scope marker = thin semi-transparent diagonal hatch over the fill (visible at any zoom).
 - Both mocks wipe and seed a scope; the showcase has an in-scope domain + wildcard, an excluded subdomain (dev),
   in-scope IP/CIDR, and a CDN-style IP (198.18.0.20) that in-scope subdomains resolve to but is out.
-- For 6C: redirect-following tools must re-check scope on every hop.
+- For 6D (was "6C" before the 2026-11-01 renumbering): redirect-following tools must re-check scope on every hop.
+
+## Recent decisions (Phase 6B, edge provenance)
+
+- Phases renumbered: 6B edge provenance, 6C orchestrator, 6D presets & auto-chaining, 6E scan diffing.
+- Edge confidence = distinct tools over every edge observation; never `verified`. Migration 0003 is breaking (delete
+  `data/redwhale.db`, run `pnpm mock`).
+- Group → member edges stand for the real edge: clickable, thicker when corroborated (otherwise no corroborated edge
+  would be visible, since they're all inside groups). Parent → group edges show the members' tools, never thicker.
+- Known limit: the `tool` filter still selects nodes, so it can keep an edge that tool never reported.
 
 ## Open items to remember
 
@@ -115,8 +125,10 @@ Dropped: `cytoscape-expand-collapse` (aggregation is server-side). Docker/Docker
 - Test teammates' **real** JSON files: validator → `pnpm ingest` → check the graph.
 - Technology names must be exactly `name/version` across all scripts, or corroboration silently fails.
   Maybe add an alias table later (`microsoft-iis` = `iis`).
-- Edges have no provenance yet — add edge observations before scan diffing (Phase 6).
-- 6B runner: call `authorize()` right before each run and `assertScoped()` the target; dockerode only in
+- ~~Edges have no provenance yet~~ — done in 6B (`edge_observations`); scan diffing is 6E.
+- 6B manual check: `pnpm mock`, click a thick (corroborated) edge and a thin one, a group edge, a member edge; check
+  the export has `edgeObservations`.
+- 6C runner: call `authorize()` right before each run and `assertScoped()` the target; dockerode only in
   `server/src/runner/docker.ts` (lint + test already enforce it).
 - After Phase 5: plan the DEPI demo. Best moment = running `pnpm ingest` live and watching the map grow.
   Take screenshots of each milestone for slides.
