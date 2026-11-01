@@ -38,17 +38,18 @@ corroborated edges). The approved plan is summarized under "Decisions" below.
 
 ## Notes from step 1
 
-- drizzle-kit's generated 0003 copied the new columns out of the old  table (would fail); replaced by a hand-written
-  DROP/CREATE. Re-running  reports no drift.
-- The mock wipe ( wipeWorkspace) deletes  before .
-- / gained  (count); the CLI prints it.
-- Test helpers: , ;  includes edge observations,  unchanged.
-  The old "0001 db upgrades through openDb" scope test now migrates to 0002 only (0003 is breaking).
+- drizzle-kit's generated 0003 copied the new columns out of the old `edges` table (would fail); replaced by a
+  hand-written DROP/CREATE. Re-running `pnpm --filter @redwhale/server db:generate` reports no drift.
+- The mock wipe (`server/src/mock/cli.ts` wipeWorkspace) deletes `edge_observations` before `edges`.
+- `IngestResult` / `ingestResponseSchema` gained `edgeObservations` (a count); the CLI prints it.
+- Test helpers: `schema0002Db(withData)`, `migrateTo(path, n)`; `snapshot()` includes edge observations, `counts()`
+  unchanged. The old "0001 db upgrades through openDb" scope test now migrates to 0002 only (0003 is breaking).
 - Edges still get first/last seen from the old min/max upsert; source_count/confidence stay at defaults until step 2.
+- Shell gotcha: don't write this file through bash heredocs/`node -e` with backticks (bash expands them). Use Edit.
 
 ## Next action
 
-Step 2: add  in  (widen  to a Pick of
-observedAt/tool/scanId),  in  (replace the min/max upsert with
-onConflictDoNothing), tests in  and  (2 tools → corroborated, A/B vs B/A identical
-edge rows, re-ingest unchanged).
+Step 2: add `deriveEdgeState` in `server/src/ingest/derive.ts` (widen `compareObservations` to a Pick of
+observedAt/tool/scanId), `recomputeEdges(tx, edgeIds)` in `server/src/ingest/ingest.ts` (replace the min/max upsert
+with onConflictDoNothing), tests in `server/test/derive.test.ts` and `server/test/ingest.test.ts` (2 tools →
+corroborated, A/B vs B/A identical edge rows, re-ingest unchanged).
