@@ -12,8 +12,8 @@ corroborated edges). The approved plan is summarized under "Decisions" below.
 | # | Step | Status |
 |---|---|---|
 | 1 | `edge_observations` table + migration `0003_edge_observations` + ingest writing it, tests | done |
-| 2 | Derived edge fields (first/last seen, source_count, confidence) + order/idempotency tests | in progress |
-| 3 | API: `GET /edges/:id`, edge fields on `/nodes/:id` and `/graph`, group-edge tool union, export | todo |
+| 2 | Derived edge fields (first/last seen, source_count, confidence) + order/idempotency tests | done |
+| 3 | API: `GET /edges/:id`, edge fields on `/nodes/:id` and `/graph`, group-edge tool union, export | in progress |
 | 4 | UI: edge side panel, thicker corroborated edges | todo |
 | 5 | Mock data + coverage test (edge confidence) | todo |
 | 6 | Docs: architecture.md §4 §5 §6 §8 §9, decisions log, handoff.md | todo |
@@ -47,9 +47,19 @@ corroborated edges). The approved plan is summarized under "Decisions" below.
 - Edges still get first/last seen from the old min/max upsert; source_count/confidence stay at defaults until step 2.
 - Shell gotcha: don't write this file through bash heredocs/`node -e` with backticks (bash expands them). Use Edit.
 
+## Notes from step 2
+
+- `deriveEdgeState` (derive.ts) + `recomputeEdges` (ingest.ts) after `recomputeNodes`, inside the one transaction.
+  Every edge observation counts toward source_count (there's no parent-only role for edges).
+- Tests: derive.test.ts `deriveEdgeState`; ingest.test.ts `describe('edge provenance')`.
+- The 4 contract examples have no corroborated edge (each edge comes from one tool); asserted in a test.
+
 ## Next action
 
-Step 2: add `deriveEdgeState` in `server/src/ingest/derive.ts` (widen `compareObservations` to a Pick of
-observedAt/tool/scanId), `recomputeEdges(tx, edgeIds)` in `server/src/ingest/ingest.ts` (replace the min/max upsert
-with onConflictDoNothing), tests in `server/test/derive.test.ts` and `server/test/ingest.test.ts` (2 tools →
-corroborated, A/B vs B/A identical edge rows, re-ingest unchanged).
+Step 3 (API). In `shared/src/api.ts`: `graphEdgeSchema` + `sourceCount`, `confidence` (EDGE_CONFIDENCE_LEVELS);
+`viewEdgeSchema` + `sourceCount`/`confidence`/`tools`/`edgeCount` (nullable, see Decisions); node-detail edges +
+`sourceCount`/`confidence`; new `edgeDetailResponseSchema`; export + `edgeObservations`, edges with the new fields.
+Server: `loadGraph` (server/src/graph/store.ts) selects the edge fields and an internal per-edge tool list;
+`render()` in server/src/graph/aggregate.ts fills group edges (union over `set.edgeOf`); new
+`server/src/routes/edges.ts` registered next to nodeRoutes; `nodeDetail` SQL selects source_count/confidence;
+export in routes/data.ts. Tests in server/test/api/.

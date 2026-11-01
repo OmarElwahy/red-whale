@@ -1,6 +1,6 @@
 // Derived node state (docs/architecture.md §4–5). Pure: everything is recomputed from the node's
 // full observation set, so the result doesn't depend on the order files were ingested in.
-import { SEVERITIES, type Confidence, type ObservationRole, type Severity } from '@redwhale/shared';
+import { SEVERITIES, type Confidence, type EdgeConfidence, type ObservationRole, type Severity } from '@redwhale/shared';
 
 export interface ObservationInput {
   scanId: string;
@@ -30,8 +30,11 @@ function compareText(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
 }
 
+/** What ordering needs from a node or edge observation. */
+type Sighting = Pick<ObservationInput, 'observedAt' | 'tool' | 'scanId'>;
+
 /** Oldest first; ties broken by tool then scan, so the order is fully deterministic. */
-export function compareObservations(a: ObservationInput, b: ObservationInput): number {
+export function compareObservations(a: Sighting, b: Sighting): number {
   return compareText(a.observedAt, b.observedAt) || compareText(a.tool, b.tool) || compareText(a.scanId, b.scanId);
 }
 
@@ -57,6 +60,33 @@ export function deriveNodeState(observations: readonly ObservationInput[], curre
     confidence: current === 'verified' ? 'verified' : sourceCount >= 2 ? 'corroborated' : 'discovered',
     severity,
     data,
+    firstSeen: first.observedAt,
+    lastSeen: last.observedAt,
+  };
+}
+
+export type EdgeObservationInput = Sighting;
+
+export interface DerivedEdgeState {
+  sourceCount: number;
+  confidence: EdgeConfidence;
+  firstSeen: string;
+  lastSeen: string;
+}
+
+/**
+ * Derived edge state, from the edge's full observation set (same order as nodes, so ingest order never matters).
+ * Every observation is a report of the relation, so every tool counts; edges are never `verified`.
+ */
+export function deriveEdgeState(observations: readonly EdgeObservationInput[]): DerivedEdgeState {
+  const sorted = [...observations].sort(compareObservations);
+  const first = sorted[0];
+  const last = sorted.at(-1);
+  if (!first || !last) throw new Error('deriveEdgeState needs at least one observation');
+  const sourceCount = new Set(sorted.map((o) => o.tool)).size;
+  return {
+    sourceCount,
+    confidence: sourceCount >= 2 ? 'corroborated' : 'discovered',
     firstSeen: first.observedAt,
     lastSeen: last.observedAt,
   };

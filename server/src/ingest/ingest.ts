@@ -5,7 +5,7 @@ import { eq, sql, type SQL } from 'drizzle-orm';
 import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import type { Db } from '../db/client';
 import { edgeObservations, edges, nodes, observations, scans } from '../db/schema';
-import { deriveNodeState, type ObservationInput } from './derive';
+import { deriveEdgeState, deriveNodeState, type EdgeObservationInput, type ObservationInput } from './derive';
 import { fileHash } from './hash';
 import { planIngest } from './plan';
 
@@ -106,16 +106,11 @@ export function ingestDocument(db: Db, input: unknown, now: Date = new Date()): 
 
       const knownEdges =
         edgeIds.length === 0 ? 0 : tx.select({ id: edges.id }).from(edges).where(inIds(edges.id, edgeIds)).all().length;
+      // As for nodes: placeholder derived fields, filled in by recomputeEdges() below.
       for (const batch of chunks([...plan.edges.values()])) {
         tx.insert(edges)
           .values(batch.map((e) => ({ ...e, firstSeen: observedAt, lastSeen: observedAt })))
-          .onConflictDoUpdate({
-            target: edges.id,
-            set: {
-              firstSeen: sql`min(${edges.firstSeen}, excluded.first_seen)`,
-              lastSeen: sql`max(${edges.lastSeen}, excluded.last_seen)`,
-            },
-          })
+          .onConflictDoNothing()
           .run();
       }
 
@@ -133,6 +128,7 @@ export function ingestDocument(db: Db, input: unknown, now: Date = new Date()): 
       }
 
       recomputeNodes(tx, nodeIds);
+      recomputeEdges(tx, edgeIds);
 
       return {
         status: 'ingested',
@@ -189,5 +185,33 @@ export function recomputeNodes(tx: Tx | Db, ids: readonly string[]): void {
     const confidence = current.get(id);
     if (!obs || !confidence) throw new Error(`node ${id} has no observations`);
     tx.update(nodes).set(deriveNodeState(obs, confidence)).where(eq(nodes.id, id)).run();
+  }
+}
+
+/** Rebuilds every derived field of these edges from all of their edge observations. */
+export function recomputeEdges(tx: Tx | Db, ids: readonly string[]): void {
+  if (ids.length === 0) return;
+
+  const byEdge = new Map<string, EdgeObservationInput[]>();
+  const rows = tx
+    .select({
+      edgeId: edgeObservations.edgeId,
+      scanId: edgeObservations.scanId,
+      tool: edgeObservations.tool,
+      observedAt: edgeObservations.observedAt,
+    })
+    .from(edgeObservations)
+    .where(inIds(edgeObservations.edgeId, ids))
+    .all();
+  for (const { edgeId, ...o } of rows) {
+    const list = byEdge.get(edgeId);
+    if (list) list.push(o);
+    else byEdge.set(edgeId, [o]);
+  }
+
+  for (const id of ids) {
+    const obs = byEdge.get(id);
+    if (!obs) throw new Error(`edge ${id} has no observations`);
+    tx.update(edges).set(deriveEdgeState(obs)).where(eq(edges.id, id)).run();
   }
 }

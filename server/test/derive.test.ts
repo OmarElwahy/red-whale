@@ -1,6 +1,6 @@
 import type { Severity } from '@redwhale/shared';
 import { describe, expect, test } from 'vitest';
-import { deriveNodeState, maxSeverity, type ObservationInput } from '../src/ingest/derive';
+import { deriveEdgeState, deriveNodeState, maxSeverity, type ObservationInput } from '../src/ingest/derive';
 
 function obs(overrides: Partial<ObservationInput> = {}): ObservationInput {
   return {
@@ -111,4 +111,37 @@ test('first_seen / last_seen are the earliest and latest observation times', () 
 
 test('throws on an empty observation list', () => {
   expect(() => deriveNodeState([], 'discovered')).toThrow();
+});
+
+describe('deriveEdgeState', () => {
+  const at = (scanId: string, tool: string, observedAt: string) => ({ scanId, tool, observedAt });
+
+  test('one tool is discovered, even over several scans', () => {
+    const state = deriveEdgeState([at('s1', 'subfinder', '2026-10-29T10:00:00.000Z'), at('s2', 'subfinder', '2026-10-30T10:00:00.000Z')]);
+    expect(state).toEqual({
+      sourceCount: 1,
+      confidence: 'discovered',
+      firstSeen: '2026-10-29T10:00:00.000Z',
+      lastSeen: '2026-10-30T10:00:00.000Z',
+    });
+  });
+
+  test('two tools are corroborated; never verified', () => {
+    const state = deriveEdgeState([at('s1', 'subfinder', '2026-10-29T10:00:00.000Z'), at('s2', 'amass', '2026-10-29T09:00:00.000Z')]);
+    expect(state).toMatchObject({ sourceCount: 2, confidence: 'corroborated', firstSeen: '2026-10-29T09:00:00.000Z' });
+  });
+
+  test('the input order does not matter', () => {
+    const list = [
+      at('s3', 'nmap', '2026-11-01T10:00:00.000Z'),
+      at('s1', 'subfinder', '2026-10-29T10:00:00.000Z'),
+      at('s2', 'amass', '2026-10-30T10:00:00.000Z'),
+    ];
+    expect(deriveEdgeState([...list].reverse())).toEqual(deriveEdgeState(list));
+    expect(deriveEdgeState(list)).toMatchObject({ sourceCount: 3, lastSeen: '2026-11-01T10:00:00.000Z' });
+  });
+
+  test('needs at least one observation', () => {
+    expect(() => deriveEdgeState([])).toThrow(/at least one/);
+  });
 });

@@ -431,6 +431,79 @@ describe('edge provenance', () => {
     expect(db.$client.prepare('SELECT COUNT(*) AS n FROM edge_observations').get()).toEqual(before);
   });
 
+  const edgeRows = (db: Db) =>
+    db.$client.prepare('SELECT relation, confidence, source_count, first_seen, last_seen FROM edges ORDER BY id').all();
+
+  test('the same edge from two tools: source_count 2, corroborated, seen from the first to the last scan', () => {
+    const db = freshDb();
+    ingestDocument(db, scanBy('subfinder', '2026-10-29T10:00:00Z', [sub('api.example.com'), sub('dev.example.com')]));
+    ingestDocument(db, scanBy('amass', '2026-10-29T11:00:00Z', [sub('api.example.com')]));
+    expect(edgeRows(db)).toEqual(
+      expect.arrayContaining([
+        {
+          relation: 'has_subdomain',
+          confidence: 'corroborated',
+          source_count: 2,
+          first_seen: '2026-10-29T10:00:00.000Z',
+          last_seen: '2026-10-29T11:00:00.000Z',
+        },
+        {
+          relation: 'has_subdomain',
+          confidence: 'discovered',
+          source_count: 1,
+          first_seen: '2026-10-29T10:00:00.000Z',
+          last_seen: '2026-10-29T10:00:00.000Z',
+        },
+      ]),
+    );
+  });
+
+  test('two scans of the same tool: still discovered, last seen moves on', () => {
+    const db = freshDb();
+    ingestDocument(db, scanBy('subfinder', '2026-10-29T10:00:00Z', [sub('api.example.com')]));
+    ingestDocument(db, scanBy('subfinder', '2026-10-30T10:00:00Z', [sub('api.example.com')]));
+    expect(edgeRows(db)).toEqual([
+      {
+        relation: 'has_subdomain',
+        confidence: 'discovered',
+        source_count: 1,
+        first_seen: '2026-10-29T10:00:00.000Z',
+        last_seen: '2026-10-30T10:00:00.000Z',
+      },
+    ]);
+  });
+
+  test('ingest order A then B vs B then A: identical edges and edge observations', () => {
+    const a = scanBy('subfinder', '2026-10-29T10:00:00Z', [sub('api.example.com'), sub('dev.example.com')]);
+    const b = scanBy('amass', '2026-10-28T10:00:00Z', [sub('api.example.com')]);
+    const ab = freshDb();
+    const ba = freshDb();
+    ingestDocument(ab, a);
+    ingestDocument(ab, b);
+    ingestDocument(ba, b);
+    ingestDocument(ba, a);
+    expect(snapshot(ba).edges).toEqual(snapshot(ab).edges);
+    expect(snapshot(ba).edgeObservations).toEqual(snapshot(ab).edgeObservations);
+    expect(snapshot(ab).edges).toEqual(
+      expect.arrayContaining([expect.objectContaining({ source_count: 2, first_seen: '2026-10-28T10:00:00.000Z' })]),
+    );
+  });
+
+  test('re-ingesting a file changes no edge field', () => {
+    const db = freshDb();
+    ingestAll(db);
+    const before = edgeRows(db);
+    ingestAll(db);
+    expect(edgeRows(db)).toEqual(before);
+  });
+
+  test('the example files: every edge is reported by exactly one tool, so discovered', () => {
+    const db = freshDb();
+    ingestAll(db);
+    const rows = db.$client.prepare('SELECT DISTINCT confidence, source_count FROM edges').all();
+    expect(rows).toEqual([{ confidence: 'discovered', source_count: 1 }]);
+  });
+
   test('a finding without a parent records none', () => {
     const db = freshDb();
     ingestDocument(db, scanBy('subfinder', '2026-10-29T10:00:00Z', [{ type: 'domain', value: 'example.com' }]));
