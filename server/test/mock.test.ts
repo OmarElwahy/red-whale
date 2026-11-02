@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { validateContract } from '@redwhale/shared';
 import { describe, expect, test } from 'vitest';
@@ -163,9 +163,13 @@ describe('CLI', () => {
     const summary = first.out.at(-1);
     expect(summary).toMatch(/: \d+ nodes \(\d+ discovered, \d+ corroborated, 0 verified\)$/);
 
+    // Raw job output next to the database goes with the wipe (its job rows do).
+    mkdirSync(join(dir, 'jobs', '1'), { recursive: true });
+    writeFileSync(join(dir, 'jobs', '1', 'raw.txt'), 'x');
     const second = run(argv);
     expect(second.code).toBe(0);
     expect(second.out).toContain(`Wiped ${db} (7 scans)`);
+    expect(existsSync(join(dir, 'jobs'))).toBe(false);
     expect(second.out.filter((l) => l.endsWith('already ingested'))).toEqual([]);
     expect(second.out.at(-1)).toBe(summary);
   });

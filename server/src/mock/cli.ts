@@ -2,13 +2,14 @@
 // output, validate it twice (Zod and the team's Python validator), wipe the workspace, then ingest it.
 // The wipe refuses to touch a database that holds scans a mock didn't make (real files), unless --force.
 // Both mocks then seed a scope (showcase.ts SHOWCASE_SCOPE, generate.ts largeScope) so every decision shows.
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CONFIDENCE_LEVELS, checkValue, nodeId, validateContract } from '@redwhale/shared';
 import type { CliIo } from '../cli/ingest';
 import { DEFAULT_DB_PATH, OutdatedDatabaseError, openDb, type Db } from '../db/client';
 import { updateNode } from '../graph/update';
 import { ingestText } from '../ingest/ingest';
+import { jobsDirFor } from '../runner/finish';
 import { addRule } from '../scope/store';
 import {
   MAX_SUBDOMAINS,
@@ -262,6 +263,7 @@ export function runMockCli(
       return 1;
     }
     const wiped = wipeWorkspace(db);
+    rmSync(jobsDirFor(dbPath), { recursive: true, force: true }); // the jobs' raw output went with their rows
     if (wiped > 0) {
       io.out(`Wiped ${dbPath} (${String(wiped)} scans${foreign.length > 0 ? `, ${String(foreign.length)} not from a mock` : ''})`);
     }

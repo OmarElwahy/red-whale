@@ -21,7 +21,7 @@ approved plan is summarized under "Decisions".
 | 6 | findomain (same) | |
 | 7 | crt.sh (same; retries unit-tested in Python) | |
 | 8 | `pnpm tools:check <tool\|--all>` (tools/check.py + TS wrapper), Vitest runs it for every tool | |
-| 9 | job execution → ingest → raw output storage + real-Docker integration test (skipped without Docker/image) | |
+| 9 | job execution → ingest → raw output storage (fake runtime). The real-Docker integration test moved to 3b | done (out of order: 3b–7 blocked on Docker + domain) |
 | 10 | API + WS (`job.updated`, `runner.status`), group jobs | |
 | 11 | UI: Run tool submenu, Jobs tab, header runner status (may split 11a/11b) | |
 | 12 | Docs: architecture.md (new §12 Orchestrator, §4, §6, §9, decisions log), team-guide.md rewrite, group README, handoff.md | |
@@ -135,14 +135,29 @@ approved plan is summarized under "Decisions".
   folder under tools/ with a test_*.py (unittest discover needs -s per folder: no __init__.py files).
 - tool.json timeouts: subfinder 600, assetfinder 300, findomain 600, crtsh 420 s.
 
+## Notes from step 9 (done before 3b–8: Docker Desktop not running, domain still `<DOMAIN>`)
+
+- `server/src/runner/finish.ts`: `ingestFinish({ db, jobsDir, onIngested })` is the FinishHook the server will use.
+  Saves `<jobsDir>/<id>/{stdout.txt, stderr.txt, raw.txt, result.json}`; caps: RAW 5 MB (truncated + note),
+  result.json ≤ 50 MB (over → failed, never truncated), total read 56 MB. Notes (truncation, ignored files with
+  sizes, over-limit) go into `jobs.error` even on success. Checks the result's `tool` equals the def name before
+  ingest. Ingest `invalid` → failed + `issues`; `duplicate` → succeeded, existing scanId, 0/0 counts + note;
+  `ingested` → `nodesCreated` = created.nodes, `nodesUpdated` = touched − created; result status `failed` → job
+  failed but scan linked; `partial` → succeeded with "partial result: …". `jobsDirFor(dbPath)` = `<db dir>/jobs`.
+- Mock CLI removes `jobsDirFor(dbPath)` after the wipe (test in mock.test.ts).
+- Orchestrator's final row update is wrapped: a mock wipe during a run no longer crashes the server.
+- Tests: `server/test/finish.test.ts` (9): link + counts + files, **two tools → corroborated node and edge**, invalid
+  → issues, tool mismatch, no result / not JSON, tool-reported failure, partial + duplicate, size caps, timeout
+  with a partial result.
+
 ## Next action
 
-Step 3b: once `docker version` shows a Server: `pnpm tools:build subdomain`; fix the Dockerfile/build path until
-it builds (if the classic builder is refused, pass `version: '2'` in docker.ts build options or fall back as
-needed); then in a container from the image check: `id` = 10001, `subfinder -version`, `assetfinder -h`,
-`findomain --version`, python3 + /opt/redwhale layout. Then add `server/test/docker.integration.test.ts`
-(skipIf Docker unreachable or image missing): create a container via DockerRuntime + containerSpec running a tiny
-python3 -c that writes /out/result.json and raw.txt; check inspect (ReadonlyRootfs, CapDrop, User, no Binds,
-Mounts = the volume), fetchOutput after exit works (volume, not tmpfs), timeout kill works, remove cleans the
-volume, listByLabel finds them. Commit "6C-1 step 3b". Then step 4 (needs the domain from the user — still
-`<DOMAIN>`).
+Blocked on the user for 3b–7 (Docker Desktop running + the real domain). Meanwhile: **step 10** (API + WS:
+routes in `server/src/routes/jobs.ts`, `GET /tools`, `POST /jobs`, `POST /jobs/group`, `GET /jobs`, `GET /jobs/:id`
+(+ 4 KB tails), `GET /jobs/:id/output/:stream`, `POST /jobs/:id/cancel`, `GET /runner/status`; WS `job.updated`,
+`runner.status`; scope routes call `orchestrator.onScopeChanged()`; `jobId` on node/edge observations and
+`GET /scans`; wire the Orchestrator + DockerRuntime + loadCatalog + ingestFinish into `buildApp` (AppOptions:
+`runtime`, `catalog`, `jobsDir`, `maxJobs`) and run-server.ts (`REDWHALE_MAX_JOBS`, recover() + startMonitor() on
+start, stop() on shutdown). Then step 11 (UI). Then 3b → 4–7 → 8 when unblocked.
+Step 3b details are in the previous "Next action" text: build the image, verify it in a container, add
+`server/test/docker.integration.test.ts` (skipIf no Docker / no image).

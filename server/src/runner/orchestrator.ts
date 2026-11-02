@@ -342,7 +342,11 @@ export class Orchestrator {
     await this.runtime.removeVolume(spec.volume.Name).catch(() => undefined);
     this.active.delete(job.id);
     const { status, ...rest } = outcome;
-    this.update(job.id, { ...rest, status, exitCode, finishedAt: this.now().toISOString() });
+    try {
+      this.update(job.id, { ...rest, status, exitCode, finishedAt: this.now().toISOString() });
+    } catch {
+      // The row is gone (the mock wiped the workspace meanwhile): nothing left to record.
+    }
     this.pump();
   }
 
