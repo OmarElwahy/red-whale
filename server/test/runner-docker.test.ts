@@ -1,12 +1,13 @@
 // The pure parts of the Docker runner, without Docker: reading /out with size caps, splitting the log stream,
 // and loading the tool catalog.
 import { cpSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { type AddressInfo, createServer, type Socket } from 'node:net';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import tar from 'tar-stream';
 import { describe, expect, test } from 'vitest';
 import { CatalogError, inBuildContext, loadCatalog, TOOLS_DIR } from '../src/runner/catalog';
-import { demuxLogs, readOutputArchive } from '../src/runner/docker';
+import { DockerRuntime, demuxLogs, readOutputArchive } from '../src/runner/docker';
 import { tempDir } from './helpers';
 
 /** A tar like getArchive('/out') sends: a directory entry, then its files. */
@@ -81,6 +82,24 @@ describe('logs', () => {
     const logs = demuxLogs(Buffer.concat([frame(1, 'hello '), frame(2, 'oops'), frame(1, 'world')]), 8);
     expect(logs.stdout).toEqual({ text: 'hello wo', size: 11, truncated: true });
     expect(logs.stderr).toEqual({ text: 'oops', size: 4, truncated: false });
+  });
+});
+
+describe('Docker health check', () => {
+  test('a Docker that accepts the connection but never answers counts as not responding, within the time limit', async () => {
+    const sockets: Socket[] = [];
+    const server = createServer((s) => sockets.push(s)); // accepts, reads, never replies: a hung Docker Desktop
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const { port } = server.address() as AddressInfo;
+    try {
+      const started = Date.now();
+      const ping = await new DockerRuntime({ host: '127.0.0.1', port, protocol: 'http' }).ping(200);
+      expect(ping).toEqual({ ok: false, error: expect.stringMatching(/not responding/) as unknown });
+      expect(Date.now() - started).toBeLessThan(2000);
+    } finally {
+      for (const s of sockets) s.destroy();
+      await new Promise((resolve) => server.close(resolve));
+    }
   });
 });
 

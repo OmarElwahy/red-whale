@@ -294,6 +294,12 @@ approved plan is summarized under "Decisions".
   subdomains, no labelled containers/volumes left, raw output + tails + provenance jobId fine, foreign Origin 403.
   Not checked by me: the UI in a real browser (manual check).
 
+## Fixes from the manual check
+
+- Docker Desktop hung (accepted connections, never answered; `docker version` hung too): the health check had no time
+  limit, so /api/tools and /api/runner/status hung and "Run tool" stayed disabled on "Loading the tools…". Now
+  `DockerRuntime.ping()` gives up after 5 s and reports "Docker is not responding … restart Docker Desktop".
+
 ## Next action
 
 Phase 6C-1 is complete. Waiting for the user's manual check; they merge into main. Nothing else to do on this branch

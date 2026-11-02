@@ -126,6 +126,9 @@ export async function readOutputArchive(archive: NodeJS.ReadableStream, limits: 
   });
 }
 
+/** How long a Docker health check may take before Docker counts as not responding. */
+export const PING_TIMEOUT_MS = 5000;
+
 export interface BuildOptions {
   /** Directory sent as the build context. */
   context: string;
@@ -145,14 +148,25 @@ export class DockerRuntime implements ContainerRuntime {
     this.docker = new Docker(options);
   }
 
-  async ping(): Promise<RuntimePing> {
+  /**
+   * A hung Docker Desktop accepts the connection and never answers; without the time limit every route that checks
+   * Docker (and the Run tool menu waiting on them) would hang with it.
+   */
+  async ping(timeoutMs = PING_TIMEOUT_MS): Promise<RuntimePing> {
+    let timer: NodeJS.Timeout | undefined;
+    const hung = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new Error(`Docker is not responding (no answer in ${String(timeoutMs / 1000)} s); restart Docker Desktop`));
+      }, timeoutMs);
+    });
     try {
-      await this.docker.ping();
-      const version = await this.docker.version();
+      const version = await Promise.race([this.docker.ping().then(() => this.docker.version()), hung]);
       return { ok: true, version: version.Version };
     } catch (e) {
       const error = e instanceof Error ? e.message : String(e);
       return { ok: false, error: /ENOENT|ECONNREFUSED|pipe/i.test(error) ? `Docker is not running (${error})` : error };
+    } finally {
+      clearTimeout(timer);
     }
   }
 
