@@ -222,6 +222,22 @@ describe('connectLive', () => {
     ]);
   });
 
+  test('job and runner events refetch only the runner queries and the scope log, never the graph', () => {
+    const { invalidate, sockets } = connect();
+    sockets.last().handlers.onOpen();
+    const job = {
+      id: 1, tool: 'subfinder', group: 'subdomain', nodeId: 'n1', targetType: 'domain', targetValue: 'example.com',
+      mode: 'passive', status: 'running', queuedScopeLogId: 1, scopeLogId: 2, argv: null, image: null, timeoutSec: 600,
+      exitCode: null, error: null, issues: null, createdAt: '2026-11-02T10:00:00.000Z', startedAt: null, finishedAt: null,
+      scanId: null, nodesCreated: null, nodesUpdated: null,
+    };
+    sockets.last().handlers.onMessage(JSON.stringify({ type: 'job.updated', job }));
+    sockets.last().handlers.onMessage(JSON.stringify({ type: 'runner.status', reachable: false, error: 'Docker is not running' }));
+    vi.advanceTimersByTime(REFRESH_DELAY_MS);
+    expect(invalidate.mock.calls.map(([arg]) => arg)).toEqual([{ queryKey: queryKeys.runner }, { queryKey: queryKeys.scopeLogAll }]);
+    expect(useLive.getState().fresh.size).toBe(0);
+  });
+
   test('after a reconnect everything is refetched at once', () => {
     const { invalidate, sockets } = connect();
     sockets.last().handlers.onOpen();

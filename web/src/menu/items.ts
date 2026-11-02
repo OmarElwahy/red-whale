@@ -1,6 +1,6 @@
 // What the right-click menu offers for a node, a group or a "more" node (docs/architecture.md §8). Pure, so it's
 // unit-tested.
-import type { AggregateNode, ViewNode } from '@redwhale/shared';
+import { scopeModeFor, type AggregateNode, type GraphNode, type RunnerStatus, type ToolMode, type ToolsResponse, type ViewNode } from '@redwhale/shared';
 
 export type MenuAction =
   | 'focus'
@@ -13,14 +13,36 @@ export type MenuAction =
   | 'collapse-below'
   | 'load-more'
   | 'collapse-parent'
+  /** Opens the "Run tool" submenu. */
+  | 'run-menu'
+  | 'run-group'
   | 'run-tool';
+
+export interface MenuBadge {
+  text: string;
+  tone: ToolMode | 'external';
+}
 
 export interface MenuItem {
   action: MenuAction;
   label: string;
   disabled?: boolean;
-  /** Why it's disabled, shown as a tooltip. */
+  /** Why it's disabled, shown as a tooltip (and under the label in the run submenu). */
   hint?: string;
+  /** run-tool / run-group: the tool or group name. */
+  name?: string;
+  badges?: MenuBadge[];
+  /** run-menu: what it opens. */
+  submenu?: MenuItem[];
+}
+
+/** What the run submenu needs to know; undefined pieces are still loading. */
+export interface RunContext {
+  tools: ToolsResponse | undefined;
+  runner: RunnerStatus | undefined;
+  passiveOnly: boolean | undefined;
+  /** /api/tools failed (e.g. the runner is off on this server). */
+  toolsError?: string;
 }
 
 export interface MenuContext {
@@ -31,6 +53,7 @@ export interface MenuContext {
   hasRoom: boolean;
   /** For a group: open groups are drawn below it (so "Collapse all below" has something to do). */
   hasOpenBelow?: boolean;
+  run?: RunContext;
 }
 
 const OVER_BUDGET = 'The canvas is at its ~2,000-element limit. Collapse a group first.';
@@ -76,7 +99,67 @@ export function menuItems(target: ViewNode, ctx: MenuContext): MenuItem[] {
       items.push({ action: 'open-url', label: 'Open URL in new tab' });
     }
     if (ctx.group) items.push({ action: 'collapse-parent', label: 'Collapse group' });
+    items.push(runMenu(target, ctx.run));
   }
-  items.push({ action: 'run-tool', label: 'Run tool (coming later)', disabled: true, hint: 'Needs the orchestrator (Phase 6)' });
   return items;
+}
+
+/** Why a tool of this mode can't run against `node` right now, as far as the UI can tell (the server decides). */
+function blocked(node: GraphNode, mode: ToolMode, run: RunContext, group: string): string | null {
+  if (run.runner && !run.runner.docker.reachable) return 'Docker is not running. Start Docker Desktop.';
+  const image = run.runner?.images.find((i) => i.group === group)?.status;
+  if (image === 'missing') return `The ${group} image is not built. Run pnpm tools:build ${group}.`;
+  if (image === 'outdated') return `The ${group} image is out of date. Run pnpm tools:build ${group}.`;
+  if (scopeModeFor(mode) === 'active' && run.passiveOnly !== false) return 'Passive-only mode is on (Scope panel).';
+  if (node.inScope === 'n/a') return `A ${node.type} is not a target.`;
+  if (node.inScope !== 'in') return 'Out of scope. Add an include rule in the Scope panel.';
+  return null;
+}
+
+const badges = (mode: ToolMode, external: boolean): MenuBadge[] => [
+  { text: mode, tone: mode },
+  ...(external ? [{ text: 'external', tone: 'external' as const }] : []),
+];
+
+/** "Run tool ▸": each group that has a tool for this node type first, then each such tool on its own. */
+export function runItems(node: GraphNode, run: RunContext): MenuItem[] {
+  const tools = (run.tools?.tools ?? []).filter((t) => (t.accepts as readonly string[]).includes(node.type));
+  const items: MenuItem[] = [];
+  for (const group of run.tools?.groups ?? []) {
+    const members = tools.filter((t) => t.group === group.name);
+    if (members.length === 0) continue;
+    // The group's strongest mode decides (any active tool makes the group active).
+    const mode = members.find((t) => t.mode === 'intrusive')?.mode ?? members.find((t) => t.mode === 'active')?.mode ?? 'passive';
+    const why = blocked(node, mode, run, group.name);
+    items.push({
+      action: 'run-group',
+      name: group.name,
+      label: `Run group: ${group.label}`,
+      badges: badges(mode, members.some((t) => t.external.length > 0)),
+      hint: why ?? `${members.map((t) => t.label).join(', ')}: one job each`,
+      ...(why === null ? {} : { disabled: true }),
+    });
+  }
+  for (const tool of tools) {
+    const why = blocked(node, tool.mode, run, tool.group);
+    items.push({
+      action: 'run-tool',
+      name: tool.name,
+      label: tool.label,
+      badges: badges(tool.mode, tool.external.length > 0),
+      hint: why ?? (tool.external.length > 0 ? `Contacts ${tool.external.join(', ')}` : (tool.description ?? undefined)),
+      ...(why === null ? {} : { disabled: true }),
+    });
+  }
+  return items;
+}
+
+function runMenu(node: GraphNode, run: RunContext | undefined): MenuItem {
+  const item: MenuItem = { action: 'run-menu', label: 'Run tool' };
+  if (!run || run.tools === undefined) {
+    return { ...item, disabled: true, hint: run?.toolsError ?? 'Loading the tools…' };
+  }
+  const submenu = runItems(node, run);
+  if (submenu.length === 0) return { ...item, disabled: true, hint: `No tool runs against a ${node.type} yet.` };
+  return { ...item, submenu };
 }

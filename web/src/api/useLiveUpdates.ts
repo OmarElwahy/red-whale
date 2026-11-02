@@ -1,6 +1,6 @@
 // WebSocket events → TanStack Query invalidation (docs/architecture.md §8). Every view (graph, expand pages,
 // neighborhoods, table, highlights, stats, the open node) refetches if it's on screen; the graph wrapper then
-// diffs the new elements in.
+// diffs the new elements in. Job and runner events (§12) refetch only the runner's queries.
 import type { QueryClient } from '@tanstack/react-query';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
@@ -29,11 +29,25 @@ export function connectLive(client: QueryClient, options: ConnectOptions): () =>
     REFRESH_DELAY_MS,
     options.timers,
   );
+  // Job progress refetches only the runner's queries (and the scope log: queueing logs a decision), never the graph:
+  // a group run sends a dozen job.updated events, and the graph only changes when a result is ingested.
+  const refreshRunner = new Coalescer(
+    () => {
+      void client.invalidateQueries({ queryKey: queryKeys.runner });
+      void client.invalidateQueries({ queryKey: queryKeys.scopeLogAll });
+    },
+    REFRESH_DELAY_MS,
+    options.timers,
+  );
   const socket = new LiveSocket({
     url: options.url,
     createSocket: options.createSocket,
     timers: options.timers,
     onEvent: (event) => {
+      if (event.type === 'job.updated' || event.type === 'runner.status') {
+        refreshRunner.request();
+        return;
+      }
       if (event.type === 'graph.updated') useLive.getState().noteUpdated(event.nodeIds, now());
       refresh.request();
     },
@@ -49,6 +63,7 @@ export function connectLive(client: QueryClient, options: ConnectOptions): () =>
   return () => {
     socket.close();
     refresh.cancel();
+    refreshRunner.cancel();
   };
 }
 

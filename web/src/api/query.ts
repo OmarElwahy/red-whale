@@ -40,4 +40,10 @@ export const queryKeys = {
   scopeSettings: ['api', 'scope', 'settings'] as const,
   scopeLog: (sources: string, page: number) => ['api', 'scope', 'log', sources, page] as const,
   scopeLogAll: ['api', 'scope', 'log'] as const,
+  /** Tool runs (§12): job.updated / runner.status refetch only these (and the scope log), never the graph. */
+  runner: ['api', 'runner'] as const,
+  tools: ['api', 'runner', 'tools'] as const,
+  runnerStatus: ['api', 'runner', 'status'] as const,
+  jobs: (page: number) => ['api', 'runner', 'jobs', page] as const,
+  job: (id: number) => ['api', 'runner', 'job', id] as const,
 };

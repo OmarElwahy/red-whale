@@ -23,7 +23,8 @@ approved plan is summarized under "Decisions".
 | 8 | `pnpm tools:check <tool\|--all>` (tools/check.py + TS wrapper), Vitest runs it for every tool | |
 | 9 | job execution → ingest → raw output storage (fake runtime). The real-Docker integration test moved to 3b | done (out of order: 3b–7 blocked on Docker + domain) |
 | 10 | API + WS (`job.updated`, `runner.status`), group jobs | done (out of order) |
-| 11 | UI: Run tool submenu, Jobs tab, header runner status (may split 11a/11b) | |
+| 11a | UI: API hooks (web/src/api/runner.ts), live split, Run tool submenu, header runner chip, run notices | done (out of order) |
+| 11b | UI: Jobs tab (status, duration, +N new/M updated, cancel, raw output, Show results), provenance raw link | next |
 | 12 | Docs: architecture.md (new §12 Orchestrator, §4, §6, §9, decisions log), team-guide.md rewrite, group README, handoff.md | |
 
 ## Decisions (approved plan + user's answers)
@@ -175,21 +176,32 @@ approved plan is summarized under "Decisions".
   job, so it must only invalidate jobs/runner/tools queries (and `runner.status` only runner/tools), not the graph.
 - Tests: `server/test/api/jobs.test.ts` (12).
 
+## Notes from step 11a
+
+- `web/src/api/runner.ts`: `useTools`, `useRunnerStatus` (polls 15 s), `useJobs(page)`, `useJob(id)`, `startRun` /
+  `useStartRun` (403 → `RunRefused` with the reason and refused jobs), `useCancelJob`, `outputUrl(id, stream)`.
+  Query keys under `['api','runner', …]` (`queryKeys.runner/tools/runnerStatus/jobs/job`).
+- live: `job.updated` / `runner.status` → only `queryKeys.runner` + `queryKeys.scopeLogAll` (own Coalescer); other
+  events unchanged (everything). Test in web/test/live.test.ts.
+- Menu (`web/src/menu/items.ts`): action `run-menu` with `submenu` (from `runItems(node, RunContext)`), items
+  `run-group` / `run-tool` with `name` and `badges` ({text, tone: mode|external}). Disabled reasons in order:
+  Docker down → image missing/outdated → passive-only (active/intrusive) → n/a → not in scope (node.inScope, the
+  passive decision). Groups/"more" nodes get no Run tool item any more (was a disabled placeholder).
+  `ContextMenu` opens a submenu in place ("‹ Run tool" goes back), shows badges and, in the submenu, the reason
+  under disabled items; `onAction(item)` (was `action`).
+- App: `runContext` from useTools/useRunnerStatus/useScopeSettings; `run(action, target, name?)` handles
+  run-tool/run-group via useStartRun; result in the header notice (`ui.showNotice`): "subfinder on example.com:
+  queued 1 job" / "… refused: <reason>" / "… failed: <error>". `RunnerIndicator` (web/src/jobs/) in the header:
+  green Docker / amber (images not built) / red Docker off / grey runner off, with running(+queued) count.
+
 ## Next action
 
-Step 11 (UI), still before 3b–8 (blocked on Docker Desktop + the domain). Pieces:
-1. `web/src/api/jobs.ts`: hooks `useTools()`, `useRunnerStatus()`, `useJobs(page)`, `useJob(id)`, mutations
-   `runTool`, `runGroup`, `cancelJob` (parse with the shared schemas; 403 body = jobRefusedResponseSchema).
-2. live.ts: `job.updated` → invalidate only ['api','jobs'…] + runner; `runner.status` → runner + tools; other
-   events unchanged.
-3. Context menu: replace the disabled "Run tool (coming later)" with a "Run tool ▸" submenu (web/src/menu/items.ts
-   is pure + tested; ContextMenu.tsx renders): "Run group: subdomain enumeration" first, then each tool accepting
-   the node type, with a mode badge and "external" badge; disabled with reasons (out of scope: node.inScope !==
-   'in' for passive / passive-only for active; Docker not running; image not built/outdated). Groups/more nodes:
-   no run items.
-4. Bottom panel "Jobs" tab next to Table/Highlights/Scope: status badge, tool, target, duration (ticking while
-   running), "+N new, M updated", error (title), cancel, Raw output dialog (stdout/stderr/raw tabs from
-   /jobs/:id/output/*), "Show results" (select target node + open its path, highlight that scan's provenance rows).
-5. Header chip "Docker ●" (green/red, tooltip version/error/missing images).
-6. Provenance table rows with jobId: a "raw" link to /api/jobs/<id>/output/raw.
-Tests in web/test (items.ts unit tests, jobs panel jsdom test). Then commit "6C-1 step 11" (or 11a/11b).
+Step 11b: `BottomPanel` gets `'jobs'` (web/src/state/ui.ts) + a "Jobs" PanelToggle (with running count) in the
+header next to Scope; `web/src/jobs/JobsPanel.tsx`: table of `useJobs(page)` (newest first, 25/page): status badge,
+tool, target (click = pick node), started, duration (tick every 1 s while running), "+N new, M updated" (nodesCreated
+/ nodesUpdated; "nothing new" when 0/0; "–" when null), error (title, truncated), actions: Cancel (queued/running;
+useCancelJob), Raw output (dialog with stdout/stderr/raw tabs; fetch `/api/jobs/:id` tails or full via outputUrl;
+show "open full output" links), Show results (scanId set: pick the target node → opens its path; set
+`highlightScanId` in ui store so ProvenanceTable highlights rows with that scanId). Open the Jobs panel after a run
+is queued. ProvenanceTable: rows with `jobId` get a "raw" link (outputUrl(jobId, 'raw'), target _blank). jsdom test
+for JobsPanel (render with a fake fetch). Then commit "6C-1 step 11b".

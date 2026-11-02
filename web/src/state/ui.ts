@@ -84,6 +84,8 @@ export interface UiState {
   /** The view the server applied (pruned, auto-opened, expand-all done) becomes the state. */
   adoptView: (state: ViewState, notice?: string | null) => void;
   dismissNotice: () => void;
+  /** A one-line message in the header (e.g. what a run did, or why it was refused). */
+  showNotice: (text: string) => void;
   clearCenterWhenShown: () => void;
   /** Opens the panel, or closes it if it's already showing. */
   toggleBottomPanel: (panel: BottomPanel) => void;
@@ -226,6 +228,9 @@ export const useUi = create<UiState>()((set) => ({
   },
   dismissNotice: () => {
     set({ notice: null });
+  },
+  showNotice: (text) => {
+    set({ notice: text });
   },
   clearCenterWhenShown: () => {
     set({ centerWhenShown: null });

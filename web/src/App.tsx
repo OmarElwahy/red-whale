@@ -36,9 +36,11 @@ import { toElements } from '@/graph/elements';
 import type { GraphHandlers } from '@/graph/events';
 import { PositionSaver } from '@/graph/positions';
 import { ContextMenu } from '@/menu/ContextMenu';
-import { menuItems, safeHttpUrl, type MenuAction } from '@/menu/items';
+import { menuItems, safeHttpUrl, type MenuAction, type RunContext } from '@/menu/items';
 import { HighlightsView } from '@/highlights/HighlightsView';
+import { RunRefused, useRunnerStatus, useStartRun, useTools, type RunRequest } from '@/api/runner';
 import { scopeIsEmpty, useScopeRules, useScopeSettings } from '@/api/scope';
+import { RunnerIndicator } from '@/jobs/RunnerIndicator';
 import { ScopeBanner, ScopePanel } from '@/scope/ScopePanel';
 import { EdgePanel, GroupEdgePanel } from '@/panel/EdgePanel';
 import { SidePanel } from '@/panel/SidePanel';
@@ -255,6 +257,16 @@ export function App() {
   const fresh = useLive((s) => s.fresh);
   const stats = useStats();
   const highlights = useHighlights();
+  const tools = useTools();
+  const runner = useRunnerStatus();
+  const scopeSettings = useScopeSettings();
+  const startRun = useStartRun();
+  const runContext: RunContext = {
+    tools: tools.data,
+    runner: runner.data,
+    passiveOnly: scopeSettings.data?.passiveOnly,
+    ...(tools.error ? { toolsError: `Tool runs are off: ${tools.error.message}` } : {}),
+  };
   const graphRef = useRef<GraphHandle>(null);
   const queryClient = useQueryClient();
   const selectedId = useUi((s) => s.selectedId);
@@ -380,7 +392,19 @@ export function App() {
     ui.collapse(groupId, [...below(ix, groupId).nodes]);
   };
 
-  const run = (action: MenuAction, target: ViewNode) => {
+  /** Queues a run. The server decides (scope at queueing and again at the start); the header says what happened. */
+  const runTool = (req: RunRequest, label: string) => {
+    startRun.mutate(req, {
+      onSuccess: (jobs) => {
+        ui.showNotice(`${label}: queued ${String(jobs.length)} job${jobs.length === 1 ? '' : 's'}`);
+      },
+      onError: (e) => {
+        ui.showNotice(e instanceof RunRefused ? `${label} refused: ${e.message}` : `${label} failed: ${e.message}`);
+      },
+    });
+  };
+
+  const run = (action: MenuAction, target: ViewNode, name?: string) => {
     closeMenu();
     if (!ix) return;
     const group = target.type === 'aggregate' ? target : undefined;
@@ -428,6 +452,15 @@ export function App() {
         break;
       }
       case 'run-tool':
+      case 'run-group':
+        if (target.type !== 'aggregate' && target.type !== 'more' && name !== undefined) {
+          runTool(
+            action === 'run-tool' ? { kind: 'tool', tool: name, nodeId: target.id } : { kind: 'group', group: name, nodeId: target.id },
+            `${action === 'run-tool' ? name : `group ${name}`} on ${target.label}`,
+          );
+        }
+        break;
+      case 'run-menu':
         break;
     }
   };
@@ -541,6 +574,7 @@ export function App() {
         {layingOut && layout === 'tree' && <span className="text-muted-foreground text-xs">laying out tree…</span>}
         <div className="ml-auto flex items-center gap-1">
           <LiveIndicator status={liveStatus} />
+          <RunnerIndicator />
           <LayoutToggle layout={layout} />
           <span className="bg-border mx-1 h-5 w-px" aria-hidden />
           <Button
@@ -630,9 +664,10 @@ export function App() {
                   canExpandNeighbors: canExpandNeighbors(ix),
                   hasRoom: ix.size < ELEMENT_BUDGET,
                   hasOpenBelow: menuTarget.type === 'aggregate' && openBelow(ix, menuTarget.id).groups.length > 0,
+                  run: runContext,
                 })}
-                onAction={(action) => {
-                  run(action, menuTarget);
+                onAction={(item) => {
+                  run(item.action, menuTarget, item.name);
                 }}
                 onClose={closeMenu}
               />
