@@ -130,6 +130,11 @@ export function NodeTable({ selectedId, isShown, onPick, className }: NodeTableP
   const total = data?.total ?? 0;
   const pageSize = data?.pageSize ?? 1;
   const pages = Math.max(1, Math.ceil(total / pageSize));
+  // Rows went away (a delete): don't sit on a page past the end.
+  const loaded = data !== undefined && !list.isPlaceholderData;
+  useEffect(() => {
+    if (loaded && page > pages) useUi.getState().setTablePage(pages);
+  }, [loaded, page, pages]);
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
   const to = Math.min(total, page * pageSize);
 

@@ -14,6 +14,8 @@ export interface LiveState {
   noteUpdated: (ids: readonly string[], now: number) => void;
   /** Forgets IDs whose time is up. */
   prune: (now: number) => void;
+  /** Deleted nodes don't flash if a scan brings them back within the window: they're new then. */
+  forget: (ids: readonly string[]) => void;
 }
 
 export const initialLiveState = { status: 'connecting', fresh: new Map() } satisfies Partial<LiveState>;
@@ -29,6 +31,14 @@ export const useLive = create<LiveState>()((set) => ({
     set((s) => {
       const fresh = new Map(s.fresh);
       for (const id of ids) fresh.set(id, now + FRESH_MS);
+      return { fresh };
+    });
+  },
+  forget: (ids) => {
+    set((s) => {
+      if (!ids.some((id) => s.fresh.has(id))) return s;
+      const fresh = new Map(s.fresh);
+      for (const id of ids) fresh.delete(id);
       return { fresh };
     });
   },

@@ -15,8 +15,8 @@ its subtree or a group, with a deletion log). Approved plan and the user's answe
 | 1 | Delete API: node and subtree modes, groups (under filters), cascade, deletion log, jobs (`node_id` nullable, queued cancelled, running refuses / `cancelJobs=1`), `graph.deleted`, `PUT /layout` skips unknown IDs, tests | done |
 | 2 | Manual node API (`POST /nodes`) through ingest as tool `manual` + duplicate handling (`ifExists: return\|link`) + validation (422 in validator wording) + `manual` reserved on `POST /ingest` and CLI ingest + manual rows don't count toward `source_count` (nodes and edges), tests | done |
 | 3 | UI: add-node dialog (canvas "Add node…" and node "Add child node…") | done |
-| 4 | UI: delete dialog, Deleted tab, live-update cleanup on `graph.deleted` | next |
-| 5 | Docs: architecture.md (§4, §5, §6, §8, decisions log), contract.md note on `manual`, handoff.md | |
+| 4 | UI: delete dialog, Deleted tab, live-update cleanup on `graph.deleted` | done |
+| 5 | Docs: architecture.md (§4, §5, §6, §8, decisions log), contract.md note on `manual`, handoff.md, team-guide note | next |
 
 ## Decisions (approved plan + user's answers, 2026-11-02)
 
@@ -72,24 +72,34 @@ its subtree or a group, with a deletion log). Approved plan and the user's answe
   (or "Select existing node") → `pick(id)` (select + open its path, as a table row).
 - `NEEDS_SEVERITY` exported from shared/src/lint.ts (the dialog asks severity only for those types).
 
-## Step 4 plan (UI: delete dialog, Deleted tab, live cleanup)
+## Step 4 as built
 
-- Menu: node → "Delete…", group → "Delete group…" (actions `delete`); not on "more" nodes.
-- `web/src/edit/DeleteDialog.tsx`: `GET /nodes/:id/delete-preview?<filters>` (group: current filters); two choices with
-  counts ("Delete this node only" N nodes, M edges, K become roots / "Delete with everything below" N nodes, S shared kept;
-  group: "Delete 37 subdomains. 5 more are hidden by your filters and will be kept."); red "can't be undone; tools may
-  find these again". Running jobs in the chosen mode: list them, the Delete button becomes "Cancel job and delete"
-  (`cancelJobs=1`). DELETE with `expect` = the shown count; 409 `changed` → show the new preview and ask again.
-- `useDeleteNode` in web/src/api/edit.ts; on success apply the cleanup at once (don't wait for the WS event).
-- Cleanup (`ui.ts` `forgetDeleted(nodeIds, edgeIds)`): selection/edge selection/focus/menu/anchor/centerWhenShown,
-  expanded groups whose parent was deleted (`agg:<id>:…`) and pins/members that were deleted, neighbors, expandAll;
-  live flash entries (`state/live.ts`); PositionSaver queue drops those IDs; the table clamps its page when past the end.
-  `useLiveUpdates`: on `graph.deleted` call it and invalidate everything (incl. the runner queries: jobs show "node deleted").
-- Bottom panel tab "Deleted" (`web/src/edit/DeletionsPanel.tsx`): GET /deletions paged, newest first; row = when, mode,
-  what (rootLabel, type), count; expands to the removed `type value` list. Read-only.
-- Tests: delete dialog (counts, hidden-by-filters text, running job → Cancel job and delete, 409 changed), ui cleanup,
-  deletions panel, menu items, live event handling.
+- Menu: "Delete…" last on a node, "Delete group…" last on a group (action `delete`); none on "more" nodes.
+- `web/src/edit/DeleteDialog.tsx`: preview via `useDeletePreview` (filters sent only for a group ID); radio choices with
+  counts (node: "this node only" / "with everything below"; group: "the members only" / "the members with everything
+  below", plus "Delete 37 subdomains. 5 more are hidden by your filters and will be kept."); red can't-be-undone line;
+  running jobs listed → button "Cancel job and delete" (`cancelJobs=1`); queued jobs count. DELETE sends
+  `expect` = the shown count; a 409 puts the server's fresh preview in the cache and asks again.
+- `deleteNode()` in web/src/api/edit.ts does the DELETE by hand (sendJson has no DELETE and treats 409 as an error).
+- `forgetDeleted(nodeIds, edgeIds)` (web/src/api/useLiveUpdates.ts) → `useUi.forgetDeleted` (selection, edge selection,
+  focus, menu, anchor, centerWhenShown, centerOn, groups under a deleted parent, pins, neighbors, expandAll; notice
+  "What you had selected was deleted.") + `useLive.forget` (flash). Called on the `graph.deleted` WS event and right
+  after this tab's own delete (then everything under `api` is invalidated). NodeTable clamps its page when past the end.
+  Pending drag saves need nothing: `PUT /layout` skips unknown IDs (step 1).
+- `TYPE_PLURAL` moved to shared/src/enums.ts (server aggregate.ts re-exports it as `PLURAL`).
+- Bottom panel "Deleted" (`web/src/edit/DeletionsPanel.tsx`): paged, rows expand to the removed list.
+
+## Step 5 plan (docs)
+
+- architecture.md: §2 (shared manual.ts), §4 (deletions table, jobs.node_id nullable, manual rule in the confidence
+  paragraphs), §5 (manual scans, reserved tool, `IngestOptions`), §6 (POST /nodes, GET /nodes/:id/delete-preview,
+  DELETE /nodes/:id, GET /deletions, graph.deleted, PUT /layout skips; replace "Nothing is ever deleted (rule 4)"),
+  §8 (menus, dialogs, Deleted tab, cleanup), §9 (a "Graph editing" entry), decisions log (supersede 2026-10-30
+  "No node deletion"; every decision above), Breaking-migrations line unchanged (0005 not breaking).
+- contract.md: note that `manual` is reserved (validator accepts it; server refuses it on ingest).
+- team-guide.md: don't name a tool `manual`. handoff.md: Status row + recent decisions.
+- Then give the user the manual checks (in the final message).
 
 ## Next action
 
-Step 4: implement the plan above, then commit "Graph editing step 4: delete dialog, deletion list, live cleanup".
+Step 5: docs as planned above, commit "Graph editing step 5: docs", push. Then report to the user with the manual checks.

@@ -11,6 +11,7 @@ import {
   NODE_TYPES,
   RELATION_TYPES,
   ROOT_GROUP_THRESHOLD,
+  TYPE_PLURAL,
   aggregateId,
   type AggregateNode,
   type GraphEdge,
@@ -54,20 +55,8 @@ export interface ViewResult {
   expandAll: { nodeId: string; opened: number; hidden: number }[];
 }
 
-/** "412 subdomains", "2 IPs": a group's label. */
-export const PLURAL: Record<NodeType, string> = {
-  domain: 'domains',
-  subdomain: 'subdomains',
-  ip: 'IPs',
-  port: 'ports',
-  url: 'URLs',
-  technology: 'technologies',
-  vulnerability: 'vulnerabilities',
-  email: 'emails',
-  secret: 'secrets',
-  certificate: 'certificates',
-  leak: 'leaks',
-};
+/** A group's label: "412 subdomains". */
+export const PLURAL = TYPE_PLURAL;
 
 // --- the graph, indexed by child set ------------------------------------------------------------------
 

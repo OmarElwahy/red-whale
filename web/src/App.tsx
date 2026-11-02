@@ -38,6 +38,9 @@ import { PositionSaver } from '@/graph/positions';
 import { ContextMenu } from '@/menu/ContextMenu';
 import { canvasMenuItems, menuItems, safeHttpUrl, type MenuAction, type RunContext } from '@/menu/items';
 import { AddNodeDialog, type NodeRef } from '@/edit/AddNodeDialog';
+import { DeleteDialog } from '@/edit/DeleteDialog';
+import { DeletionsPanel } from '@/edit/DeletionsPanel';
+import { forgetDeleted } from '@/api/useLiveUpdates';
 import { HighlightsView } from '@/highlights/HighlightsView';
 import { RunRefused, useRunnerStatus, useStartRun, useTools, type RunRequest } from '@/api/runner';
 import { scopeIsEmpty, useScopeRules, useScopeSettings } from '@/api/scope';
@@ -256,6 +259,8 @@ export function App() {
   const [legendOpen, setLegendOpen] = useState(false);
   /** The Add node dialog: under which node (or none), and where on the canvas (null: laid out automatically). */
   const [adding, setAdding] = useState<{ parent: NodeRef | null; position: { x: number; y: number } | null } | null>(null);
+  /** The delete dialog's node or group. */
+  const [deleting, setDeleting] = useState<string | null>(null);
   useLiveUpdates();
   const liveStatus = useLive((s) => s.status);
   const fresh = useLive((s) => s.fresh);
@@ -477,6 +482,9 @@ export function App() {
           setAdding({ parent: { id: target.id, type: target.type, value: target.value, label: target.label }, position: null });
         }
         break;
+      case 'delete':
+        if (target.type !== 'more') setDeleting(target.id);
+        break;
       case 'run-menu':
         break;
     }
@@ -614,6 +622,9 @@ export function App() {
             Highlights{highlights.data ? ` (${String(highlights.data.length)})` : ''}
           </PanelToggle>
           <ScopeToggle current={bottomPanel} />
+          <PanelToggle panel="deleted" current={bottomPanel}>
+            Deleted
+          </PanelToggle>
           <PanelToggle panel="jobs" current={bottomPanel}>
             Jobs{runner.data && runner.data.running + runner.data.queued > 0 ? ` (${String(runner.data.running + runner.data.queued)})` : ''}
           </PanelToggle>
@@ -751,6 +762,11 @@ export function App() {
               />
             </section>
           )}
+          {bottomPanel === 'deleted' && (
+            <section aria-label="Deleted" className="flex h-[40%] min-h-40 shrink-0 flex-col border-t">
+              <DeletionsPanel className="flex-1" />
+            </section>
+          )}
           {bottomPanel === 'highlights' && (
             <section aria-label="Highlights" className="flex h-[40%] min-h-40 shrink-0 flex-col border-t">
               <HighlightsView
@@ -804,6 +820,22 @@ export function App() {
           />
         )}
       </main>
+      {deleting !== null && (
+        <DeleteDialog
+          id={deleting}
+          filters={filters}
+          onDeleted={(result) => {
+            setDeleting(null);
+            // At once, not when the event comes back: nothing on screen should point at them meanwhile.
+            forgetDeleted(result.nodeIds, result.edgeIds);
+            ui.showNotice(`Deleted ${String(result.nodeIds.length)} node${result.nodeIds.length === 1 ? '' : 's'}`);
+            void queryClient.invalidateQueries({ queryKey: queryKeys.all });
+          }}
+          onClose={() => {
+            setDeleting(null);
+          }}
+        />
+      )}
       {adding && (
         <AddNodeDialog
           parent={adding.parent}

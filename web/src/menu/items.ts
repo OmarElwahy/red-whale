@@ -20,7 +20,9 @@ export type MenuAction =
   /** The empty canvas: open the Add node dialog. */
   | 'add-node'
   /** A node: the Add node dialog with this node as the parent. */
-  | 'add-child';
+  | 'add-child'
+  /** A node or a group: the delete dialog. */
+  | 'delete';
 
 export interface MenuBadge {
   text: string;
@@ -95,6 +97,7 @@ export function menuItems(target: ViewNode, ctx: MenuContext): MenuItem[] {
     } else {
       items.push({ action: 'expand', label: `Expand (${String(target.count)})`, ...budget(target.canLoadMore) });
     }
+    items.push({ action: 'delete', label: 'Delete group…' });
   } else {
     items.push({ action: 'expand-neighbors', label: 'Expand neighbors', ...budget(ctx.canExpandNeighbors) });
     items.push({ action: 'expand-all-below', label: 'Expand all below', ...budget(ctx.hasRoom) });
@@ -110,6 +113,7 @@ export function menuItems(target: ViewNode, ctx: MenuContext): MenuItem[] {
       label: 'Add child node…',
       ...(children.length > 0 ? {} : { disabled: true, hint: `Nothing can hang under a ${target.type}.` }),
     });
+    items.push({ action: 'delete', label: 'Delete…' });
   }
   return items;
 }

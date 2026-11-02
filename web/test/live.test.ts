@@ -14,6 +14,7 @@ import {
 import { queryKeys } from '../src/api/query';
 import { REFRESH_DELAY_MS, connectLive } from '../src/api/useLiveUpdates';
 import { FRESH_MS, initialLiveState, useLive } from '../src/state/live';
+import { initialUiState, useUi } from '../src/state/ui';
 
 /** Sockets the fake factory opened, newest last. The test drives their open/close/message by hand. */
 function fakeSockets() {
@@ -220,6 +221,20 @@ describe('connectLive', () => {
       ['n1', 1000 + FRESH_MS],
       ['n2', 1000 + FRESH_MS],
     ]);
+  });
+
+  test('graph.deleted: forgets the deleted nodes everywhere (selection, flash) and refetches everything', () => {
+    useUi.setState(initialUiState);
+    useUi.getState().select('n1');
+    useLive.getState().noteUpdated(['n1', 'n3'], 1000);
+    const { invalidate, sockets } = connect();
+    sockets.last().handlers.onOpen();
+    sockets.last().handlers.onMessage(JSON.stringify({ type: 'graph.deleted', nodeIds: ['n1'], edgeIds: ['e1'] }));
+    expect(useUi.getState().selectedId).toBeNull();
+    expect(useUi.getState().notice).toBe('What you had selected was deleted.');
+    expect([...useLive.getState().fresh.keys()]).toEqual(['n3']);
+    vi.advanceTimersByTime(REFRESH_DELAY_MS);
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: queryKeys.all });
   });
 
   test('job and runner events refetch only the runner queries and the scope log, never the graph', () => {

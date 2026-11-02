@@ -5,8 +5,18 @@ import type { QueryClient } from '@tanstack/react-query';
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { useLive } from '@/state/live';
+import { useUi } from '@/state/ui';
 import { Coalescer, LiveSocket, liveUrl, type SocketFactory, type Timers } from './live';
 import { queryKeys } from './query';
+
+/**
+ * Nodes and edges were deleted (a `graph.deleted` event, or this tab's own delete): drop every reference the UI holds.
+ * The refetch that follows removes them from the canvas, the table and the panels.
+ */
+export function forgetDeleted(nodeIds: readonly string[], edgeIds: readonly string[]): void {
+  useUi.getState().forgetDeleted(nodeIds, edgeIds);
+  useLive.getState().forget(nodeIds);
+}
 
 /** Events closer together than this cause one refetch. */
 export const REFRESH_DELAY_MS = 200;
@@ -49,6 +59,7 @@ export function connectLive(client: QueryClient, options: ConnectOptions): () =>
         return;
       }
       if (event.type === 'graph.updated') useLive.getState().noteUpdated(event.nodeIds, now());
+      if (event.type === 'graph.deleted') forgetDeleted(event.nodeIds, event.edgeIds);
       refresh.request();
     },
     onStatus: (status) => {

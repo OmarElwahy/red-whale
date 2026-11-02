@@ -1,6 +1,6 @@
 // UI state (Zustand): what's selected, focused and open, and where the context menu is. Server data lives in
 // TanStack Query; this only says which groups are open (docs/architecture.md §7), which the server then draws.
-import { DEFAULT_NODE_SORT, type GroupOpen, type ViewState } from '@redwhale/shared';
+import { DEFAULT_NODE_SORT, parseAggregateId, type GroupOpen, type ViewState } from '@redwhale/shared';
 import { create } from 'zustand';
 
 export interface MenuState {
@@ -14,7 +14,7 @@ export interface MenuState {
 }
 
 /** The panel under the graph. */
-export type BottomPanel = 'table' | 'highlights' | 'scope' | 'jobs';
+export type BottomPanel = 'table' | 'highlights' | 'scope' | 'jobs' | 'deleted';
 
 export interface TableState {
   page: number;
@@ -112,6 +112,18 @@ export interface UiState {
    * the table goes back to page 1.
    */
   clearOverlays: () => void;
+  /**
+   * These nodes and edges were deleted (here or in another tab): forget every reference to them, so nothing asks for
+   * them again. A selection, focus or menu on them goes; groups under a deleted parent and pins of deleted members go.
+   */
+  forgetDeleted: (nodeIds: readonly string[], edgeIds: readonly string[]) => void;
+}
+
+/** The group's parent, if it's a group ID with one. */
+function groupParent(id: string): string | null {
+  if (!id.startsWith('agg:')) return null;
+  const key = parseAggregateId(id);
+  return 'error' in key ? null : key.parentId;
 }
 
 export const initialUiState = {
@@ -273,6 +285,39 @@ export const useUi = create<UiState>()((set) => ({
   },
   clearJump: () => {
     set({ jumpPending: false });
+  },
+  forgetDeleted: (nodeIds, edgeIds) => {
+    if (nodeIds.length === 0 && edgeIds.length === 0) return;
+    const gone = new Set(nodeIds);
+    const goneEdges = new Set(edgeIds);
+    /** A deleted node, or a group hanging under one. */
+    const lost = (id: string | null) => {
+      if (id === null) return false;
+      if (gone.has(id)) return true;
+      const parent = groupParent(id);
+      return parent !== null && gone.has(parent);
+    };
+    set((s) => {
+      const expanded = s.expanded
+        .filter((x) => !lost(x.id))
+        .map((x) => (x.pins.some((p) => gone.has(p)) ? { ...x, pins: x.pins.filter((p) => !gone.has(p)) } : x))
+        // An entry opened only for its pins means nothing once they're gone.
+        .filter((x) => x.pages > 0 || x.pins.length > 0);
+      const selectionLost = lost(s.selectedId) || (s.selectedEdgeId !== null && goneEdges.has(s.selectedEdgeId));
+      return {
+        selectedId: lost(s.selectedId) ? null : s.selectedId,
+        selectedEdgeId: s.selectedEdgeId !== null && goneEdges.has(s.selectedEdgeId) ? null : s.selectedEdgeId,
+        focusId: lost(s.focusId) ? null : s.focusId,
+        menu: s.menu !== null && lost(s.menu.id) ? null : s.menu,
+        anchor: s.anchor !== null && lost(s.anchor.id) ? null : s.anchor,
+        centerWhenShown: lost(s.centerWhenShown) ? null : s.centerWhenShown,
+        centerOn: s.centerOn !== null && lost(s.centerOn.id) ? null : s.centerOn,
+        expanded,
+        neighbors: s.neighbors.filter((id) => !gone.has(id)),
+        expandAll: s.expandAll.filter((id) => !gone.has(id)),
+        notice: selectionLost ? 'What you had selected was deleted.' : s.notice,
+      };
+    });
   },
   clearOverlays: () => {
     set((s) => ({

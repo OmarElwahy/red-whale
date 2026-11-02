@@ -17,6 +17,21 @@ export const NODE_TYPES = [
 ] as const;
 export type NodeType = (typeof NODE_TYPES)[number];
 
+/** "412 subdomains", "2 IPs": group labels and the delete dialog. */
+export const TYPE_PLURAL: Record<NodeType, string> = {
+  domain: 'domains',
+  subdomain: 'subdomains',
+  ip: 'IPs',
+  port: 'ports',
+  url: 'URLs',
+  technology: 'technologies',
+  vulnerability: 'vulnerabilities',
+  email: 'emails',
+  secret: 'secrets',
+  certificate: 'certificates',
+  leak: 'leaks',
+};
+
 export const RELATION_TYPES = [
   'has_subdomain',
   'resolves_to',

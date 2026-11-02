@@ -15,7 +15,7 @@ const actions = (items: ReturnType<typeof menuItems>) => items.map((i) => i.acti
 describe('menuItems', () => {
   test('an ordinary node: focus, expand neighbors, expand all below, copy, and run tool (loading until the tools come)', () => {
     const items = menuItems(node('a'), ctx());
-    expect(actions(items)).toEqual(['focus', 'expand-neighbors', 'expand-all-below', 'copy-value', 'run-menu', 'add-child']);
+    expect(actions(items)).toEqual(['focus', 'expand-neighbors', 'expand-all-below', 'copy-value', 'run-menu', 'add-child', 'delete']);
     expect(items.find((i) => i.action === 'run-menu')).toMatchObject({ disabled: true, label: 'Run tool', hint: 'Loading the tools…' });
   });
 
@@ -28,6 +28,12 @@ describe('menuItems', () => {
       hint: 'Nothing can hang under a leak.',
     });
     expect(actions(menuItems(openGroup, ctx()))).not.toContain('add-child');
+  });
+
+  test('"Delete…" on a node, "Delete group…" on a group, nothing on a "more" node', () => {
+    expect(menuItems(node('a'), ctx()).at(-1)).toEqual({ action: 'delete', label: 'Delete…' });
+    expect(menuItems(openGroup, ctx()).at(-1)).toEqual({ action: 'delete', label: 'Delete group…' });
+    expect(actions(menuItems(more(openGroup.id, 150), ctx({ group: openGroup })))).not.toContain('delete');
   });
 
   test('the empty canvas offers "Add node…"', () => {
@@ -62,7 +68,7 @@ describe('menuItems', () => {
 
   test('a collapsed group: expand with its size, no copy or neighbors', () => {
     const items = menuItems(aggregate({ count: 420 }), ctx());
-    expect(actions(items)).toEqual(['focus', 'expand']);
+    expect(actions(items)).toEqual(['focus', 'expand', 'delete']);
     expect(items[1]?.label).toBe('Expand (420)');
   });
 
@@ -72,7 +78,7 @@ describe('menuItems', () => {
 
   test('an open group: collapse, collapse all below, and load more with what is left', () => {
     const items = menuItems(openGroup, ctx({ hasOpenBelow: true }));
-    expect(actions(items)).toEqual(['focus', 'collapse', 'collapse-below', 'load-more']);
+    expect(actions(items)).toEqual(['focus', 'collapse', 'collapse-below', 'load-more', 'delete']);
     expect(items[3]?.label).toBe('Load more (150 left)');
     expect(items[2]?.disabled).toBeUndefined();
   });

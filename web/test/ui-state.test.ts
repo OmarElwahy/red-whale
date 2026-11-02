@@ -12,6 +12,42 @@ describe('UI state', () => {
     useUi.setState(initialUiState);
   });
 
+  test('forgetDeleted: drops the selection, focus, menu, groups under deleted parents, pins, neighbors and expand-all', () => {
+    const P = '0123456789abcdef';
+    useUi.setState({
+      selectedId: 'gone',
+      focusId: 'gone',
+      menu: { id: A, x: 1, y: 2 },
+      anchor: { id: 'gone', seq: 3 },
+      centerWhenShown: 'gone',
+      expanded: [open(A), open(B, 0, ['gone']), open(C, 1, ['gone', 'kept'])],
+      neighbors: ['gone', 'kept'],
+      expandAll: ['gone'],
+    });
+    ui().forgetDeleted(['gone', P], []);
+    expect(ui()).toMatchObject({
+      selectedId: null,
+      focusId: null,
+      menu: null,
+      anchor: null,
+      centerWhenShown: null,
+      // A hangs under the deleted P; B was open only for the deleted pin; C keeps its page and its other pin.
+      expanded: [open(C, 1, ['kept'])],
+      neighbors: ['kept'],
+      expandAll: [],
+      notice: 'What you had selected was deleted.',
+    });
+  });
+
+  test('forgetDeleted leaves what it does not name alone; a deleted edge clears the edge selection', () => {
+    useUi.setState({ selectedId: 'x', expanded: [open(A)] });
+    ui().forgetDeleted(['other'], ['e9']);
+    expect(ui()).toMatchObject({ selectedId: 'x', expanded: [open(A)], notice: null });
+    useUi.setState({ selectedId: null, selectedEdgeId: 'e9' });
+    ui().forgetDeleted([], ['e9']);
+    expect(ui().selectedEdgeId).toBeNull();
+  });
+
   test('expanding opens the first page once; loading more adds a page and moves the group last', () => {
     ui().expandGroup(A);
     ui().expandGroup(B);
