@@ -18,7 +18,7 @@ approved plan is summarized under "Decisions".
 | 3b | Build the image with Docker (`pnpm tools:build`), fix what the real build shows, check hardening in a real container. Needs Docker Desktop | done |
 | 4 | subfinder script + anonymized real fixture + expected.json | done |
 | 5 | assetfinder (same) | done |
-| 6 | findomain (same) | |
+| 6 | findomain (same) | done |
 | 7 | crt.sh (same; retries unit-tested in Python) | |
 | 8 | `pnpm tools:check <tool\|--all>` (tools/check.py + TS wrapper), Vitest runs it for every tool | |
 | 9 | job execution → ingest → raw output storage (fake runtime). The real-Docker integration test moved to 3b | done (out of order: 3b–7 blocked on Docker + domain) |
@@ -252,10 +252,21 @@ approved plan is summarized under "Decisions".
   subfinder (www/api/mail/pine/cobalt/… overlap → corroboration across fixtures).
 - Image now `redwhale-tools/subdomain:5f11224f200a`.
 
+## Notes from step 6
+
+- findomain 10.0.1: no JSON; `-q` = hosts only. Command `findomain -t <t> -q` (no -r/-i: no resolving, stays
+  passive). Its keyless sources (CertSpotter, crt.sh database, Sublist3r API, ThreatCrowd, AnubisDB, urlscan.io,
+  ThreatMiner — now the tool.json `external` list) gave 6 lines incl. the apex (~21 s); fixture = 6 real + 6 edited
+  edge-case lines; replay 5 findings, 3 ignored. Image now `redwhale-tools/subdomain:738501433543`.
+
 ## Next action
 
-Step 6 (findomain): check `findomain --help` for a machine-readable/quiet mode (`-q` quiet prints hosts only;
-there is no JSON output in 10.0.1 as far as known — confirm), no update check / no external DB, and a run timeout
-flag. Capture in the image (hardened, `MSYS_NO_PATHCONV=1`), write `tools/subdomain/findomain/run.py`, anonymize
-with scratchpad `anon.py`, ~50 lines + edge cases, NOTE.md, expected.json from a replay (review), rebuild, real run,
-checks, grep for the real domain, commit "6C-1 step 6".
+Step 7 (crt.sh): no binary. `tools/subdomain/crtsh/run.py` uses `main(TOOL, parse, fetch=fetch)`: GET
+`https://crt.sh/?q=%25.<t>&output=json` with urllib (timeout ~60 s per try, 3 tries with backoff 5/15/45 s on
+timeout, 5xx, 429 or a body that isn't JSON; stop early if the total would pass the script timeout), set
+`run.command` to the URL, return the body (raw.txt). parse: JSON array of certs; `name_value` (newline-separated
+names) + `common_name`; add_subdomain each; data e.g. `{"crtsh_ids": [...]}` or issuer — keep it small. Unit test
+`tools/subdomain/crtsh/test_crtsh.py` for the retry logic with a fake opener (no network). Capture the real JSON
+in the image; anonymize names AND other identifying fields (emails, other real domains in SANs → anon.fake_domain,
+issuer names can stay: public CAs); keep ~40 entries + edge cases (wildcards, uppercase, multi-name name_value,
+emails in name_value). NOTE.md, expected.json, rebuild, real run, checks, grep, commit "6C-1 step 7".

@@ -1,0 +1,12 @@
+www.umber.northwind.example
+ember2.northwind.example
+indigo.northwind.example
+sable.northwind.example
+northwind.example
+umber.northwind.example
+WWW.UMBER.NORTHWIND.EXAMPLE
+ember2.northwind.example.
+*.indigo.northwind.example
+www.umber.northwind.example
+mail.alder-corp.example
+

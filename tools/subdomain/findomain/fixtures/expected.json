@@ -1,0 +1,52 @@
+{
+  "target": "northwind.example",
+  "status": "success",
+  "errors": [],
+  "findings": [
+    {
+      "type": "subdomain",
+      "value": "ember2.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "indigo.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "sable.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "umber.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "www.umber.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    }
+  ]
+}
