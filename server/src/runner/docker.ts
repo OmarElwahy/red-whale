@@ -1,4 +1,4 @@
-// The ONE file that talks to Docker (docs/architecture.md §10, §12; enforced by eslint.config.js and
+// The ONE file that talks to Docker (docs/architecture.md §10, §11; enforced by eslint.config.js and
 // server/test/guard.test.ts). It implements ContainerRuntime with dockerode and adds nothing of its own: what a
 // container looks like (user, limits, mounts, labels) is decided by spec.ts and passed through unchanged.
 //

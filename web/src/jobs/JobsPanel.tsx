@@ -1,4 +1,4 @@
-// The Jobs tab (docs/architecture.md §8, §12): every tool run, newest first, live over job.updated. Each row says
+// The Jobs tab (docs/architecture.md §8, §11): every tool run, newest first, live over job.updated. Each row says
 // what the run found ("+14 new, 6 updated"), can be cancelled while queued or running, opens its raw output, and
 // jumps to the result (the target node, with that scan's provenance rows highlighted).
 import type { Job, JobStatus } from '@redwhale/shared';

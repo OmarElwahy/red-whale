@@ -4,7 +4,7 @@ Paste this file into a new chat to continue where we left off. It holds the cont
 other docs. Source of truth for design details is still `docs/architecture.md` (incl. the decisions log),
 `docs/contract.md` and `CLAUDE.md` — attach `docs/architecture.md` too if the question is technical.
 
-_Last updated: 2026-11-01_
+_Last updated: 2026-11-02_
 
 ## Who / what
 
@@ -22,7 +22,7 @@ _Last updated: 2026-11-01_
 TypeScript (pinned 6.0.x) · pnpm monorepo `shared/` `server/` `web/` · Zod · Fastify + WebSocket on
 127.0.0.1:4100 · SQLite via better-sqlite3 + Drizzle · Vite + React on 127.0.0.1:5173 · Cytoscape.js + fcose ·
 Zustand · TanStack Query + Table · Tailwind + shadcn/ui · react-markdown · Vitest · elkjs (Tree layout, in a Web Worker).
-Dropped: `cytoscape-expand-collapse` (aggregation is server-side). Docker/Dockerode comes in Phase 6C. Added in 6A: `tldts` (bundled Public Suffix List, for the scope guard). Added in 5D: `lucide-static` 1.59.0 (ISC, node-type icons, bundled per icon).
+Dropped: `cytoscape-expand-collapse` (aggregation is server-side). Added in 6C-1: `dockerode` 5.0.1 + `tar-stream` 3.2.2 (Docker runner, only in `server/src/runner/docker.ts`), Docker Desktop (WSL2), Python tool scripts in containers. Added in 6A: `tldts` (bundled Public Suffix List, for the scope guard). Added in 5D: `lucide-static` 1.59.0 (ISC, node-type icons, bundled per icon).
 
 ## Status
 
@@ -39,7 +39,8 @@ Dropped: `cytoscape-expand-collapse` (aggregation is server-side). Docker/Docker
 | 5D | Graph pass: an icon per node type in a circle, header legend; collapsible groups for every output (2+ siblings of one kind = a group, collapsed by default, stays as the members' parent, recursive collapse, risk badge, auto-open on live updates, paths opened as pins, expand all below), `POST /graph/view`, `GET /graph/path` | ✅ code + tests done; checked in headless Chrome; manual check pending |
 | 6A | Scope guard: rules + `checkScope`, `authorize()` → `ScopedTarget`, dockerode/child_process lint guard, scope API + log, `inScope` on nodes, Scope panel, banner, out-of-scope hatch, mocks seed a scope | ✅ code + tests done; manual check pending |
 | 6B | Edge provenance: `edge_observations` (one per edge per scan), derived edge first/last seen, source_count, confidence (discovered/corroborated); `GET /edges/:id`; provenance on node-detail and graph edges (group edges: union of members' tools); edge side panel; corroborated edges thicker | ✅ code + tests done on branch `phase-6b` (not merged); manual check pending |
-| 6C+ | 6C Docker orchestrator (runner behind `authorize()`), 6D presets + auto-chaining (redirects re-check scope per hop), 6E scan diffing; then reports, CVE monitor, local LLM scoring, JS agent | later |
+| 6C-1 | Orchestrator core + subdomain enumeration group: hardened containers (non-root, read-only, cap-drop ALL, limits, per-job `/out` volume), jobs table + SQLite queue (cap 2), `authorize()` at queueing and right before each start, restart/orphan cleanup, tool.json/group.json, one image per group (`pnpm tools:build`), subfinder/assetfinder/findomain/crt.sh with anonymized real fixtures, `pnpm tools:check`, jobs API + WS, Run tool menu, Jobs tab, Docker status chip, team guide rewritten | ✅ code + tests done on branch `phase-6c1` (not merged); manual check pending |
+| 6C+ | Other tool groups (teammates' scripts), 6D presets + auto-chaining (redirects re-check scope per hop), 6E scan diffing; then reports, CVE monitor, local LLM scoring, JS agent | later |
 
 ## How I work with Claude Code
 
@@ -112,6 +113,18 @@ Dropped: `cytoscape-expand-collapse` (aggregation is server-side). Docker/Docker
   would be visible, since they're all inside groups). Parent → group edges show the members' tools, never thicker.
 - Known limit: the `tool` filter still selects nodes, so it can keep an edge that tool never reported.
 
+## Recent decisions (Phase 6C-1, tool runner)
+
+- One container per job from the group's image; `authorize()` at queueing and again right before the container starts;
+  scope changes cancel queued jobs; a refused run is a 403 with the reason and is kept as a `refused` job.
+- `/out` is a per-job named Docker volume (a tmpfs disappears when the container exits), removed right after the fetch
+  and in the startup orphan cleanup. Size caps enforced while reading (raw/logs 5 MB, result.json ≤ 50 MB).
+- One folder per tool (`tool.json`, `run.py`, `fixtures/`), one image per group tagged by the hash of its files;
+  `.dockerignore` keeps fixtures/tests out. Scripts: stdlib Python on top of `tools/lib/redwhale_tool.py`.
+- Fixtures are real outputs from an authorized bug-bounty target, anonymized to `northwind.example` (the target isn't
+  named in the repo; it was once, in a pushed progress-doc commit, then removed).
+- Jobs show "+N new, M updated"; "Show results" = the target node with that scan's provenance rows highlighted.
+
 ## Open items to remember
 
 - 5D manual check: `pnpm mock`, open groups at three levels, search deep, live ingest into an open group (see the
@@ -128,7 +141,10 @@ Dropped: `cytoscape-expand-collapse` (aggregation is server-side). Docker/Docker
 - ~~Edges have no provenance yet~~ — done in 6B (`edge_observations`); scan diffing is 6E.
 - 6B manual check: `pnpm mock`, click a thick (corroborated) edge and a thin one, a group edge, a member edge; check
   the export has `edgeObservations`.
-- 6C runner: call `authorize()` right before each run and `assertScoped()` the target; dockerode only in
-  `server/src/runner/docker.ts` (lint + test already enforce it).
+- 6C-1 manual check (see the end of the 6C-1 session / docs/phase-6c1-progress.md): `pnpm tools:build`, run the
+  group on an authorized domain, corroborated subdomains, cancel a running job, stop Docker → header goes red.
+- Every `pnpm tools:build` after a script change leaves the previous image tag behind (`docker image prune` cleans
+  them); maybe make tools:build remove older images of the group.
+- Teammates who copied the old `team-tool-template` branch's template must move to `docs/team-guide.md`.
 - After Phase 5: plan the DEPI demo. Best moment = running `pnpm ingest` live and watching the map grow.
   Take screenshots of each milestone for slides.

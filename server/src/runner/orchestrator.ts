@@ -1,4 +1,4 @@
-// The job queue (docs/architecture.md §12). Jobs live in SQLite (so the queue survives restarts); at most
+// The job queue (docs/architecture.md §11). Jobs live in SQLite (so the queue survives restarts); at most
 // `maxConcurrent` run at once. Every container start is preceded by a fresh authorize(): the decision taken when
 // the job was queued is never reused. What happens after a container exits (fetch /out, ingest) is the `finish`
 // hook (job.ts); this file owns the lifecycle: queue → re-check → create → start → wait/timeout/cancel → clean up.

@@ -1,4 +1,4 @@
-// /api/tools, /api/jobs, /api/runner (docs/architecture.md §6, §12). Every run goes through the orchestrator,
+// /api/tools, /api/jobs, /api/runner (docs/architecture.md §6, §11). Every run goes through the orchestrator,
 // which calls authorize() when the job is queued and again right before its container starts.
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
 import { join } from 'node:path';

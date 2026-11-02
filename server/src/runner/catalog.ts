@@ -1,4 +1,4 @@
-// Loads the tool definitions from tools/ (docs/architecture.md §12): one folder per group (group.json,
+// Loads the tool definitions from tools/ (docs/architecture.md §11): one folder per group (group.json,
 // Dockerfile) with one folder per tool (tool.json, run.py, fixtures/). Validated as a whole: a bad or inconsistent
 // definition is a startup error naming every problem, never a surprise mid-run.
 //

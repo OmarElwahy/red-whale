@@ -1,4 +1,4 @@
-// Container spec, hardening and argv building (docs/architecture.md §12): pure, no Docker.
+// Container spec, hardening and argv building (docs/architecture.md §11): pure, no Docker.
 import { describe, expect, test } from 'vitest';
 import { toolDefSchema, type ToolDef } from '../src/runner/defs';
 import { ArgumentInjection, DEFAULT_LIMITS, buildArgv, containerSpec, safeArgValue } from '../src/runner/spec';

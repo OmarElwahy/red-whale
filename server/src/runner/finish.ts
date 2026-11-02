@@ -1,4 +1,4 @@
-// What happens after a tool's container exits (docs/architecture.md §12): fetch /out and the logs (size caps
+// What happens after a tool's container exits (docs/architecture.md §11): fetch /out and the logs (size caps
 // enforced while reading), keep the raw output under data/jobs/<id>/, and put result.json through the normal
 // ingest. A result that fails validation fails the job with the exact issues; nothing is "fixed" here.
 import { mkdirSync, writeFileSync } from 'node:fs';

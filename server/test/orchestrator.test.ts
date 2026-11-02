@@ -1,4 +1,4 @@
-// The job queue with a fake container runtime (docs/architecture.md §12): scope at queue and at start, concurrency,
+// The job queue with a fake container runtime (docs/architecture.md §11): scope at queue and at start, concurrency,
 // timeouts, cancelling, restarts and orphans.
 import { nodeId } from '@redwhale/shared';
 import { eq } from 'drizzle-orm';

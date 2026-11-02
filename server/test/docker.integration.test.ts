@@ -1,4 +1,4 @@
-// The real Docker runner (docs/architecture.md §12). Runs only when Docker is reachable and the subdomain image is
+// The real Docker runner (docs/architecture.md §11). Runs only when Docker is reachable and the subdomain image is
 // built (pnpm tools:build subdomain); skipped otherwise. Uses short python3 -c programs in that image instead of the
 // tools, so it never touches the network.
 import { spawnSync } from 'node:child_process';

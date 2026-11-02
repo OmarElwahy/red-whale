@@ -1,4 +1,4 @@
-// A job's result through the normal ingest (docs/architecture.md §12), with the fake runtime: scan linked, raw output
+// A job's result through the normal ingest (docs/architecture.md §11), with the fake runtime: scan linked, raw output
 // kept and capped, invalid results failing with their issues, and two tools corroborating a subdomain.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';

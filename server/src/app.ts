@@ -35,7 +35,7 @@ export interface AppOptions {
   port?: number;
   maxElements?: number;
   logger?: boolean;
-  /** The tool runner (docs/architecture.md §12). Without it, the /api/tools, /jobs and /runner routes answer 503. */
+  /** The tool runner (docs/architecture.md §11). Without it, the /api/tools, /jobs and /runner routes answer 503. */
   runner?: RunnerOptions;
 }
 

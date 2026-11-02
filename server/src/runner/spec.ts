@@ -1,4 +1,4 @@
-// Pure: a tool definition + a ScopedTarget → the exact container to create (docs/architecture.md §12).
+// Pure: a tool definition + a ScopedTarget → the exact container to create (docs/architecture.md §11).
 // The hardening lives here, as plain Engine API JSON, so every option is unit-tested without Docker.
 import { assertScoped, type ScopedTarget } from '../scope/authorize';
 import { TARGET_PLACEHOLDER, type ToolDef } from './defs';

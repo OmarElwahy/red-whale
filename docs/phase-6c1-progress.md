@@ -25,7 +25,7 @@ approved plan is summarized under "Decisions".
 | 10 | API + WS (`job.updated`, `runner.status`), group jobs | done (out of order) |
 | 11a | UI: API hooks (web/src/api/runner.ts), live split, Run tool submenu, header runner chip, run notices | done (out of order) |
 | 11b | UI: Jobs tab (status, duration, +N new/M updated, cancel, raw output, Show results), provenance raw link | done (out of order) |
-| 12 | Docs: architecture.md (new §12 Orchestrator, §4, §6, §9, decisions log), team-guide.md rewrite, group README, handoff.md | |
+| 12 | Docs: architecture.md (new §11 Tool runs; §4, §6, §8, §9, §10, decisions log; decisions log is now §12), team-guide.md rewrite, group README, handoff.md, CLAUDE.md commands | done |
 
 ## Decisions (approved plan + user's answers)
 
@@ -285,12 +285,16 @@ approved plan is summarized under "Decisions".
 - Tests in server/test/tools-fixtures.test.ts: --all passes on the repo; a parser losing findings, invalid values,
   missing expected.json (+ --update), missing NOTE.md, unknown tool — on a temp copy of tools/.
 
+## Notes from step 12
+
+- The orchestrator section is **§11** (between the scope guard and the decisions log, now §12); every "§12" reference
+  in code/comments was renamed to §11.
+- End-to-end smoke (scratch DB, server on 4101, real Docker, real target via the API): group of 4 queued, 2 running
+  at once; all succeeded (subfinder +533/27, assetfinder +26/1, findomain 0/9, crtsh 0/9), 30 corroborated
+  subdomains, no labelled containers/volumes left, raw output + tails + provenance jobId fine, foreign Origin 403.
+  Not checked by me: the UI in a real browser (manual check).
+
 ## Next action
 
-Step 12 (docs), the last one: architecture.md (new §12 "Tool runs (orchestrator)": runner/docker.ts, hardening,
-per-job volume, caps, queue/concurrency/re-auth/restart/orphans/monitor, tool.json/group.json, image tags by context
-hash, finish/ingest/raw storage; §4 data model jobs + runner_state; §6 API rows + WS events; §8 UI: run menu, Jobs
-tab, runner chip, provenance raw link; §9 phase 6C = 6C-1 done; §10 who may run things: runner file now exists;
-decisions log entries for every decision in this file), docs/team-guide.md rewritten as "How to add your tool",
-tools/subdomain/README.md (tools, "later": amass, sublist3r, chaos, shosubgo, github-subdomains, ffuf), handoff.md
-status row 6C-1. Then the final report to the user with the manual checks.
+Phase 6C-1 is complete. Waiting for the user's manual check; they merge into main. Nothing else to do on this branch
+unless they report problems.

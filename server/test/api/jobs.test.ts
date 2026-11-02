@@ -1,4 +1,4 @@
-// /api/tools, /api/jobs, /api/runner (docs/architecture.md §6, §12), on the real tool catalog (tools/) and a fake
+// /api/tools, /api/jobs, /api/runner (docs/architecture.md §6, §11), on the real tool catalog (tools/) and a fake
 // container runtime.
 import { join } from 'node:path';
 import {

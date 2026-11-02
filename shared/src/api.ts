@@ -654,7 +654,7 @@ export const exportResponseSchema = z.strictObject({
   ),
 });
 
-// --- tool runs (docs/architecture.md §12) ------------------------------------------------------------
+// --- tool runs (docs/architecture.md §11) ------------------------------------------------------------
 
 export const IMAGE_STATUSES = ['built', 'outdated', 'missing', 'unknown'] as const;
 export type ImageStatus = (typeof IMAGE_STATUSES)[number];

@@ -1,4 +1,4 @@
-// Header chip (docs/architecture.md §12): is Docker reachable, and are the tool images built? Polled, and refetched
+// Header chip (docs/architecture.md §11): is Docker reachable, and are the tool images built? Polled, and refetched
 // at once when the server pushes runner.status.
 import type { RunnerStatus } from '@redwhale/shared';
 import { useRunnerStatus } from '@/api/runner';

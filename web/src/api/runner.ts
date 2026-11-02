@@ -1,4 +1,4 @@
-// Tool runs (docs/architecture.md §12): the tools, the runner's status, the jobs, and starting/cancelling runs.
+// Tool runs (docs/architecture.md §11): the tools, the runner's status, the jobs, and starting/cancelling runs.
 // Every run is decided by the server (authorize() at queueing and again right before the container starts); what
 // the UI shows as disabled is only advice.
 import {

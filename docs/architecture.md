@@ -1,7 +1,7 @@
 # RED WHALE — Architecture & Build Plan
 
-Scope of this document: the **data contract, database, API, and graph UI**.
-Container orchestration, AI layers, and CVE monitoring come later (see Phase 6+).
+Scope of this document: the **data contract, database, API, graph UI**, and since 6C-1 the **tool runner** (§11).
+AI layers and CVE monitoring come later (see Phase 7+).
 
 ## 1. Data flow
 
@@ -10,15 +10,16 @@ Python tool scripts ──JSON (docs/contract.md)──▶ Ingest ──▶ SQLi
    (tools/*.py)                                  (server)              REST + WebSocket     (web)
 ```
 
-Until the orchestrator exists, files enter through `pnpm ingest <file.json>` or `POST /api/ingest`.
-Later the orchestrator just becomes another producer of the same JSON.
+Files enter through `pnpm ingest <file.json>`, `POST /api/ingest`, or a tool run (§11): the orchestrator runs a
+tool's script in a container and puts its `result.json` through the same ingest. It is just another producer of
+the same JSON.
 
 ## 2. Packages
 
 | Package | Contains |
 |---|---|
 | `shared/` | Zod schemas for the tool-output contract and API responses; `normalize.ts` (value normalization); `nodeId.ts` (deterministic IDs); `scope.ts` (scope rules and `checkScope`, §10); shared enums (node types, relations, severities, confidence, tags) |
-| `server/` | Fastify app bound to `127.0.0.1:4100`; Drizzle schema + migrations; ingest pipeline; graph query + aggregation; WebSocket broadcaster; CLI entry for `ingest` and `mock` |
+| `server/` | Fastify app bound to `127.0.0.1:4100`; Drizzle schema + migrations; ingest pipeline; graph query + aggregation; WebSocket broadcaster; the tool runner (`src/runner/`, §11); CLI entry for `ingest`, `mock`, `tools:build`, `tools:check` |
 | `web/` | Vite + React app on `127.0.0.1:5173`, proxying `/api` to the server |
 
 ## 3. Node identity
@@ -89,6 +90,18 @@ in file order, highest `severity`. `role` is `finding` if the file reports the n
 
 **scope_settings** — one row (`id = 1`, CHECK), created by the migration: `passive_only` (default on) · `updated_at`.
 
+**jobs** — one row per tool run (§11), from queueing to the ingested scan. Never deleted (the mock wipe aside).
+`id` (integer) · `tool` · `tool_group` · `node_id` → nodes · `target_type` · `target_value` (the node's value when
+queued) · `mode` (`passive` | `active` | `intrusive`) · `status` (`queued` | `running` | `succeeded` | `failed` |
+`cancelled` | `refused`) · `queued_scope_log_id` → scope_log (the `authorize()` decision at queueing) ·
+`scope_log_id` → scope_log (the decision right before the container started) · `argv` (json, the command as run) ·
+`image` · `container_id` · `timeout_sec` · `exit_code` · `error` · `issues` (json, why `result.json` was rejected) ·
+`created_at` · `started_at` · `finished_at` · `scan_id` → scans · `nodes_created` · `nodes_updated`.
+Indexes on `status`, `created_at`, `scan_id`, `node_id`; CHECKs on the enums.
+
+**runner_state** — one row (`id = 1`), created by migration `0004_jobs`: `workspace_id` (random, labels this
+workspace's containers and volumes) · `created_at`. `0004_jobs` adds tables only: not breaking.
+
 All timestamps are stored as TEXT in `Date#toISOString()` form (`YYYY-MM-DDTHH:MM:SS.sssZ`) so they sort as text.
 Enum columns have CHECK constraints.
 
@@ -141,7 +154,7 @@ edge's full set of `edge_observations` in the same order (`recomputeEdges`, `der
 | `GET /nodes?…&page=&sort=&at=` | Paged flat list for the table view |
 | `GET /highlights` | Every `interesting` node with its notes, riskiest first (not filtered, not paged) |
 | `GET /stats` | Workspace counts by type, severity, confidence, tag, scope decision, tool (dashboard / filter badges); not filtered |
-| `GET /scans` | Ingested scans |
+| `GET /scans` | Ingested scans (each with `jobId`: the run that produced it, null for an upload) |
 | `POST /ingest` | Upload one tool-output JSON |
 | `GET /export?format=json` | Full graph export (CSV/GraphML later) |
 | `GET /scope/rules?removed=1` | Active scope rules, oldest first (`removed=1` adds removed ones) |
@@ -151,7 +164,15 @@ edge's full set of `edge_observations` in the same order (`recomputeEdges`, `der
 | `POST /scope/check` | Same body/answer, **logged** as `check`: the UI's "test a target" box, on submit only |
 | `GET /scope/log?source=&page=&pageSize=` | Decision log, newest first; `source` defaults to `run` (`run,check` adds the test box) |
 | `GET /scope/settings`, `PATCH /scope/settings` | `{ passiveOnly }` |
-| `WS /ws` (i.e. `/api/ws`) | Push events: `graph.updated`, `scan.ingested`, `scope.changed` |
+| `GET /tools` | Tool groups (label, image, `imageStatus` built/outdated/missing/unknown, tools) and tools (mode, accepted types, external services, timeout) |
+| `POST /jobs` | `{ tool, nodeId }`: 201 `{ jobs }` queued · 403 `{ error, decision, jobs }` refused by scope (kept as `refused`) · 404 · 400 · 409 image not built · 503 Docker unreachable |
+| `POST /jobs/group` | `{ group, nodeId }`: one job per tool of the group that takes the node's type, one `authorize()` each |
+| `GET /jobs?page=&pageSize=&status=&nodeId=` | Jobs, newest first (`pageSize` ≤ 200) |
+| `GET /jobs/:id` | `{ job, tails: { stdout, stderr, raw } }`: the last 4 KB of each kept output (null: none) |
+| `GET /jobs/:id/output/:stream` | `stdout` \| `stderr` \| `raw` as `text/plain` (≤ 5 MB, as kept) |
+| `POST /jobs/:id/cancel` | Queued → cancelled; running → killed, cancelled, nothing ingested; 409 if finished |
+| `GET /runner/status` | `{ docker: { reachable, version, error }, images: [{ group, image, status }], running, queued, maxConcurrent }` |
+| `WS /ws` (i.e. `/api/ws`) | Push events: `graph.updated`, `scan.ingested`, `scope.changed`, `job.updated { job }`, `runner.status { reachable, error }` |
 
 Request and response shapes are the Zod schemas in `shared/src/api.ts`. Details:
 - **Filters** (shared by `/graph`, `/graph/expand`, `/nodes`): `types`, `confidence`, `tool`, `tag`, `excludeTag`
@@ -160,6 +181,10 @@ Request and response shapes are the Zod schemas in `shared/src/api.ts`. Details:
   Filters select nodes; edges are kept when both ends are kept. Unknown params are a 400.
   **Known limit (`tool`):** it keeps nodes that tool saw, so it also keeps an edge between two such nodes that the tool
   itself never reported (decisions log, 2026-11-01).
+- **Tool runs** (§11): node- and edge-detail observations carry `jobId` (the job whose run produced the scan; null for
+  an upload), so the provenance table can open the raw output. A run's 409/503 store no job and log no scope decision;
+  a 403 stores the refused job and its decision. Without the runner (no Docker client, or invalid tool definitions)
+  the tool, job and runner routes answer 503.
 - **Edge provenance on graph edges:** graph edges (`/graph/expand`, export) carry `sourceCount` and `confidence`. View edges
   (`/graph`, `/graph/view`) carry `edgeId`, `sourceCount`, `confidence`, `tools` and `edgeCount`, always present, null where
   they don't apply: `relation`/`neighbor` edges are real (`edgeId` = their ID, their own `sourceCount`/`confidence`);
@@ -366,8 +391,10 @@ included (1,945 elements, truncated).
   more" → next page. Right-click → context menu: on a node focus, expand neighbors, **expand all below** (stops at the
   budget; the header says how many groups it opened and how many nodes stay collapsed), copy value, open URL, collapse
   its group; on a group focus, expand / collapse, collapse all below (closes the open groups under it, keeps it open),
-  load more; "run tool" disabled until the orchestrator exists. Expand, load more and expand-all are disabled at the
-  element budget (the group's `canLoadMore`).
+  load more. On a node, **Run tool ▸** (§11) opens a submenu in place: "Run group: subdomain enumeration" first, then
+  each tool that takes the node's type, with a mode badge and an "external" badge; disabled items say why (Docker not
+  running, image not built or out of date, passive-only mode, not a target, out of scope). Groups have no Run tool
+  (6D). Expand, load more and expand-all are disabled at the element budget (the group's `canLoadMore`).
 - **Focus mode:** the node + its N-hop neighborhood (1–3, either edge direction) stay bright, plus the edges among
   them; everything else is faded. Computed on the canvas (`web/src/graph/emphasis.ts`), nothing is fetched. A group is
   **no hop of its own**: from a parent a step goes on through its groups to their members, from a member up through its
@@ -383,7 +410,15 @@ included (1,945 elements, truncated).
   them, plus view-only `mute=1` and `hops=N`, which never reach the API. Bad values are dropped one by one.
 - **Mute low-risk:** fades nodes whose effective severity is below medium (aggregates by `maxSeverity`), and edges
   touching them; a quiet parent above a serious finding stays bright.
-- **Bottom panel:** toggled from the header, under the canvas: **Table**, **Highlights** or **Scope**.
+- **Bottom panel:** toggled from the header, under the canvas: **Table**, **Highlights**, **Scope** or **Jobs**.
+- **Jobs** (`web/src/jobs/JobsPanel.tsx`, §11): every run, newest first, live (`job.updated` refetches only the runner's
+  queries and the scope log, never the graph): status, tool, target (click = pick the node), started, duration
+  (ticking while running), what it found ("+14 new, 6 updated" / "nothing new"), the error; **Cancel** (queued or
+  running), **Raw output** (command, validation issues, the tail of raw/stderr/stdout, links to the full text) and
+  **Show results** (picks the target node and highlights that scan's rows in its provenance table). Queuing a run
+  opens the tab and says what happened in the header ("… refused: <scope reason>" on a 403). Provenance rows from a run
+  link to its raw output. The header shows the runner: green Docker, amber (images not built), red Docker off, grey
+  runner off, with running(+queued) counts.
 - **Scope** (`web/src/scope/ScopePanel.tsx`, §10): the header chip shows the active rule count and "passive" while
   passive-only is on (amber dot when there is no include rule). The panel has the rules (add with the server's
   normalized value or its refusal; edit a note; remove with a second confirming click; "show removed" lists the
@@ -472,8 +507,11 @@ Each phase ends with passing `pnpm typecheck` and `pnpm test`, and a short demo.
 2. (6B) **Edge provenance** (§4–6, §8): `edge_observations` (one row per edge per scan), derived edge fields
    (`first_seen`, `last_seen`, `source_count`, `confidence`), `GET /edges/:id`, provenance on node-detail and view edges
    (group edges: the members' tools), the edge panel, thicker corroborated edges. Groundwork for 6E.
-3. (6C) Orchestrator: Dockerode in `server/src/runner/docker.ts` (the one file allowed to import it), containerized
-   tool groups; every run takes a `ScopedTarget` from `authorize()` called right before it, and `assertScoped()`s it.
+3. (6C) Orchestrator (§11): Dockerode in `server/src/runner/docker.ts` (the one file allowed to import it),
+   containerized tool groups; every run takes a `ScopedTarget` from `authorize()` called right before it, and
+   `assertScoped()`s it. **6C-1** (done): runner, hardening, jobs + queue, tool definitions, the subdomain enumeration
+   group (subfinder, assetfinder, findomain, crt.sh) as the reference for teammates, `pnpm tools:build`,
+   `pnpm tools:check`, API, Jobs tab. Later 6C steps: the other groups.
 4. (6D) Presets & auto-chaining; redirect-following tools re-check scope on every hop (decisions log, 2026-10-31).
 5. (6E) Diffing between scans: what a scan added, lost or changed, for nodes and edges (both have per-scan provenance).
 
@@ -532,7 +570,7 @@ exactly what a tool may run against. Three locks against forging one:
 `recordCheck()` is the test box's path: the same decision, logged as `check`, no `ScopedTarget`.
 
 **Who may run things** (`eslint.config.js`, proven by `server/test/guard.test.ts`): `dockerode`/`docker-modem` may be
-imported (statically, `import()` or `require`) only by `server/src/runner/docker.ts`, which doesn't exist until 6C;
+imported (statically, `import()` or `require`) only by `server/src/runner/docker.ts` (6C-1);
 `node:child_process` only under `server/src/runner/`, by `server/src/mock/python.ts` (the team validator) and in tests.
 The test also scans every source file for `dockerode`, so `pnpm test` catches it even without `pnpm lint`.
 
@@ -545,7 +583,76 @@ Ingest never rejects out-of-scope findings: tools may report anything; scope dec
 case). `pnpm mock:large` includes the domain + wildcard and `198.18.0.0/27`, excludes `admin.<domain>`. Passive-only
 stays on.
 
-## 11. Decisions log
+## 11. Tool runs (orchestrator)
+
+Phase 6C-1. A tool runs as a job: one container from its group's image, against one node, after `authorize()`.
+Nothing else starts a container.
+
+**Tool definitions** (`tools/`, loaded and checked by `server/src/runner/catalog.ts`, schema in `defs.ts`): one folder per
+group, `tools/<group>/{group.json, Dockerfile, README.md}`, one folder per tool, `tools/<group>/<tool>/{tool.json,
+run.py, fixtures/, test_*.py}`. `group.json`: `name`, `label`, `image` (repository), `tools` (run order). `tool.json`:
+`name` (= folder = the contract's `tool`), `group`, `label`, `description`, `mode` (`passive` | `active` | `intrusive`;
+scope checks `passive` as passive, the others as active), `accepts` (targetable node types), `argv` (an array; the
+target is the item `{target}`, exactly once, whole), `timeoutSec`, `external` (services it contacts), `outputDir`
+(`/out`). Every inconsistency (name ≠ folder, unlisted or missing tool, bad field) is reported at once; the server then
+runs with the runner off (the graph still works) and `pnpm tools:check` prints the same list.
+
+**Images:** one per group, built by `pnpm tools:build [group]` through dockerode (classic builder) from exactly the
+group's build context: `tools/.dockerignore`, `validate_output.py`, `lib/`, `<group>/` minus fixtures, tests, docs
+and caches (`inBuildContext`, mirrored by `.dockerignore`). The tag is the sha256 of those files
+(`redwhale-tools/subdomain:<12 hex>`), labelled `redwhale.group`/`redwhale.context`, so the server can tell **built**
+(this exact build), **outdated** (an older build of the group) and **missing**. Dockerfiles pin the base image by
+digest and every tool to a release whose sha256 is checked (`lib/fetch_release.py`), and create user 10001 owning
+`/out`. Building is the only step that downloads anything; the server never does.
+
+**Runner** (`server/src/runner/`): `runtime.ts` is the interface (create/start/wait/kill/logs/fetch output/remove
+container and volume/list by label/images); `docker.ts` implements it (named pipe or `DOCKER_HOST`); tests use a fake
+(`server/test/fakeRuntime.ts`) and a real-Docker suite that runs only when Docker and the image are there. Every
+container is built by `spec.ts` as plain Engine API JSON:
+- user `10001:10001`, read-only root filesystem, `cap-drop ALL`, `no-new-privileges`, 1 GB memory (no swap), 1 CPU,
+  256 pids, `init`, bridge network (the tools need the internet), no bind mounts, no Docker socket, json-file logs
+  capped at 10 MB;
+- `/tmp` a tmpfs (`noexec`, 256 MB), `HOME=/tmp`; **`/out` a per-job named volume** `redwhale-<ws>-job-<id>` (a tmpfs
+  is gone once the container exits, so it couldn't be fetched); labels `redwhale.job`, `redwhale.workspace`,
+  `redwhale.tool` on both;
+- entrypoint + cmd = the argv exactly (no shell); the target value is one argv item and is refused if it starts with
+  `-` or holds whitespace/control characters (argument injection; `authorize()` already refuses such hostnames);
+- `REDWHALE_TOOL_TIMEOUT` = the tool's timeout − 30 s, so the script stops its tool and writes a partial result before
+  the hard kill.
+
+**Queue** (`orchestrator.ts`): jobs live in SQLite, oldest first, at most `REDWHALE_MAX_JOBS` (default 2) running.
+1. Queueing (`POST /jobs`, `/jobs/group`): tool, node, type, Docker and image are checked first (no row, nothing
+   logged on failure); then `authorize()` decides and logs (`run`); refused → a `refused` job and a 403.
+2. Starting: **`authorize()` again, right before the container**; refused → `refused` ("out of scope at start"), no
+   container. Then create volume + container, start, wait; past the timeout → SIGKILL, `failed` ("timed out after
+   N s").
+3. Always: fetch, then remove the container and its volume.
+- Scope changes (any rule or setting change) re-check queued jobs without logging and cancel those now out of scope.
+- Cancel: queued → cancelled; running → killed, cancelled, nothing ingested.
+- Server start (`recover()`): `running` jobs → `failed` ("server restarted"), this workspace's labelled containers and
+  volumes are killed and removed, queued jobs resume (re-authorized when they start). Docker is pinged every 5 s:
+  while it's unreachable jobs stay queued; when it comes back the orphans are cleaned and the queue resumes. Changes are
+  broadcast (`runner.status`), every job change too (`job.updated`).
+
+**Results** (`finish.ts`): after exit, stdout/stderr (demuxed) and `/out` (`getArchive`, read as a tar) are fetched
+with the caps enforced **while reading** (tar headers give real sizes): `raw.txt`, stdout, stderr ≤ 5 MB each (kept
+truncated, with a note), `result.json` ≤ 50 MB (over → failed, never truncated), at most ~56 MB read in all; other
+files are not kept but named with their sizes in the job's `error`. They are kept under `<db dir>/jobs/<id>/`
+(`data/jobs/`). `result.json` must name the job's tool (else failed: no borrowed corroboration), then goes through
+**the normal ingest**: invalid → `failed` with the exact `issues`, nothing ingested; valid → the scan is linked
+(`scan_id`, `nodes_created`, `nodes_updated`) and `scan.ingested`/`graph.updated` are broadcast, so subdomains several
+tools report become `corroborated`. A result whose `status` is `failed` fails the job but its scan is kept
+(provenance); `partial` succeeds with a note; a timed-out job that still wrote a result is `failed` with its scan.
+
+**Scripts** (Python, stdlib only; `tools/lib/redwhale_tool.py`): every `run.py` takes `--target`, `--out`
+(`/out` in the container) and `--replay <saved output>`, and is only a command (or, for an HTTP API like crt.sh, a
+`fetch`) plus a parser; `main()` does the rest (refuses option-like targets, runs the tool with a timeout, keeps
+`raw.txt` capped, cleans values, skips wildcards/the apex/other domains, merges duplicates, fills in relations,
+survives parser crashes, validates with `validate_output.py`, writes `result.json`). Each tool keeps a saved real
+output, anonymized to `northwind.example`, with `expected.json` and a `NOTE.md`; `pnpm tools:check` (and `pnpm test`)
+replays it. How to add a tool: `docs/team-guide.md`.
+
+## 12. Decisions log
 
 | Date | Decision |
 |---|---|
@@ -635,3 +742,16 @@ stays on.
 | 2026-11-01 | View edges always carry `edgeId`, `sourceCount`, `confidence`, `tools`, `edgeCount` (nullable, like `relation`). A **group → member edge stands for the real parent → member edge**: it carries that edge's ID and provenance, is clickable and drawn thicker when corroborated. Changed from the 6B plan (member edges unclickable) because the mocks' corroborated `has_subdomain` edges are all inside groups, so otherwise no corroborated edge could be seen. Parent → group edges carry the sorted union of every member edge's tools under the current filters (drawn or not) and the member-edge count; they are **never drawn thicker**: tools across members corroborate no single relation. Per-edge tool lists otherwise stay on the server (`Graph.edgeTools`) |
 | 2026-11-01 | **Known limit:** the `tool` filter still selects nodes (an edge is kept when both ends are), so it can keep an edge between two nodes that tool saw even if that tool never reported the edge. Kept as is for 6B; edge-level filtering can come with diffing (6E) if needed |
 | 2026-11-01 | Edge widths: 1.5 px, 2.5 px when 2+ tools reported the real edge (group → member 1 → 2 px); the selected-edge style is unchanged. One selection at a time (node or edge). The edge panel is fetched (`GET /edges/:id`) and survives the edge leaving the canvas; a parent → group edge's panel is built from the view and closes with its group. Group → "more" edges are not selectable |
+| 2026-11-02 | Phase 6C-1 (tool runner): one container per job from the group's image; `authorize()` at queueing **and** right before each container starts (both logged; `jobs.queued_scope_log_id`, `jobs.scope_log_id`); scope changes cancel queued jobs now out of scope; refused runs are kept as `refused` jobs and answered with 403 + the reason |
+| 2026-11-02 | `/out` is a **per-job named Docker volume**, not a tmpfs: a tmpfs is gone once the container exits, so `getArchive` couldn't read it. Labelled with the job, removed right after the fetch, included in the startup orphan cleanup. Not a bind mount; `/tmp` stays tmpfs, the root filesystem read-only |
+| 2026-11-02 | Output size caps enforced while reading the archive (tar header sizes): raw/stdout/stderr 5 MB each (truncated with a note), result.json ≤ 50 MB (else the job fails), ~56 MB read in all; unkept files reported with their sizes. Docker's own log file capped at 10 MB |
+| 2026-11-02 | Container and volume names and labels carry a per-database `workspace_id` (`runner_state`), so one workspace's orphan cleanup never touches another's containers (two servers on one Docker) |
+| 2026-11-02 | Jobs have integer IDs; raw output under `<db dir>/jobs/<id>/`; `pnpm mock` wipes jobs and that folder with the rest |
+| 2026-11-02 | A `result.json` naming another tool fails the job (tool names drive corroboration). A tool-reported `failed` status fails the job but keeps the scan; `partial` succeeds with a note; the job shows "+N new, M updated" (`nodes_created`, `nodes_updated` = touched − created) |
+| 2026-11-02 | 409 (image not built/outdated) and 503 (Docker unreachable) are answered before `authorize()`, so they log no scope decision and store no job |
+| 2026-11-02 | Invalid tool definitions don't stop the server: the graph works, the runner is off (routes 503), and `pnpm tools:check` prints the same issues the server found |
+| 2026-11-02 | Tool definitions are one folder per tool (`tool.json`, `run.py`, `fixtures/`, tests) under one folder per group (`group.json`, `Dockerfile`, README), so "copy a folder" is the whole template. `tools/.dockerignore` keeps fixtures and tests out of images; the image tag is the hash of the files that go in, so a script change makes the image "outdated" |
+| 2026-11-02 | Subdomain group pins: base `python:3.13-slim-trixie@sha256:ae14d4ce…`, subfinder v2.17.0 (checksums.txt), assetfinder v0.1.1 (no published checksum: sha256 computed when pinned), findomain 10.0.1 (11.0 is beta); linux/amd64. dockerode 5.0.1, tar-stream 3.2.2, @types/dockerode 4.0.2 |
+| 2026-11-02 | Commands: subfinder `-oJ -cs -silent -duc -max-time 8` (JSON lines with every source, no update check); assetfinder `--subs-only` (text: it has no JSON mode); findomain `-t <d> -q` (text, no resolving); crt.sh queried from Python (`?q=%25.<d>&output=json`, 3 tries, backoff 5/15 s, inside the script's time). None resolves names: the group stays passive. amass, sublist3r, chaos, shosubgo, github-subdomains and ffuf later |
+| 2026-11-02 | Fixtures are real outputs (captured in the image against an authorized bug-bounty target) anonymized to `northwind.example` with one mapping shared by all tools; certificate IDs and serials replaced; edge cases the real output lacked are edited copies, marked in each `NOTE.md`. The real target is not named in the repo |
+| 2026-11-02 | UI: Run tool is a submenu in place (disabled items show why); groups get no Run tool until 6D. `job.updated`/`runner.status` refetch only runner queries and the scope log, not the graph. "Show results" = pick the target node and highlight that scan's provenance rows |

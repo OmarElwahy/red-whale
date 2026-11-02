@@ -1,4 +1,4 @@
-// Tool runs (docs/architecture.md §12): what the API and the UI share about tools and jobs.
+// Tool runs (docs/architecture.md §11): what the API and the UI share about tools and jobs.
 
 /** How hard a tool touches its target. Scope checks `passive` as passive and the other two as active. */
 export const TOOL_MODES = ['passive', 'active', 'intrusive'] as const;

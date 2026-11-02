@@ -232,7 +232,7 @@ export const scopeSettings = sqliteTable(
   (t) => [check('scope_settings_single_row_ck', sql`${t.id} = 1`)],
 );
 
-// --- tool runs (docs/architecture.md §12) -------------------------------------------------------------
+// --- tool runs (docs/architecture.md §11) -------------------------------------------------------------
 
 /** One row per tool run, from queueing to the ingested scan. Never deleted (provenance), except by the mock wipe. */
 export const jobs = sqliteTable(

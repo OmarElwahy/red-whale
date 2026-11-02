@@ -1,4 +1,4 @@
-// `pnpm tools:build [group…]`: builds each tool group's image from tools/ (docs/architecture.md §12).
+// `pnpm tools:build [group…]`: builds each tool group's image from tools/ (docs/architecture.md §11).
 // The image is tagged <repo>:<hash of its build context>, so the server knows whether it is current.
 // Building downloads the pinned base image and tool releases; that is this command's job, never the server's.
 import { CatalogError, LABEL_CONTEXT, LABEL_GROUP, TOOLS_DIR, loadCatalog } from './catalog';
