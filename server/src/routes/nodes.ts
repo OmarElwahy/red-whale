@@ -57,6 +57,7 @@ interface ObservationRow {
   severity: Severity | null;
   data: string;
   observed_at: string;
+  job_id: number | null;
 }
 
 /** Node detail + edges + provenance, or null if there is no such node. */
@@ -79,7 +80,8 @@ export function nodeDetail(db: Db, id: string) {
 
   const observationRows = db.$client
     .prepare(
-      `SELECT o.scan_id, o.tool, s.command, o.role, o.severity, o.data, o.observed_at
+      `SELECT o.scan_id, o.tool, s.command, o.role, o.severity, o.data, o.observed_at,
+              (SELECT MIN(j.id) FROM jobs j WHERE j.scan_id = o.scan_id) AS job_id
        FROM observations o JOIN scans s ON s.id = o.scan_id
        WHERE o.node_id = ?
        ORDER BY o.observed_at, o.tool, o.scan_id`,
@@ -133,6 +135,7 @@ export function nodeDetail(db: Db, id: string) {
       severity: o.severity,
       data: jsonObject(o.data),
       observedAt: o.observed_at,
+      jobId: o.job_id,
     })),
   };
 }

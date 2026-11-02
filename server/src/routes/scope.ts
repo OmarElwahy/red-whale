@@ -17,9 +17,11 @@ import type { RouteContext } from './context';
 
 const ruleIdSchema = z.strictObject({ id: z.coerce.number().int().min(1) });
 
-export function scopeRoutes({ app, db, broadcaster }: RouteContext): void {
+export function scopeRoutes({ app, db, broadcaster, orchestrator }: RouteContext): void {
   const changed = () => {
     broadcaster.send({ type: 'scope.changed' });
+    // Queued jobs whose target just left scope are cancelled (each one broadcasts job.updated).
+    orchestrator?.onScopeChanged();
   };
 
   app.get('/api/scope/rules', (req) => {

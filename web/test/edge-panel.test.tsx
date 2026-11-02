@@ -20,8 +20,8 @@ const detail = edgeDetailResponseSchema.parse({
     lastSeen: '2026-10-29T11:00:00.000Z',
   },
   observations: [
-    { scanId: 'scan-1', tool: 'subfinder', command: 'subfinder -d example.com', data: {}, observedAt: '2026-10-29T10:01:12.000Z' },
-    { scanId: 'scan-2', tool: 'amass', command: 'amass enum -d example.com', data: {}, observedAt: '2026-10-29T11:00:00.000Z' },
+    { scanId: 'scan-1', tool: 'subfinder', command: 'subfinder -d example.com', data: {}, observedAt: '2026-10-29T10:01:12.000Z', jobId: null },
+    { scanId: 'scan-2', tool: 'amass', command: 'amass enum -d example.com', data: {}, observedAt: '2026-10-29T11:00:00.000Z', jobId: null },
   ],
 });
 

@@ -22,7 +22,7 @@ approved plan is summarized under "Decisions".
 | 7 | crt.sh (same; retries unit-tested in Python) | |
 | 8 | `pnpm tools:check <tool\|--all>` (tools/check.py + TS wrapper), Vitest runs it for every tool | |
 | 9 | job execution → ingest → raw output storage (fake runtime). The real-Docker integration test moved to 3b | done (out of order: 3b–7 blocked on Docker + domain) |
-| 10 | API + WS (`job.updated`, `runner.status`), group jobs | |
+| 10 | API + WS (`job.updated`, `runner.status`), group jobs | done (out of order) |
 | 11 | UI: Run tool submenu, Jobs tab, header runner status (may split 11a/11b) | |
 | 12 | Docs: architecture.md (new §12 Orchestrator, §4, §6, §9, decisions log), team-guide.md rewrite, group README, handoff.md | |
 
@@ -150,14 +150,46 @@ approved plan is summarized under "Decisions".
   → issues, tool mismatch, no result / not JSON, tool-reported failure, partial + duplicate, size caps, timeout
   with a partial result.
 
+## Notes from step 10
+
+- Schemas in `shared/src/api.ts` (section "tool runs"): `toolInfoSchema`, `toolGroupInfoSchema`, `toolsResponseSchema`,
+  `jobSchema` (= jobs row minus containerId; `group` = tool_group), `jobsQuerySchema` (page, pageSize ≤ 200, status
+  csv, nodeId), `jobsResponseSchema`, `jobDetailResponseSchema` ({ job, tails: {stdout, stderr, raw} }, last 4 KB,
+  "…" prefix when cut, null when no file), `jobCreateSchema`, `groupJobCreateSchema`, `jobsCreatedResponseSchema`,
+  `jobRefusedResponseSchema` (403: { error, decision, jobs }), `runnerStatusSchema`, `IMAGE_STATUSES`,
+  `JOB_OUTPUT_STREAMS`. WS: `job.updated { job }`, `runner.status { reachable, error }`.
+- `jobId` (nullable; MIN(jobs.id) for the scan) added to node-detail observations, edge-detail observations and
+  `GET /scans` items. Web test fixtures updated (`jobId: null`).
+- `server/src/routes/jobs.ts`. POST order: body → tool 404 → node 404 → type 400 → fresh ping 503 → image status
+  409 ("run pnpm tools:build <group>"; says "out of date" for outdated) → orchestrator.enqueue (authorize, logged)
+  → 201 / 403. 409/503 store no job and log no decision. Cancel: 200 { job } | 404 | 409.
+  `GET /jobs/:id/output/:stream` = text/plain; charset=utf-8, inline, nosniff.
+- `buildApp({ runner: { runtime, catalog, jobsDir, maxJobs?, timeoutMs? } })` builds the Orchestrator (finish =
+  ingestFinish, broadcasting scan.ingested + graph.updated like POST /ingest), exposes it as `app.orchestrator`
+  (Fastify decorate; null without runner → the routes answer 503), stops it on close. `RouteContext.orchestrator`;
+  scope routes call `orchestrator?.onScopeChanged()` on every change.
+- run-server.ts: `loadCatalog()` (a CatalogError is printed and the runner is OFF; the graph still works),
+  `DockerRuntime()`, `jobsDirFor(dbPath)`, `REDWHALE_MAX_JOBS` (default 2); `recover()` then `startMonitor()`
+  before listen.
+- **For step 11:** `web/src/api/live.ts` invalidates every `api` query on ANY event; `job.updated` comes ~4× per
+  job, so it must only invalidate jobs/runner/tools queries (and `runner.status` only runner/tools), not the graph.
+- Tests: `server/test/api/jobs.test.ts` (12).
+
 ## Next action
 
-Blocked on the user for 3b–7 (Docker Desktop running + the real domain). Meanwhile: **step 10** (API + WS:
-routes in `server/src/routes/jobs.ts`, `GET /tools`, `POST /jobs`, `POST /jobs/group`, `GET /jobs`, `GET /jobs/:id`
-(+ 4 KB tails), `GET /jobs/:id/output/:stream`, `POST /jobs/:id/cancel`, `GET /runner/status`; WS `job.updated`,
-`runner.status`; scope routes call `orchestrator.onScopeChanged()`; `jobId` on node/edge observations and
-`GET /scans`; wire the Orchestrator + DockerRuntime + loadCatalog + ingestFinish into `buildApp` (AppOptions:
-`runtime`, `catalog`, `jobsDir`, `maxJobs`) and run-server.ts (`REDWHALE_MAX_JOBS`, recover() + startMonitor() on
-start, stop() on shutdown). Then step 11 (UI). Then 3b → 4–7 → 8 when unblocked.
-Step 3b details are in the previous "Next action" text: build the image, verify it in a container, add
-`server/test/docker.integration.test.ts` (skipIf no Docker / no image).
+Step 11 (UI), still before 3b–8 (blocked on Docker Desktop + the domain). Pieces:
+1. `web/src/api/jobs.ts`: hooks `useTools()`, `useRunnerStatus()`, `useJobs(page)`, `useJob(id)`, mutations
+   `runTool`, `runGroup`, `cancelJob` (parse with the shared schemas; 403 body = jobRefusedResponseSchema).
+2. live.ts: `job.updated` → invalidate only ['api','jobs'…] + runner; `runner.status` → runner + tools; other
+   events unchanged.
+3. Context menu: replace the disabled "Run tool (coming later)" with a "Run tool ▸" submenu (web/src/menu/items.ts
+   is pure + tested; ContextMenu.tsx renders): "Run group: subdomain enumeration" first, then each tool accepting
+   the node type, with a mode badge and "external" badge; disabled with reasons (out of scope: node.inScope !==
+   'in' for passive / passive-only for active; Docker not running; image not built/outdated). Groups/more nodes:
+   no run items.
+4. Bottom panel "Jobs" tab next to Table/Highlights/Scope: status badge, tool, target, duration (ticking while
+   running), "+N new, M updated", error (title), cancel, Raw output dialog (stdout/stderr/raw tabs from
+   /jobs/:id/output/*), "Show results" (select target node + open its path, highlight that scan's provenance rows).
+5. Header chip "Docker ●" (green/red, tooltip version/error/missing images).
+6. Provenance table rows with jobId: a "raw" link to /api/jobs/<id>/output/raw.
+Tests in web/test (items.ts unit tests, jobs panel jsdom test). Then commit "6C-1 step 11" (or 11a/11b).

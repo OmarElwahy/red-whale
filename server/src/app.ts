@@ -8,9 +8,22 @@ import type { RouteContext } from './routes/context';
 import { dataRoutes } from './routes/data';
 import { edgeRoutes } from './routes/edges';
 import { graphRoutes } from './routes/graph';
+import { jobDto, jobRoutes, type RunnerContext } from './routes/jobs';
 import { nodeRoutes } from './routes/nodes';
 import { scopeRoutes } from './routes/scope';
+import type { Catalog } from './runner/catalog';
+import type { ToolDef } from './runner/defs';
+import { ingestFinish } from './runner/finish';
+import { Orchestrator } from './runner/orchestrator';
+import type { ContainerRuntime } from './runner/runtime';
 import { Broadcaster } from './ws';
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    /** The job queue (null when the server runs without the tool runner). */
+    orchestrator: Orchestrator | null;
+  }
+}
 
 export const DEFAULT_PORT = 4100;
 export const WEB_PORT = 5173;
@@ -22,6 +35,19 @@ export interface AppOptions {
   port?: number;
   maxElements?: number;
   logger?: boolean;
+  /** The tool runner (docs/architecture.md §12). Without it, the /api/tools, /jobs and /runner routes answer 503. */
+  runner?: RunnerOptions;
+}
+
+export interface RunnerOptions {
+  runtime: ContainerRuntime;
+  catalog: Catalog;
+  /** Where each job's raw output is kept (<db dir>/jobs). */
+  jobsDir: string;
+  /** Jobs running at once (default 2). */
+  maxJobs?: number;
+  /** The hard kill per tool; tests shorten it. */
+  timeoutMs?: (def: ToolDef) => number;
 }
 
 /**
@@ -69,17 +95,52 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   app.setNotFoundHandler((req, reply) => reply.code(404).send({ error: `no route ${req.method} ${req.url}` }));
 
   const broadcaster = new Broadcaster();
+  const db = options.db;
+  let runner: RunnerContext | null = null;
+  if (options.runner) {
+    const { runtime, catalog, jobsDir, maxJobs, timeoutMs } = options.runner;
+    const orchestrator = new Orchestrator({
+      db,
+      runtime,
+      catalog,
+      ...(maxJobs === undefined ? {} : { maxConcurrent: maxJobs }),
+      ...(timeoutMs === undefined ? {} : { timeoutMs }),
+      finish: ingestFinish({
+        db,
+        jobsDir,
+        onIngested: (result, tool) => {
+          broadcaster.send({ type: 'scan.ingested', scanId: result.scanId, tool });
+          broadcaster.send({ type: 'graph.updated', nodeIds: result.nodeIds, edgeIds: result.edgeIds });
+        },
+      }),
+      onJob: (job) => {
+        broadcaster.send({ type: 'job.updated', job: jobDto(job) });
+      },
+      onRunnerChange: (ping) => {
+        broadcaster.send({ type: 'runner.status', reachable: ping.ok, error: ping.ok ? null : ping.error });
+      },
+    });
+    runner = { orchestrator, catalog, jobsDir };
+    app.addHook('onClose', (_instance, done) => {
+      orchestrator.stop();
+      done();
+    });
+  }
+  app.decorate('orchestrator', runner?.orchestrator ?? null);
+
   const ctx: RouteContext = {
     app,
-    db: options.db,
+    db,
     broadcaster,
     maxElements: options.maxElements ?? MAX_ELEMENTS,
+    orchestrator: runner?.orchestrator ?? null,
   };
   graphRoutes(ctx);
   nodeRoutes(ctx);
   edgeRoutes(ctx);
   dataRoutes(ctx);
   scopeRoutes(ctx);
+  jobRoutes(ctx, runner);
   app.get('/api/ws', { websocket: true }, (socket) => {
     broadcaster.add(socket);
   });

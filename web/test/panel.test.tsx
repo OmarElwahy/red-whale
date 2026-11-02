@@ -32,6 +32,7 @@ function makeDetail(overrides: Parameters<typeof node>[1] = {}): NodeDetailRespo
         severity: null,
         data: { status: 200 },
         observedAt: '2026-10-29T08:15:00.000Z',
+        jobId: null,
       },
       {
         scanId: 's2',
@@ -41,6 +42,7 @@ function makeDetail(overrides: Parameters<typeof node>[1] = {}): NodeDetailRespo
         severity: 'high',
         data: { template: 'exposed-login' },
         observedAt: '2026-10-30T09:30:00.000Z',
+        jobId: null,
       },
       {
         scanId: 's3',
@@ -50,6 +52,7 @@ function makeDetail(overrides: Parameters<typeof node>[1] = {}): NodeDetailRespo
         severity: null,
         data: {},
         observedAt: '2026-10-30T11:00:00.000Z',
+        jobId: null,
       },
     ],
   });

@@ -13,7 +13,8 @@ import {
   TAGS,
 } from './enums';
 import type { NodeType, Relation } from './enums';
-import { SCOPE_ACTIONS, SCOPE_DECISIONS, SCOPE_KINDS, SCOPE_MODES, SCOPE_SOURCES } from './scope';
+import { SCOPE_ACTIONS, SCOPE_DECISIONS, SCOPE_KINDS, SCOPE_MODES, SCOPE_SOURCES, TARGETABLE_TYPES } from './scope';
+import { JOB_STATUSES, TOOL_MODES } from './tools';
 
 // --- aggregate IDs ---------------------------------------------------------------------------------
 
@@ -520,6 +521,8 @@ export const nodeDetailResponseSchema = z.strictObject({
       severity,
       data: z.record(z.string(), z.unknown()),
       observedAt: timestamp,
+      /** The job whose run produced the scan (its raw output); null for an uploaded file. */
+      jobId: z.number().int().nullable(),
     }),
   ),
 });
@@ -548,6 +551,7 @@ export const edgeDetailResponseSchema = z.strictObject({
       command: z.string(),
       data: z.record(z.string(), z.unknown()),
       observedAt: timestamp,
+      jobId: z.number().int().nullable(),
     }),
   ),
 });
@@ -601,6 +605,8 @@ export const scanSummarySchema = z.strictObject({
   ingestedAt: timestamp,
   findingCount: z.number().int(),
   observationCount: z.number().int(),
+  /** The job that produced it; null for an uploaded file. */
+  jobId: z.number().int().nullable(),
 });
 export type ScanSummary = z.infer<typeof scanSummarySchema>;
 
@@ -648,6 +654,117 @@ export const exportResponseSchema = z.strictObject({
   ),
 });
 
+// --- tool runs (docs/architecture.md §12) ------------------------------------------------------------
+
+export const IMAGE_STATUSES = ['built', 'outdated', 'missing', 'unknown'] as const;
+export type ImageStatus = (typeof IMAGE_STATUSES)[number];
+
+export const toolInfoSchema = z.strictObject({
+  name: z.string(),
+  group: z.string(),
+  label: z.string(),
+  description: z.string().nullable(),
+  mode: z.enum(TOOL_MODES),
+  /** Node types it can be pointed at. */
+  accepts: z.array(z.enum(TARGETABLE_TYPES)),
+  /** Outside services it contacts. */
+  external: z.array(z.string()),
+  timeoutSec: z.number().int(),
+});
+export type ToolInfo = z.infer<typeof toolInfoSchema>;
+
+export const toolGroupInfoSchema = z.strictObject({
+  name: z.string(),
+  label: z.string(),
+  /** repo:tag of the image the current scripts make. */
+  image: z.string(),
+  /** built = that exact image exists; outdated = only an older build; unknown = Docker not reachable. */
+  imageStatus: z.enum(IMAGE_STATUSES),
+  /** Its tools, in run order. */
+  tools: z.array(z.string()),
+});
+export type ToolGroupInfo = z.infer<typeof toolGroupInfoSchema>;
+
+export const toolsResponseSchema = z.strictObject({ groups: z.array(toolGroupInfoSchema), tools: z.array(toolInfoSchema) });
+export type ToolsResponse = z.infer<typeof toolsResponseSchema>;
+
+export const jobSchema = z.strictObject({
+  id: z.number().int(),
+  tool: z.string(),
+  group: z.string(),
+  nodeId: z.string(),
+  targetType: z.enum(NODE_TYPES),
+  targetValue: z.string(),
+  mode: z.enum(TOOL_MODES),
+  status: z.enum(JOB_STATUSES),
+  /** scope_log rows: the decision at queueing, and the one right before the container started. */
+  queuedScopeLogId: z.number().int(),
+  scopeLogId: z.number().int().nullable(),
+  /** The command as run. */
+  argv: z.array(z.string()).nullable(),
+  image: z.string().nullable(),
+  timeoutSec: z.number().int(),
+  exitCode: z.number().int().nullable(),
+  error: z.string().nullable(),
+  /** Why result.json was rejected (validation issues). */
+  issues: z.array(z.string()).nullable(),
+  createdAt: timestamp,
+  startedAt: timestamp.nullable(),
+  finishedAt: timestamp.nullable(),
+  scanId: z.string().nullable(),
+  /** Nodes the scan created, and existing nodes it touched ("+14 new, 6 updated"). */
+  nodesCreated: z.number().int().nullable(),
+  nodesUpdated: z.number().int().nullable(),
+});
+export type Job = z.infer<typeof jobSchema>;
+
+export const JOB_PAGE_SIZE = { default: 50, max: 200 } as const;
+
+export const jobsQuerySchema = z.strictObject({
+  page: positiveInt.default(1),
+  pageSize: positiveInt.max(JOB_PAGE_SIZE.max).default(JOB_PAGE_SIZE.default),
+  status: list(z.enum(JOB_STATUSES)).optional(),
+  nodeId: z.string().min(1).optional(),
+});
+
+export const jobsResponseSchema = z.strictObject({
+  items: z.array(jobSchema),
+  page: z.number().int(),
+  pageSize: z.number().int(),
+  total: z.number().int(),
+});
+export type JobsResponse = z.infer<typeof jobsResponseSchema>;
+
+export const JOB_OUTPUT_STREAMS = ['stdout', 'stderr', 'raw'] as const;
+export type JobOutputStream = (typeof JOB_OUTPUT_STREAMS)[number];
+
+export const jobDetailResponseSchema = z.strictObject({
+  job: jobSchema,
+  /** The last few KB of each kept output (null: there is none). */
+  tails: z.strictObject({ stdout: z.string().nullable(), stderr: z.string().nullable(), raw: z.string().nullable() }),
+});
+export type JobDetailResponse = z.infer<typeof jobDetailResponseSchema>;
+
+export const jobCreateSchema = z.strictObject({ tool: z.string().min(1), nodeId: z.string().min(1) });
+export const groupJobCreateSchema = z.strictObject({ group: z.string().min(1), nodeId: z.string().min(1) });
+export const jobsCreatedResponseSchema = z.strictObject({ jobs: z.array(jobSchema) });
+
+/** 403: the scope guard refused the run. The jobs are stored as `refused`. */
+export const jobRefusedResponseSchema = z.strictObject({
+  error: z.string(),
+  decision: z.enum(SCOPE_DECISIONS),
+  jobs: z.array(jobSchema),
+});
+
+export const runnerStatusSchema = z.strictObject({
+  docker: z.strictObject({ reachable: z.boolean(), version: z.string().nullable(), error: z.string().nullable() }),
+  images: z.array(z.strictObject({ group: z.string(), image: z.string(), status: z.enum(IMAGE_STATUSES) })),
+  running: z.number().int(),
+  queued: z.number().int(),
+  maxConcurrent: z.number().int(),
+});
+export type RunnerStatus = z.infer<typeof runnerStatusSchema>;
+
 export const errorResponseSchema = z.strictObject({
   error: z.string(),
   issues: z.array(z.string()).optional(),
@@ -658,5 +775,9 @@ export const wsEventSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('scan.ingested'), scanId: z.string(), tool: z.string() }),
   /** A scope rule or setting changed: every node's `inScope` may be different. */
   z.strictObject({ type: z.literal('scope.changed') }),
+  /** A job was queued, started, finished, cancelled or refused. */
+  z.strictObject({ type: z.literal('job.updated'), job: jobSchema }),
+  /** Docker became reachable or unreachable. */
+  z.strictObject({ type: z.literal('runner.status'), reachable: z.boolean(), error: z.string().nullable() }),
 ]);
 export type WsEvent = z.infer<typeof wsEventSchema>;

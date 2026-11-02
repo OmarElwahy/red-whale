@@ -25,6 +25,7 @@ interface EdgeObservationRow {
   command: string;
   data: string;
   observed_at: string;
+  job_id: number | null;
 }
 
 /** Edge detail + every scan that reported it, oldest first; null if there is no such edge. */
@@ -42,7 +43,8 @@ export function edgeDetail(db: Db, id: string): EdgeDetailResponse | null {
 
   const observations = db.$client
     .prepare(
-      `SELECT o.scan_id, o.tool, s.command, o.data, o.observed_at
+      `SELECT o.scan_id, o.tool, s.command, o.data, o.observed_at,
+              (SELECT MIN(j.id) FROM jobs j WHERE j.scan_id = o.scan_id) AS job_id
        FROM edge_observations o JOIN scans s ON s.id = o.scan_id
        WHERE o.edge_id = ?
        ORDER BY o.observed_at, o.tool, o.scan_id`,
@@ -66,6 +68,7 @@ export function edgeDetail(db: Db, id: string): EdgeDetailResponse | null {
       command: o.command,
       data: jsonObject(o.data),
       observedAt: o.observed_at,
+      jobId: o.job_id,
     })),
   };
 }

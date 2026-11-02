@@ -73,6 +73,8 @@ function scanSummaries(db: Db) {
       findingCount: sql<number>`json_array_length(${scans.raw}, '$.findings')`,
       // Raw SQL: inside a subquery Drizzle leaves column names unqualified, and `id` would bind to observations.
       observationCount: sql<number>`(SELECT COUNT(*) FROM observations o WHERE o.scan_id = scans.id)`,
+      /** The job that produced it (the first, if a re-run produced the same file); null for an uploaded file. */
+      jobId: sql<number | null>`(SELECT MIN(j.id) FROM jobs j WHERE j.scan_id = scans.id)`,
     })
     .from(scans)
     .orderBy(desc(scans.ingestedAt), sql`${scans}.rowid DESC`)
