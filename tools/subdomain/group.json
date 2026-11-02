@@ -1,0 +1,6 @@
+{
+  "name": "subdomain",
+  "label": "subdomain enumeration",
+  "image": "redwhale-tools/subdomain",
+  "tools": ["subfinder", "assetfinder", "findomain", "crtsh"]
+}

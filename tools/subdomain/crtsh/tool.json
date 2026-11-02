@@ -1,0 +1,12 @@
+{
+  "name": "crtsh",
+  "group": "subdomain",
+  "label": "crt.sh",
+  "description": "Certificate transparency search on crt.sh (HTTP API, queried from Python; slow, retried).",
+  "mode": "passive",
+  "accepts": ["domain"],
+  "argv": ["python3", "-I", "/opt/redwhale/subdomain/crtsh/run.py", "--target", "{target}", "--out", "/out"],
+  "timeoutSec": 420,
+  "external": ["crt.sh"],
+  "outputDir": "/out"
+}

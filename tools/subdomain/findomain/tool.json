@@ -1,0 +1,12 @@
+{
+  "name": "findomain",
+  "group": "subdomain",
+  "label": "findomain",
+  "description": "Findomain: subdomains from certificate transparency logs and passive APIs (no API keys configured).",
+  "mode": "passive",
+  "accepts": ["domain"],
+  "argv": ["python3", "-I", "/opt/redwhale/subdomain/findomain/run.py", "--target", "{target}", "--out", "/out"],
+  "timeoutSec": 600,
+  "external": ["crt.sh", "Cert Spotter", "Anubis", "Urlscan", "other Findomain passive sources"],
+  "outputDir": "/out"
+}

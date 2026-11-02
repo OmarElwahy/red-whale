@@ -1,0 +1,9 @@
+# Never in an image: fixtures (saved tool output), tests, docs, caches.
+**/fixtures
+**/test_*.py
+**/tests
+**/README.md
+**/NOTE.md
+**/__pycache__
+**/*.pyc
+check.py

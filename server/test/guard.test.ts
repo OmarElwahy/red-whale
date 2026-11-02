@@ -94,16 +94,20 @@ describe('lint rules', () => {
     expect(await guardMessages(code, AUTHORIZE_FILE)).toEqual([]);
   });
 
-  // The runner doesn't exist yet, so read its config rather than lint it (type-aware linting needs the file).
-  test('the runner file may import Docker and start programs; other runner files may only start programs', async () => {
+  test('the runner file imports Docker, and lints clean', async () => {
+    const text = readFileSync(join(REPO_ROOT, RUNNER_FILE), 'utf8');
+    expect(text).toMatch(/from 'dockerode'/);
+    const [result] = await eslint.lintFiles([join(REPO_ROOT, RUNNER_FILE)]);
+    expect(result?.messages ?? []).toEqual([]);
+  });
+
+  test('other runner files may start programs but not import Docker', async () => {
     const runner = (await eslint.calculateConfigForFile(join(REPO_ROOT, RUNNER_FILE))) as Linter.Config;
     expect((runner.rules?.['no-restricted-imports'] as unknown[] | undefined)?.[0]).toBe(0);
-    expect(JSON.stringify(runner.rules?.['no-restricted-syntax'])).not.toContain('dockerode');
     expect(JSON.stringify(runner.rules?.['no-restricted-syntax'])).toContain('ScopedTarget');
-
-    const other = (await eslint.calculateConfigForFile(join(REPO_ROOT, 'server/src/runner/queue.ts'))) as Linter.Config;
-    const imports = JSON.stringify(other.rules?.['no-restricted-imports']);
-    expect(imports).toContain('dockerode');
-    expect(imports).not.toContain('child_process');
+    const messages = await guardMessages("import Docker from 'dockerode';\nexport { Docker };", 'server/src/runner/orchestrator.ts');
+    expect(messages.map((m) => m.message)).toContainEqual(expect.stringContaining(`Only ${RUNNER_FILE} may talk to Docker`));
+    const spawn = "import { spawn } from 'node:child_process';\nexport { spawn };";
+    expect(await guardMessages(spawn, 'server/src/runner/orchestrator.ts')).toEqual([]);
   });
 }, 120_000);

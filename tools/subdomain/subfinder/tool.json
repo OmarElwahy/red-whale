@@ -1,0 +1,12 @@
+{
+  "name": "subfinder",
+  "group": "subdomain",
+  "label": "subfinder",
+  "description": "ProjectDiscovery subfinder: subdomains from passive sources (no API keys configured).",
+  "mode": "passive",
+  "accepts": ["domain"],
+  "argv": ["python3", "-I", "/opt/redwhale/subdomain/subfinder/run.py", "--target", "{target}", "--out", "/out"],
+  "timeoutSec": 600,
+  "external": ["crt.sh", "AlienVault OTX", "HackerTarget", "Wayback Machine", "RapidDNS", "other subfinder passive sources"],
+  "outputDir": "/out"
+}

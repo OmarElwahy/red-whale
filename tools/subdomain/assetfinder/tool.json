@@ -1,0 +1,12 @@
+{
+  "name": "assetfinder",
+  "group": "subdomain",
+  "label": "assetfinder",
+  "description": "tomnomnom/assetfinder --subs-only: subdomains from certificate logs and passive DNS sources.",
+  "mode": "passive",
+  "accepts": ["domain"],
+  "argv": ["python3", "-I", "/opt/redwhale/subdomain/assetfinder/run.py", "--target", "{target}", "--out", "/out"],
+  "timeoutSec": 300,
+  "external": ["crt.sh", "Cert Spotter", "HackerTarget", "ThreatCrowd", "Wayback Machine"],
+  "outputDir": "/out"
+}

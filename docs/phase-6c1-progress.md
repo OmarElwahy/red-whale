@@ -14,7 +14,8 @@ approved plan is summarized under "Decisions".
 |---|---|---|
 | 1 | runner interface (`runtime.ts`) + fake (`server/test/fakeRuntime.ts`) + hardening (`spec.ts`) + argv/injection tests; tool-def schema (`defs.ts`) | done |
 | 2 | `0004_jobs` migration (jobs, runner_state) + orchestrator queue + concurrency + scope-change cancel + restart/orphan handling (fake runtime) | done |
-| 3 | `docker.ts` (dockerode) + tool.json/group.json loader + Dockerfile + `.dockerignore` + Python helper (+ unittest) + `pnpm tools:build`. Needs Docker Desktop | next |
+| 3a | `docker.ts` (dockerode) + catalog loader + 4 tool.json + group.json + Dockerfile + `.dockerignore` + Python helper (+ unittest, run by Vitest) + `pnpm tools:build` — all tested without Docker | done |
+| 3b | Build the image with Docker (`pnpm tools:build`), fix what the real build shows, check hardening in a real container. Needs Docker Desktop | next |
 | 4 | subfinder script + anonymized real fixture + expected.json | |
 | 5 | assetfinder (same) | |
 | 6 | findomain (same) | |
@@ -105,14 +106,43 @@ approved plan is summarized under "Decisions".
 - Pump is skipped while the last ping said Docker is unreachable (jobs stay queued); before the first ping it runs.
 - Tests: server/test/orchestrator.test.ts (13), with the fake runtime.
 
+## Notes from step 3a (step 3 split: Docker Desktop wasn't running)
+
+- Deps: `dockerode` 5.0.1, `tar-stream` 3.2.2 (ships its own types; no @types/tar-stream), `@types/dockerode` 4.0.2
+  (dev). pnpm ignored build scripts of cpu-features / ssh2 / protobufjs (optional, unused with the named pipe):
+  left unapproved on purpose.
+- `docker.ts`: `DockerRuntime` (ping+version, inspect/list images, create = createVolume + createContainer({name,
+  ...spec.body}), start, wait, kill SIGKILL, logs demuxed (`demuxLogs`), fetchOutput via getArchive +
+  `readOutputArchive` (top-level files only, per-file caps by tar header size, total cap aborts the read, skipped
+  files reported with sizes), remove container (force, v) / volume, list by label, `build()` via buildImage
+  `{context, src}` + followProgress). 404/304/409 treated as done for kill/remove.
+- `catalog.ts`: `loadCatalog(dir = tools/)` → `Catalog` (implements ToolCatalog; `info(group)`, `tools()`), throws
+  `CatalogError` with every issue. Build context = `.dockerignore`, `validate_output.py`, `lib/**`, `<group>/**`
+  minus what `inBuildContext` drops (fixtures/, tests/, __pycache__, test_*.py, README.md, NOTE.md, *.pyc) —
+  mirrors `tools/.dockerignore`. Image ref `<group.image>:<sha256 of context>[0:12]`, labels `redwhale.group`,
+  `redwhale.context`. `imageStatus(runtime, info)` → built | outdated | missing | unknown.
+- Python: `tools/lib/redwhale_tool.py` (ToolRun.add/add_subdomain/error/run_command/write, json_lines, clean_host,
+  safe_target, main(tool, parse, command=|fetch=, version_command=)). Imports `tools/validate_output.py` (one set
+  of rules; copied to /opt/redwhale/ in the image). Scripts run with `python3 -I`, so run.py must put
+  `<tools>/lib` on sys.path itself (parents[2] / "lib"). `argparse` already refuses `--target -x`; `--target=-x`
+  is refused by safe_target (exit 2, nothing written). `tools/lib/fetch_release.py` = Dockerfile download +
+  sha256 check + extract (build time only).
+- Dockerfile: classic builder (no BuildKit heredocs/`# syntax`; dockerode's buildImage without `version: 2`).
+  Base `python:3.13-slim-trixie@sha256:ae14d4ce…` (digest of 2026-11-02). subfinder v2.17.0 (sha256 matches its
+  checksums.txt), assetfinder v0.1.1 (sha256 computed by me 2026-11-02: a7c61fe7…), findomain 10.0.1 (stable;
+  11.0.0 is beta). amd64 only. User 10001, /out owned by it.
+- Python unit tests: `server/test/tools-python.test.ts` runs `python -I -m unittest discover -s <dir>` for every
+  folder under tools/ with a test_*.py (unittest discover needs -s per folder: no __init__.py files).
+- tool.json timeouts: subfinder 600, assetfinder 300, findomain 600, crtsh 420 s.
+
 ## Next action
 
-Step 3. Needs Docker Desktop running (`docker version` must show a Server). Add deps (dockerode, @types/dockerode,
-tar-stream, @types/tar-stream; newest ≥ 2 weeks old, pinned exactly like the others). Write
-`server/src/runner/docker.ts` (implements ContainerRuntime; createVolume then createContainer with `spec.body` +
-name; getArchive parsed with tar-stream enforcing FetchLimits by tar header size; logs demuxed and capped; build
-via `docker.buildImage({context, src})`), switch the guard test's runner-config test to lint the real file. Then
-the loader (`server/src/runner/catalog.ts`: reads tools/*/group.json + tools/*/*/tool.json, validates, image tag =
-hash of the group's build context incl. tools/lib), `tools/lib/redwhale_tool.py` (+ test), `tools/subdomain/`
-group.json, Dockerfile (multi-stage, pinned + sha256 checked), README, `tools/.dockerignore`, and
-`pnpm tools:build [group]` (server/src/runner/cli-build.ts).
+Step 3b: once `docker version` shows a Server: `pnpm tools:build subdomain`; fix the Dockerfile/build path until
+it builds (if the classic builder is refused, pass `version: '2'` in docker.ts build options or fall back as
+needed); then in a container from the image check: `id` = 10001, `subfinder -version`, `assetfinder -h`,
+`findomain --version`, python3 + /opt/redwhale layout. Then add `server/test/docker.integration.test.ts`
+(skipIf Docker unreachable or image missing): create a container via DockerRuntime + containerSpec running a tiny
+python3 -c that writes /out/result.json and raw.txt; check inspect (ReadonlyRootfs, CapDrop, User, no Binds,
+Mounts = the volume), fetchOutput after exit works (volume, not tmpfs), timeout kill works, remove cleans the
+volume, listByLabel finds them. Commit "6C-1 step 3b". Then step 4 (needs the domain from the user — still
+`<DOMAIN>`).
