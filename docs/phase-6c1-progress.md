@@ -15,7 +15,7 @@ approved plan is summarized under "Decisions".
 | 1 | runner interface (`runtime.ts`) + fake (`server/test/fakeRuntime.ts`) + hardening (`spec.ts`) + argv/injection tests; tool-def schema (`defs.ts`) | done |
 | 2 | `0004_jobs` migration (jobs, runner_state) + orchestrator queue + concurrency + scope-change cancel + restart/orphan handling (fake runtime) | done |
 | 3a | `docker.ts` (dockerode) + catalog loader + 4 tool.json + group.json + Dockerfile + `.dockerignore` + Python helper (+ unittest, run by Vitest) + `pnpm tools:build` — all tested without Docker | done |
-| 3b | Build the image with Docker (`pnpm tools:build`), fix what the real build shows, check hardening in a real container. Needs Docker Desktop | next |
+| 3b | Build the image with Docker (`pnpm tools:build`), fix what the real build shows, check hardening in a real container. Needs Docker Desktop | done |
 | 4 | subfinder script + anonymized real fixture + expected.json | |
 | 5 | assetfinder (same) | |
 | 6 | findomain (same) | |
@@ -29,9 +29,8 @@ approved plan is summarized under "Decisions".
 
 ## Decisions (approved plan + user's answers)
 
-- **Fixture capture (steps 4–7):** run the four tools myself, in Docker (the built image), against the domain the
-  user names. **The user's message said `<DOMAIN>` literally (placeholder not filled in); asked for the real one.**
-  Don't guess a domain. The repo is public: **never commit real hostnames**. After capturing, keep each file's
+- **Fixture capture (steps 4–7):** run the four tools myself, in Docker (the built image), against
+  **snapnames.com** (user, 2026-11-02: a Bugcrowd target they are fully authorized on; all four tools are passive). The repo is public: **never commit real hostnames**. After capturing, keep each file's
   exact format but rewrite every hostname consistently to a fake one under `northwind.example`
   (`dev.<real>` → `dev.northwind.example`); keep lines covering wildcards, uppercase, trailing dots, duplicates;
   add a short `NOTE.md` in each `fixtures/` saying the data was anonymized. Keep raw captures out of the repo
@@ -208,12 +207,26 @@ approved plan is summarized under "Decisions".
 - Tests: web/test/jobs-panel.test.tsx (11), panel.test.tsx (+1). Not checked in a real browser yet (no Docker
   here); include in the manual checks.
 
+## Notes from step 3b
+
+- Docker Desktop 29.7.2 (linux/amd64). `pnpm tools:build subdomain` built `redwhale-tools/subdomain:f8064792eb65` in
+  42 s with the classic builder, first try (dockerode's default pipe `//./pipe/docker_engine` works).
+- Verified in a container (--read-only, cap-drop ALL): uid 10001, Python 3.13.18, subfinder (prints config dir to
+  stderr; `-version`), assetfinder, findomain 10.0.1; /opt/redwhale has no fixtures/tests; `/out` owned by 10001;
+  root fs read-only.
+- Git Bash gotcha: `docker run --tmpfs /tmp` → set `MSYS_NO_PATHCONV=1` or the path gets mangled.
+- `server/test/docker.integration.test.ts` (skipIf no Docker / no image): hardening via `docker inspect`, /out read
+  from the volume after exit, per-file caps + skipped files, demuxed logs, cleanup; through the Orchestrator +
+  ingestFinish: succeeded + ingested, timeout → 137 + failed, nothing left (labels with a per-test workspace id).
+  Test tools are `python3 -c` (no braces allowed in argv items, so `dict(...)` not `{...}`).
+
 ## Next action
 
-Steps 3b, 4–8 and 12 remain. **3b–7 are blocked on the user**: Docker Desktop must be running (`docker version`
-shows a Server) and the fixture domain must be given (their message said `<DOMAIN>` literally). Not blocked:
-**step 12 docs** could be drafted now, but finish it last (it must describe the final state). Order when unblocked:
-3b (build + verify image + docker.integration.test.ts) → 4 subfinder → 5 assetfinder → 6 findomain → 7 crtsh
-(each: run in the built image against the domain, keep the raw capture in the scratchpad only, anonymize to
-northwind.example keeping format/edge cases, fixtures/raw.* + expected.json + NOTE.md, run.py with
---replay test) → 8 tools:check → 12 docs.
+Step 4 (subfinder): capture `subfinder -d snapnames.com -oJ -silent` (in the image, hardened, `MSYS_NO_PATHCONV=1`)
+to the scratchpad; write `tools/subdomain/subfinder/run.py` (TOOL, build_command, parse with json_lines +
+add_subdomain, data = source(s)); anonymize the capture to northwind.example (consistent mapping; keep JSON
+lines' exact shape; make sure it covers wildcard, uppercase, trailing dot, duplicate — add such lines by editing
+copies of real lines if the capture lacks them, and say so in NOTE.md); `fixtures/raw.jsonl`, `fixtures/NOTE.md`,
+`fixtures/expected.json` (findings of a --replay run, sorted). A Vitest test that replays every tool's fixture
+and compares with expected.json + validates (server/test/tools-fixtures.test.ts; step 8 turns it into
+tools:check). Rebuild the image after scripts change (`pnpm tools:build subdomain`). Commit "6C-1 step 4".
