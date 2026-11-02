@@ -17,7 +17,7 @@ approved plan is summarized under "Decisions".
 | 3a | `docker.ts` (dockerode) + catalog loader + 4 tool.json + group.json + Dockerfile + `.dockerignore` + Python helper (+ unittest, run by Vitest) + `pnpm tools:build` — all tested without Docker | done |
 | 3b | Build the image with Docker (`pnpm tools:build`), fix what the real build shows, check hardening in a real container. Needs Docker Desktop | done |
 | 4 | subfinder script + anonymized real fixture + expected.json | done |
-| 5 | assetfinder (same) | |
+| 5 | assetfinder (same) | done |
 | 6 | findomain (same) | |
 | 7 | crt.sh (same; retries unit-tested in Python) | |
 | 8 | `pnpm tools:check <tool\|--all>` (tools/check.py + TS wrapper), Vitest runs it for every tool | |
@@ -243,11 +243,19 @@ approved plan is summarized under "Decisions".
 - The real domain had been written into this file in the 3b commit (pushed). Removed now; it remains in git
   history (6d4e44b). Told the user.
 
+## Notes from step 5
+
+- assetfinder has no JSON mode and no version flag: text parser (one host per line), `VERSION_COMMAND = None`
+  (v0.1.1 pinned in the Dockerfile). Command `assetfinder --subs-only <t>`; suffix-only match, so add_subdomain()
+  drops look-alikes. Real capture: 27 lines incl. the apex (~1 s; most of its sources are dead or need keys; a later
+  run gave 30). Fixture = all 27 + 7 edited edge-case lines; replay: 26 findings, 3 ignored. Same fake mapping as
+  subfinder (www/api/mail/pine/cobalt/… overlap → corroboration across fixtures).
+- Image now `redwhale-tools/subdomain:5f11224f200a`.
+
 ## Next action
 
-Step 5 (assetfinder): check `assetfinder -h`; command `assetfinder --subs-only <t>` (plain text, one host per line:
-assetfinder has no JSON mode, so parse text). Capture in the image (hardened, `MSYS_NO_PATHCONV=1`) to the
-scratchpad, write `tools/subdomain/assetfinder/run.py` (copy subfinder's shape), anonymize with the scratchpad
-`anon.py` (same mapping), keep ~50 lines + edge cases (assetfinder output can include other domains, wildcards,
-uppercase — note which are real vs edited in NOTE.md), expected.json from a replay (review it), rebuild the image,
-real run in the container, full checks, grep for the real domain, commit "6C-1 step 5".
+Step 6 (findomain): check `findomain --help` for a machine-readable/quiet mode (`-q` quiet prints hosts only;
+there is no JSON output in 10.0.1 as far as known — confirm), no update check / no external DB, and a run timeout
+flag. Capture in the image (hardened, `MSYS_NO_PATHCONV=1`), write `tools/subdomain/findomain/run.py`, anonymize
+with scratchpad `anon.py`, ~50 lines + edge cases, NOTE.md, expected.json from a replay (review), rebuild, real run,
+checks, grep for the real domain, commit "6C-1 step 6".

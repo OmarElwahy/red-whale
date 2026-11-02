@@ -1,0 +1,241 @@
+{
+  "target": "northwind.example",
+  "status": "success",
+  "errors": [],
+  "findings": [
+    {
+      "type": "subdomain",
+      "value": "alder1.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "api.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "birch1.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "cedar1.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "cobalt.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "dune1.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "ember1.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "fjord1.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "flint.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "grove1.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "heron.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "heron1.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "indigo.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "iris1.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "mail.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "mx.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "ns1.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "ns2.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "ns3.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "pine.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "sable.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "support.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "test.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "vale.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "willow.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "www.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    }
+  ]
+}
