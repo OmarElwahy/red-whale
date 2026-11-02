@@ -20,7 +20,7 @@ approved plan is summarized under "Decisions".
 | 5 | assetfinder (same) | done |
 | 6 | findomain (same) | done |
 | 7 | crt.sh (same; retries unit-tested in Python) | done |
-| 8 | `pnpm tools:check <tool\|--all>` (tools/check.py + TS wrapper), Vitest runs it for every tool | |
+| 8 | `pnpm tools:check <tool\|--all>` (tools/check.py + TS wrapper), Vitest runs it for every tool | done |
 | 9 | job execution → ingest → raw output storage (fake runtime). The real-Docker integration test moved to 3b | done (out of order: 3b–7 blocked on Docker + domain) |
 | 10 | API + WS (`job.updated`, `runner.status`), group jobs | done (out of order) |
 | 11a | UI: API hooks (web/src/api/runner.ts), live split, Run tool submenu, header runner chip, run notices | done (out of order) |
@@ -274,15 +274,23 @@ approved plan is summarized under "Decisions".
   Fixture 40 certs + 1 edited (trailing dot, email, other domain): replay 8 findings, 10 ignored.
 - tools-fixtures test now requires all four tools. Image now `redwhale-tools/subdomain:87f3ae116d72`.
 
+## Notes from step 8
+
+- `pnpm tools:check <tool|--all> [--update]` = `server/src/runner/cli-check.ts`: loadCatalog() first (prints the
+  CatalogError issues: "the server would refuse these"), then `tools/check.py` via findPython(), stdio inherited.
+- `tools/check.py`: per tool folder: files (tool.json, run.py, exactly one fixtures/raw.*, NOTE.md, expected.json),
+  replay → result.json + raw.txt, `validate_output.validate`, tool name = folder, compare status/errors/findings with
+  expected.json (prints "missing finding …" / "extra finding …" / "different …"), folder unit tests; `--update`
+  writes expected.json. ✓/✗ lines, "✓ all N passed" / "✗ k of N failed: …"; exit 0 / 1 (2 = unknown tool/usage).
+- Tests in server/test/tools-fixtures.test.ts: --all passes on the repo; a parser losing findings, invalid values,
+  missing expected.json (+ --update), missing NOTE.md, unknown tool — on a temp copy of tools/.
+
 ## Next action
 
-Step 8: `pnpm tools:check <tool|--all> [--update]`. `tools/check.py` (Python, readable by teammates): for the tool
-(found by folder under tools/*/<tool>/): tool.json present and its basic fields; run.py present; fixtures/raw.* (one),
-NOTE.md, expected.json present; replay run.py → temp dir; validate result.json with validate_output.validate;
-compare with expected.json (findings order-insensitive; print added/missing values); run the folder's test_*.py
-(unittest) if any; `--update` writes expected.json from the replay. Clear ✓/✗ lines and a final verdict; exit 1 on
-any ✗. TS wrapper `server/src/runner/cli-check.ts` (child_process allowed under runner/): validates tool.json with
-the Zod schema + loadCatalog consistency first (so teammates see the same errors the server would), then runs
-check.py with findPython(). Root script `"tools:check": "tsx server/src/runner/cli-check.ts"`. Switch
-server/test/tools-fixtures.test.ts to call check.py (one implementation), plus a test that a broken parser/fixture
-gives ✗ and exit 1. Commit "6C-1 step 8". Then step 12 (docs).
+Step 12 (docs), the last one: architecture.md (new §12 "Tool runs (orchestrator)": runner/docker.ts, hardening,
+per-job volume, caps, queue/concurrency/re-auth/restart/orphans/monitor, tool.json/group.json, image tags by context
+hash, finish/ingest/raw storage; §4 data model jobs + runner_state; §6 API rows + WS events; §8 UI: run menu, Jobs
+tab, runner chip, provenance raw link; §9 phase 6C = 6C-1 done; §10 who may run things: runner file now exists;
+decisions log entries for every decision in this file), docs/team-guide.md rewritten as "How to add your tool",
+tools/subdomain/README.md (tools, "later": amass, sublist3r, chaos, shosubgo, github-subdomains, ffuf), handoff.md
+status row 6C-1. Then the final report to the user with the manual checks.
