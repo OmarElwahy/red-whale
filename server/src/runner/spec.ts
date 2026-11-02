@@ -59,12 +59,9 @@ export function buildArgv(def: ToolDef, target: ScopedTarget): string[] {
   return def.argv.map((item) => (item === TARGET_PLACEHOLDER ? value : item));
 }
 
-export function containerName(jobId: string): string {
-  return `redwhale-job-${jobId}`;
-}
-
-export function volumeName(jobId: string): string {
-  return `redwhale-job-${jobId}`;
+/** Container and volume name. The workspace prefix keeps two workspaces' job 12 apart. */
+export function resourceName(workspaceId: string, jobId: string): string {
+  return `redwhale-${workspaceId.slice(0, 8)}-job-${jobId}`;
 }
 
 export interface SpecInput {
@@ -81,9 +78,9 @@ export function containerSpec({ def, target, image, jobId, workspaceId, limits =
   const argv = buildArgv(def, target);
   const [program = '', ...args] = argv;
   const labels = { [LABEL_JOB]: jobId, [LABEL_WORKSPACE]: workspaceId, [LABEL_TOOL]: def.name };
-  const volume = volumeName(jobId);
+  const volume = resourceName(workspaceId, jobId);
   return {
-    name: containerName(jobId),
+    name: volume,
     volume: { Name: volume, Labels: labels },
     body: {
       Image: image,

@@ -66,13 +66,14 @@ export function foreignScans(db: Db): ForeignScan[] {
 }
 
 /**
- * Deletes every scan, node, edge and observation, and the whole scope (log, rules, passive-only back to on), in one
+ * Deletes every job, scan, node, edge and observation, and the whole scope (log, rules, passive-only back to on), in one
  * transaction. Returns how many scans were removed. The only place scope rules are ever deleted: a mock workspace
  * is disposable, and the caller refuses a database holding real scans unless --force.
  */
 export function wipeWorkspace(db: Db): number {
   const sqlite = db.$client;
   return sqlite.transaction(() => {
+    sqlite.prepare('DELETE FROM jobs').run(); // first: it points at scope_log, nodes and scans
     sqlite.prepare('DELETE FROM scope_log').run();
     sqlite.prepare('DELETE FROM scope_rules').run();
     sqlite.prepare("UPDATE scope_settings SET passive_only = 1, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')").run();

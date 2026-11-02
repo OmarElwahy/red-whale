@@ -89,12 +89,12 @@ describe('argv', () => {
 describe('container hardening', () => {
   test('every option on the list', () => {
     const { body, volume, name } = spec();
-    expect(name).toBe('redwhale-job-job-1');
+    expect(name).toBe('redwhale-ws-1-job-job-1');
     expect(body.User).toBe('10001:10001');
     expect(body.Entrypoint).toEqual(['python3']);
     expect(body.Cmd).toEqual(['-I', '/opt/redwhale/subdomain/subfinder/run.py', '--target', 'example.com', '--out', '/out']);
     expect(body.Labels).toEqual({ 'redwhale.job': 'job-1', 'redwhale.workspace': 'ws-1', 'redwhale.tool': 'subfinder' });
-    expect(volume).toEqual({ Name: 'redwhale-job-job-1', Labels: body.Labels });
+    expect(volume).toEqual({ Name: 'redwhale-ws-1-job-job-1', Labels: body.Labels });
 
     const h = body.HostConfig;
     expect(h.ReadonlyRootfs).toBe(true);
@@ -107,7 +107,7 @@ describe('container hardening', () => {
     expect(h.PidsLimit).toBe(DEFAULT_LIMITS.pidsLimit);
     expect(Object.keys(h.Tmpfs)).toEqual(['/tmp']);
     expect(h.Tmpfs['/tmp']).toMatch(/noexec/);
-    expect(h.Mounts).toEqual([{ Type: 'volume', Source: 'redwhale-job-job-1', Target: '/out', ReadOnly: false }]);
+    expect(h.Mounts).toEqual([{ Type: 'volume', Source: 'redwhale-ws-1-job-job-1', Target: '/out', ReadOnly: false }]);
     expect(h.NetworkMode).toBe('bridge');
     expect(h.AutoRemove).toBe(false);
   });
@@ -134,7 +134,7 @@ describe('fake runtime', () => {
     expect(out.skipped).toEqual([{ name: 'big.bin', size: 10 }]);
     expect((await rt.listByLabel('redwhale.workspace', 'ws-1')).volumes).toHaveLength(1);
     await rt.removeContainer(id);
-    await rt.removeVolume('redwhale-job-job-1');
+    await rt.removeVolume('redwhale-ws-1-job-job-1');
     expect(await rt.listByLabel('redwhale.job')).toEqual({ containers: [], volumes: [] });
     expect(rt.created).toHaveLength(1);
   });

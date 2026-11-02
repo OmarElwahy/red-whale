@@ -64,7 +64,7 @@ test('running migrations on an existing database is a no-op', () => {
 
   const second = open(path);
   const migrations = second.$client.prepare('SELECT COUNT(*) AS n FROM __drizzle_migrations').get();
-  expect(migrations).toEqual({ n: 4 });
+  expect(migrations).toEqual({ n: 5 });
   expect(second.$client.prepare('SELECT COUNT(*) AS n FROM nodes').get()).toEqual({ n: 1 });
 });
 
@@ -168,7 +168,7 @@ describe('a database from before a breaking migration', () => {
 
   test('empty: migrates normally', () => {
     const db = open(schema0000Db(false));
-    expect(db.$client.prepare('SELECT COUNT(*) AS n FROM __drizzle_migrations').get()).toEqual({ n: 4 });
+    expect(db.$client.prepare('SELECT COUNT(*) AS n FROM __drizzle_migrations').get()).toEqual({ n: 5 });
     const columns = db.$client.prepare<[], { name: string }>("SELECT name FROM pragma_table_info('observations')").all();
     expect(columns.map((c) => c.name)).toContain('role');
   });
@@ -213,6 +213,40 @@ describe('edge provenance (0003_edge_observations)', () => {
     expect(names(db, 'table')).toContain('edge_observations');
     const columns = db.$client.prepare<[], { name: string }>("SELECT name FROM pragma_table_info('edges')").all();
     expect(columns.map((c) => c.name)).toEqual(expect.arrayContaining(['confidence', 'source_count']));
+  });
+});
+
+describe('jobs (0004_jobs)', () => {
+  test('a database with data from 0003 upgrades: new tables only, data kept, a workspace ID made', () => {
+    const path = schema0002Db(true);
+    migrateTo(path, 4); // through 0003, past openDb's breaking-migration guard: a 0003 database with data
+
+    const db = open(path);
+    expect(names(db, 'table')).toEqual(expect.arrayContaining(['jobs', 'runner_state']));
+    expect(db.$client.prepare('SELECT COUNT(*) AS n FROM observations').get()).toEqual({ n: 1 });
+    const state = db.$client.prepare<[], { id: number; workspace_id: string }>('SELECT * FROM runner_state').all();
+    expect(state).toHaveLength(1);
+    expect(state[0]?.workspace_id).toMatch(/^[0-9a-f]{32}$/);
+  });
+
+  test('every database gets its own workspace ID, and only one runner_state row', () => {
+    const a = open();
+    const b = open();
+    const id = (db: Db) => (db.$client.prepare<[], { workspace_id: string }>('SELECT workspace_id FROM runner_state').get())?.workspace_id;
+    expect(id(a)).not.toBe(id(b));
+    expect(() => a.$client.prepare("INSERT INTO runner_state VALUES (2, 'x', 'y')").run()).toThrow(/CHECK constraint failed/);
+  });
+
+  test('CHECK constraints on status and mode', () => {
+    const db = open();
+    expect(() =>
+      db.$client
+        .prepare(
+          `INSERT INTO jobs (tool, tool_group, node_id, target_type, target_value, mode, status, queued_scope_log_id, timeout_sec, created_at)
+           VALUES ('t', 'g', 'n', 'domain', 'v', 'passive', 'exploded', 1, 10, 'x')`,
+        )
+        .run(),
+    ).toThrow(/CHECK constraint failed/);
   });
 });
 

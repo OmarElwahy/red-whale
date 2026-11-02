@@ -13,8 +13,8 @@ approved plan is summarized under "Decisions".
 | # | Step | Status |
 |---|---|---|
 | 1 | runner interface (`runtime.ts`) + fake (`server/test/fakeRuntime.ts`) + hardening (`spec.ts`) + argv/injection tests; tool-def schema (`defs.ts`) | done |
-| 2 | `0004_jobs` migration (jobs, runner_state) + orchestrator queue + concurrency + scope-change cancel + restart/orphan handling (fake runtime) | next |
-| 3 | `docker.ts` (dockerode) + tool.json/group.json loader + Dockerfile + `.dockerignore` + Python helper (+ unittest) + `pnpm tools:build`. Needs Docker Desktop | |
+| 2 | `0004_jobs` migration (jobs, runner_state) + orchestrator queue + concurrency + scope-change cancel + restart/orphan handling (fake runtime) | done |
+| 3 | `docker.ts` (dockerode) + tool.json/group.json loader + Dockerfile + `.dockerignore` + Python helper (+ unittest) + `pnpm tools:build`. Needs Docker Desktop | next |
 | 4 | subfinder script + anonymized real fixture + expected.json | |
 | 5 | assetfinder (same) | |
 | 6 | findomain (same) | |
@@ -83,10 +83,36 @@ approved plan is summarized under "Decisions".
 - The guard test's "runner file may import Docker" test still reads the config only; switch it to linting the
   real `docker.ts` in step 3.
 
+## Notes from step 2
+
+- `jobs.id` is an **integer** (autoincrement; readable "job 12"). Container/volume name
+  `redwhale-<workspace id first 8>-job-<id>` (`resourceName` in spec.ts), so two workspaces' job 12 don't collide.
+- Migration `0004_jobs` (drizzle-generated + a header comment + the `runner_state` insert with
+  `lower(hex(randomblob(16)))`). Not breaking. `db:generate` reports no drift. db.test.ts: migration count 5, an
+  upgrade test (0003 db with data → 0004), CHECKs.
+- `wipeWorkspace` (mock/cli.ts) deletes `jobs` first. **TODO step 9:** the mock CLI must also remove `<db dir>/jobs/`.
+- `Orchestrator` (`server/src/runner/orchestrator.ts`): `enqueue(tool, nodeId)`, `enqueueGroup(group, nodeId)` →
+  `{ ok, jobs }` or `{ ok:false, code: unknown-tool|unknown-group|unknown-node|wrong-type|refused }` (refused carries
+  the stored refused jobs). `cancel(id)`, `onScopeChanged()`, `pump()`, `idle()`, `recover()`, `cleanupOrphans()`,
+  `checkRunner()` (ping; first ping or coming back → orphan cleanup + pump; `onRunnerChange` on change),
+  `startMonitor(ms)`, `stop()`, `counts()`, `pending()`, `get(id)`. Options: `finish` hook (step 9 plugs ingest in;
+  default `exitCodeOnly`), `onJob` (→ WS job.updated in step 10), `timeoutMs(def)` (tests shorten), `now`.
+- `ToolCatalog` interface `{ tool(name), group(name), imageRef(group) }`; step 3 implements it from tools/ on disk.
+- On timeout the finish hook still runs (the script may have written a partial result), then the job is forced to
+  `failed` with "timed out after N s; the container was killed" (+ the hook's error).
+- `stop()` = shutdown: no more starts, and running jobs are **abandoned** (row stays `running`, container left);
+  the next start's `recover()` fails them and removes the containers, same as after a crash.
+- Pump is skipped while the last ping said Docker is unreachable (jobs stay queued); before the first ping it runs.
+- Tests: server/test/orchestrator.test.ts (13), with the fake runtime.
+
 ## Next action
 
-Step 2: write migration `0004_jobs` (hand-written SQL + drizzle schema in `server/src/db/schema.ts`; tables only,
-not breaking; check `pnpm --filter @redwhale/server db:generate` reports no drift), then
-`server/src/runner/orchestrator.ts` with the fake runtime: enqueue (authorize at queue) → pump (cap, authorize at
-start, containerSpec, create/start/wait/timeout-kill, cancel) → recover() on start. Ingest/raw storage is step 9;
-in step 2 the finish path can just record exit code + remove container/volume.
+Step 3. Needs Docker Desktop running (`docker version` must show a Server). Add deps (dockerode, @types/dockerode,
+tar-stream, @types/tar-stream; newest ≥ 2 weeks old, pinned exactly like the others). Write
+`server/src/runner/docker.ts` (implements ContainerRuntime; createVolume then createContainer with `spec.body` +
+name; getArchive parsed with tar-stream enforcing FetchLimits by tar header size; logs demuxed and capped; build
+via `docker.buildImage({context, src})`), switch the guard test's runner-config test to lint the real file. Then
+the loader (`server/src/runner/catalog.ts`: reads tools/*/group.json + tools/*/*/tool.json, validates, image tag =
+hash of the group's build context incl. tools/lib), `tools/lib/redwhale_tool.py` (+ test), `tools/subdomain/`
+group.json, Dockerfile (multi-stage, pinned + sha256 checked), README, `tools/.dockerignore`, and
+`pnpm tools:build [group]` (server/src/runner/cli-build.ts).

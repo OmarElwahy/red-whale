@@ -2,6 +2,7 @@
 import {
   CONFIDENCE_LEVELS,
   EDGE_CONFIDENCE_LEVELS,
+  JOB_STATUSES,
   NODE_TYPES,
   OBSERVATION_ROLES,
   RELATION_TYPES,
@@ -13,6 +14,7 @@ import {
   SCOPE_SOURCES,
   SEVERITIES,
   TAGS,
+  TOOL_MODES,
 } from '@redwhale/shared';
 import { sql } from 'drizzle-orm';
 import {
@@ -228,4 +230,66 @@ export const scopeSettings = sqliteTable(
     updatedAt: text('updated_at').notNull(),
   },
   (t) => [check('scope_settings_single_row_ck', sql`${t.id} = 1`)],
+);
+
+// --- tool runs (docs/architecture.md §12) -------------------------------------------------------------
+
+/** One row per tool run, from queueing to the ingested scan. Never deleted (provenance), except by the mock wipe. */
+export const jobs = sqliteTable(
+  'jobs',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    tool: text('tool').notNull(),
+    toolGroup: text('tool_group').notNull(),
+    nodeId: text('node_id')
+      .notNull()
+      .references(() => nodes.id),
+    targetType: text('target_type', { enum: NODE_TYPES }).notNull(),
+    /** The node's value when the job was queued. */
+    targetValue: text('target_value').notNull(),
+    mode: text('mode', { enum: TOOL_MODES }).notNull(),
+    status: text('status', { enum: JOB_STATUSES }).notNull(),
+    /** authorize()'s decision when the job was queued. */
+    queuedScopeLogId: integer('queued_scope_log_id')
+      .notNull()
+      .references(() => scopeLog.id),
+    /** authorize()'s decision right before the container started (null until then). */
+    scopeLogId: integer('scope_log_id').references(() => scopeLog.id),
+    /** The command as run. */
+    argv: text('argv', { mode: 'json' }).$type<string[]>(),
+    image: text('image'),
+    containerId: text('container_id'),
+    timeoutSec: integer('timeout_sec').notNull(),
+    exitCode: integer('exit_code'),
+    error: text('error'),
+    /** Validation issues of result.json, when it was rejected. */
+    issues: text('issues', { mode: 'json' }).$type<string[]>(),
+    createdAt: text('created_at').notNull(),
+    startedAt: text('started_at'),
+    finishedAt: text('finished_at'),
+    scanId: text('scan_id').references(() => scans.id),
+    /** From the ingest: nodes the scan created, and existing nodes it touched. */
+    nodesCreated: integer('nodes_created'),
+    nodesUpdated: integer('nodes_updated'),
+  },
+  (t) => [
+    index('jobs_status_idx').on(t.status),
+    index('jobs_created_at_idx').on(t.createdAt),
+    index('jobs_scan_id_idx').on(t.scanId),
+    index('jobs_node_id_idx').on(t.nodeId),
+    check('jobs_status_ck', oneOf(t.status, JOB_STATUSES)),
+    check('jobs_mode_ck', oneOf(t.mode, TOOL_MODES)),
+    check('jobs_target_type_ck', oneOf(t.targetType, NODE_TYPES)),
+  ],
+);
+
+/** One row (id = 1), created by the migration: this workspace's ID, which labels its containers and volumes. */
+export const runnerState = sqliteTable(
+  'runner_state',
+  {
+    id: integer('id').primaryKey(),
+    workspaceId: text('workspace_id').notNull(),
+    createdAt: text('created_at').notNull(),
+  },
+  (t) => [check('runner_state_single_row_ck', sql`${t.id} = 1`)],
 );
