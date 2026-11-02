@@ -1,0 +1,739 @@
+{
+  "target": "northwind.example",
+  "status": "success",
+  "errors": [],
+  "findings": [
+    {
+      "type": "subdomain",
+      "value": "alder.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "api.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "anubis",
+          "crtname",
+          "hackertarget",
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "aws.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "birch.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "crtsh",
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "cedar.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "dev.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "dune.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "digitorus",
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "ember.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "fjord.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "grove.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "anubis"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "iris.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "juniper.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "kestrel.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "anubis",
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "lumen.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "anubis",
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "mail.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "anubis",
+          "crtname",
+          "hackertarget",
+          "scanmalware",
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "maple.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "anubis",
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "nimbus.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "anubis",
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "ns3.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "anubis",
+          "crtname",
+          "hackertarget",
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "onyx.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "anubis",
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "pine.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "anubis",
+          "crtname",
+          "hackertarget"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "quartz.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "anubis",
+          "crtname",
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "raven.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "anubis",
+          "crtname",
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "sable.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "anubis",
+          "crtname",
+          "hackertarget",
+          "shodanct",
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "staging.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.aspen.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.briar.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.cobalt.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.delta.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.ember2.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "crtname"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.flint.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.garnet.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.heron.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.hollow.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.indigo.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.jade.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.mail.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.mx.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "anubis",
+          "crtname",
+          "hackertarget",
+          "scanmalware",
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.ns2.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.ns3.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.pine.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.quartz.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.sable.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.test.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.tundra.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.umber.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "crtname",
+          "shodanct"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.vale.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.willow.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.yarrow.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.zephyr.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "sources": [
+          "subdomaincenter"
+        ]
+      }
+    }
+  ]
+}

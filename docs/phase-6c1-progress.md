@@ -16,7 +16,7 @@ approved plan is summarized under "Decisions".
 | 2 | `0004_jobs` migration (jobs, runner_state) + orchestrator queue + concurrency + scope-change cancel + restart/orphan handling (fake runtime) | done |
 | 3a | `docker.ts` (dockerode) + catalog loader + 4 tool.json + group.json + Dockerfile + `.dockerignore` + Python helper (+ unittest, run by Vitest) + `pnpm tools:build` — all tested without Docker | done |
 | 3b | Build the image with Docker (`pnpm tools:build`), fix what the real build shows, check hardening in a real container. Needs Docker Desktop | done |
-| 4 | subfinder script + anonymized real fixture + expected.json | |
+| 4 | subfinder script + anonymized real fixture + expected.json | done |
 | 5 | assetfinder (same) | |
 | 6 | findomain (same) | |
 | 7 | crt.sh (same; retries unit-tested in Python) | |
@@ -30,7 +30,9 @@ approved plan is summarized under "Decisions".
 ## Decisions (approved plan + user's answers)
 
 - **Fixture capture (steps 4–7):** run the four tools myself, in Docker (the built image), against
-  **snapnames.com** (user, 2026-11-02: a Bugcrowd target they are fully authorized on; all four tools are passive). The repo is public: **never commit real hostnames**. After capturing, keep each file's
+  **the domain the user gave on 2026-11-02** (a bug-bounty target they are authorized on; all four tools are
+  passive). It is NOT written in the repo (public): it is in local Claude memory (fixture-capture-domain.md);
+  if that is missing, ask the user. Grep the repo for it before every commit. The repo is public: **never commit real hostnames**. After capturing, keep each file's
   exact format but rewrite every hostname consistently to a fake one under `northwind.example`
   (`dev.<real>` → `dev.northwind.example`); keep lines covering wildcards, uppercase, trailing dots, duplicates;
   add a short `NOTE.md` in each `fixtures/` saying the data was anonymized. Keep raw captures out of the repo
@@ -220,13 +222,32 @@ approved plan is summarized under "Decisions".
   ingestFinish: succeeded + ingested, timeout → 137 + failed, nothing left (labels with a per-test workspace id).
   Test tools are `python3 -c` (no braces allowed in argv items, so `dict(...)` not `{...}`).
 
+## Notes from step 4
+
+- Captures + the anonymizer live in the session scratchpad only (`anon.py`: REAL → `northwind.example`, one mapping
+  in `mapping.json` shared by all tools so the same real host gets the same fake name in every fixture; common labels
+  kept, others → made-up words; other real domains → `<word>-corp.example`). Before every commit:
+  `grep -rli <real domain> tools server web docs shared` must print nothing.
+- subfinder command: `subfinder -d <t> -oJ -cs -silent -duc -max-time 8` (-cs = all sources per host; -duc = no
+  update check; -max-time 8 min < 10 min kill; no -nW: resolving isn't passive). Output lines
+  `{"host","input","sources":[…]}`; data = `{"sources": sorted}` (merged across duplicate lines).
+- Real capture: 550 hosts, no wildcard/uppercase/dot/dup/apex lines → fixture = 50 real lines + 8 edited copies for
+  those cases (documented in NOTE.md). Replay: 50 findings, 3 ignored, status success.
+- Fixture convention (all tools): `fixtures/raw.<ext>` (exactly one raw.*), `fixtures/expected.json` =
+  `{ target: "northwind.example", status, errors, findings (sorted by type,value) }`, `fixtures/NOTE.md` required.
+  `server/test/tools-fixtures.test.ts` replays every tool with fixtures and checks Zod validity, tool/target/status/
+  errors, findings (order-insensitive) and that raw.txt == the fixture.
+- Real run in the image (rebuilt: `redwhale-tools/subdomain:010e067e627a`): tool_version 2.17.0 detected, success.
+  Note: every rebuild leaves the previous image tag behind (`docker image prune`-able; maybe tools:build should
+  remove older images of the group — later).
+- The real domain had been written into this file in the 3b commit (pushed). Removed now; it remains in git
+  history (6d4e44b). Told the user.
+
 ## Next action
 
-Step 4 (subfinder): capture `subfinder -d snapnames.com -oJ -silent` (in the image, hardened, `MSYS_NO_PATHCONV=1`)
-to the scratchpad; write `tools/subdomain/subfinder/run.py` (TOOL, build_command, parse with json_lines +
-add_subdomain, data = source(s)); anonymize the capture to northwind.example (consistent mapping; keep JSON
-lines' exact shape; make sure it covers wildcard, uppercase, trailing dot, duplicate — add such lines by editing
-copies of real lines if the capture lacks them, and say so in NOTE.md); `fixtures/raw.jsonl`, `fixtures/NOTE.md`,
-`fixtures/expected.json` (findings of a --replay run, sorted). A Vitest test that replays every tool's fixture
-and compares with expected.json + validates (server/test/tools-fixtures.test.ts; step 8 turns it into
-tools:check). Rebuild the image after scripts change (`pnpm tools:build subdomain`). Commit "6C-1 step 4".
+Step 5 (assetfinder): check `assetfinder -h`; command `assetfinder --subs-only <t>` (plain text, one host per line:
+assetfinder has no JSON mode, so parse text). Capture in the image (hardened, `MSYS_NO_PATHCONV=1`) to the
+scratchpad, write `tools/subdomain/assetfinder/run.py` (copy subfinder's shape), anonymize with the scratchpad
+`anon.py` (same mapping), keep ~50 lines + edge cases (assetfinder output can include other domains, wildcards,
+uppercase — note which are real vs edited in NOTE.md), expected.json from a replay (review it), rebuild the image,
+real run in the container, full checks, grep for the real domain, commit "6C-1 step 5".
