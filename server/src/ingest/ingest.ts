@@ -1,6 +1,6 @@
 // Ingest pipeline (docs/architecture.md §5): validate → hash → plan → one transaction.
 import { randomUUID } from 'node:crypto';
-import { validateContract, type Confidence } from '@redwhale/shared';
+import { MANUAL_TOOL, validateContract, type Confidence } from '@redwhale/shared';
 import { eq, sql, type SQL } from 'drizzle-orm';
 import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import type { Db } from '../db/client';
@@ -44,6 +44,15 @@ function toIso(timestamp: string): string {
   return new Date(timestamp).toISOString();
 }
 
+export interface IngestOptions {
+  /** Only POST /api/nodes: accept a file by the reserved tool `manual`. */
+  allowManual?: boolean;
+  /** Runs inside the ingest transaction after the rows are written (POST /api/nodes: label, tag, notes, position). */
+  apply?: (result: Extract<IngestResult, { status: 'ingested' }>) => void;
+}
+
+export const MANUAL_RESERVED_ERROR = `tool: '${MANUAL_TOOL}' is reserved for nodes added by the analyst`;
+
 /** Ingests the text of one tool-output file. */
 export function ingestText(db: Db, text: string, now: Date = new Date()): IngestResult {
   let parsed: unknown;
@@ -56,10 +65,12 @@ export function ingestText(db: Db, text: string, now: Date = new Date()): Ingest
 }
 
 /** Ingests one parsed tool-output file. Rejected files leave the database untouched. */
-export function ingestDocument(db: Db, input: unknown, now: Date = new Date()): IngestResult {
+export function ingestDocument(db: Db, input: unknown, now: Date = new Date(), options: IngestOptions = {}): IngestResult {
   const validation = validateContract(input);
   if (!validation.ok) return { status: 'invalid', errors: validation.errors };
   const { data: file, warnings } = validation;
+  // The validator accepts it (it's a valid file); only the analyst's own path may produce it.
+  if (file.tool === MANUAL_TOOL && options.allowManual !== true) return { status: 'invalid', errors: [MANUAL_RESERVED_ERROR] };
 
   const planned = planIngest(file);
   if (!planned.ok) return { status: 'invalid', errors: planned.errors };
@@ -130,7 +141,7 @@ export function ingestDocument(db: Db, input: unknown, now: Date = new Date()): 
       recomputeNodes(tx, nodeIds);
       recomputeEdges(tx, edgeIds);
 
-      return {
+      const result: IngestResult = {
         status: 'ingested',
         scanId,
         nodeIds,
@@ -140,6 +151,8 @@ export function ingestDocument(db: Db, input: unknown, now: Date = new Date()): 
         edgeObservations: edgeIds.length,
         warnings,
       };
+      options.apply?.(result);
+      return result;
     },
     { behavior: 'immediate' },
   );

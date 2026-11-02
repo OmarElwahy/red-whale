@@ -769,6 +769,44 @@ export const runnerStatusSchema = z.strictObject({
 });
 export type RunnerStatus = z.infer<typeof runnerStatusSchema>;
 
+// --- graph editing: adding nodes by hand ------------------------------------------------------------
+
+export const MANUAL_EXISTS_ACTIONS = ['return', 'link'] as const;
+
+/**
+ * POST /nodes: the value is checked by the contract validator's rules (a 422 in its wording), then goes through
+ * ingest as a scan by tool `manual`. `x`/`y`: the saved position (both or neither).
+ */
+export const manualNodeSchema = z
+  .strictObject({
+    type: z.enum(NODE_TYPES),
+    value: z.string().max(2000),
+    label: z.string().trim().max(500).optional(),
+    parentId: z.string().min(1).max(200).optional(),
+    relation: z.enum(RELATION_TYPES).optional(),
+    severity: z.enum(SEVERITIES).optional(),
+    tag: z.enum(TAGS).optional(),
+    notes: z.string().max(100_000).optional(),
+    x: coordinate.optional(),
+    y: coordinate.optional(),
+    /** The value already exists: `return` its ID (nothing written), or `link` it under `parentId`. */
+    ifExists: z.enum(MANUAL_EXISTS_ACTIONS).default('return'),
+  })
+  .refine((b) => (b.x === undefined) === (b.y === undefined), { message: 'give both x and y, or neither', path: ['x'] })
+  .refine((b) => b.relation === undefined || b.parentId !== undefined, { message: "has 'relation' but no 'parentId'", path: ['relation'] });
+export type ManualNodeInput = z.input<typeof manualNodeSchema>;
+
+export const manualNodeResponseSchema = z.strictObject({
+  id: z.string(),
+  /** False: the value was already in the graph (201 vs 200). */
+  created: z.boolean(),
+  /** With `ifExists: link`: the parent → node edge was added (false if it was already there). */
+  linked: z.boolean(),
+  /** The validator's warnings for this finding, e.g. "vulnerability has no severity". */
+  warnings: z.array(z.string()),
+});
+export type ManualNodeResponse = z.infer<typeof manualNodeResponseSchema>;
+
 // --- graph editing: deleting nodes ------------------------------------------------------------------
 
 /**

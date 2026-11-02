@@ -1,7 +1,9 @@
-// GET /api/nodes, GET/PATCH /api/nodes/:id, PUT /api/layout (docs/architecture.md §6).
+// GET/POST /api/nodes, GET/PATCH /api/nodes/:id, PUT /api/layout (docs/architecture.md §6).
 import {
+  MANUAL_TOOL,
   compileScope,
   layoutBodySchema,
+  manualNodeSchema,
   nodeListQuerySchema,
   nodePatchSchema,
   type Confidence,
@@ -18,7 +20,8 @@ import { maxSeverity } from '../ingest/derive';
 import { currentScope } from '../scope/store';
 import { filteredGraph, nodeComparator } from '../graph/store';
 import { updateNode } from '../graph/update';
-import { jsonObject, notFound, parseInput } from '../http';
+import { HttpError, jsonObject, notFound, parseInput } from '../http';
+import { addManualNode } from '../graph/manual';
 import type { RouteContext } from './context';
 
 /** Highest severity of the node and everything reachable below it (the same rule as loadGraph). */
@@ -153,6 +156,18 @@ export function nodeRoutes({ app, db, broadcaster }: RouteContext): void {
     const detail = nodeDetail(db, req.params.id);
     if (!detail) throw notFound(`node ${req.params.id}`);
     return detail;
+  });
+
+  app.post('/api/nodes', (req, reply) => {
+    const input = parseInput(manualNodeSchema, req.body);
+    const outcome = addManualNode(db, input);
+    if (!outcome.ok) throw new HttpError(outcome.status, outcome.error, outcome.issues);
+    const { id, created, linked, warnings, ingested } = outcome;
+    if (ingested) {
+      broadcaster.send({ type: 'scan.ingested', scanId: ingested.scanId, tool: MANUAL_TOOL });
+      broadcaster.send({ type: 'graph.updated', nodeIds: ingested.nodeIds, edgeIds: ingested.edgeIds });
+    }
+    return reply.code(outcome.status).send({ id, created, linked, warnings });
   });
 
   app.patch<{ Params: { id: string } }>('/api/nodes/:id', (req) => {

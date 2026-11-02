@@ -7,3 +7,4 @@ export * from './nodeId';
 export * from './api';
 export * from './scope';
 export * from './tools';
+export * from './manual';

@@ -13,8 +13,8 @@ its subtree or a group, with a deletion log). Approved plan and the user's answe
 | # | Step | Status |
 |---|---|---|
 | 1 | Delete API: node and subtree modes, groups (under filters), cascade, deletion log, jobs (`node_id` nullable, queued cancelled, running refuses / `cancelJobs=1`), `graph.deleted`, `PUT /layout` skips unknown IDs, tests | done |
-| 2 | Manual node API (`POST /nodes`) through ingest as tool `manual` + duplicate handling (`ifExists: return\|link`) + validation (422 in validator wording) + `manual` reserved on `POST /ingest` and CLI ingest + manual rows don't count toward `source_count` (nodes and edges), tests | next |
-| 3 | UI: add-node dialog (canvas "Add node…" and node "Add child node…") | |
+| 2 | Manual node API (`POST /nodes`) through ingest as tool `manual` + duplicate handling (`ifExists: return\|link`) + validation (422 in validator wording) + `manual` reserved on `POST /ingest` and CLI ingest + manual rows don't count toward `source_count` (nodes and edges), tests | done |
+| 3 | UI: add-node dialog (canvas "Add node…" and node "Add child node…") | next |
 | 4 | UI: delete dialog, Deleted tab, live-update cleanup on `graph.deleted` | |
 | 5 | Docs: architecture.md (§4, §5, §6, §8, decisions log), contract.md note on `manual`, handoff.md | |
 
@@ -46,23 +46,34 @@ its subtree or a group, with a deletion log). Approved plan and the user's answe
 - Accepted: a hand-added node outside `.example` on a mock workspace makes the next `pnpm mock` need `--force`.
 - Export: deleted nodes are simply absent; the deletion log is not exported.
 
-## Step 2 plan (POST /nodes)
+## Step 2 as built (POST /nodes)
 
-`POST /api/nodes {type, value, label?, parentId?, relation?, severity?, tag?, notes?, x?, y?, ifExists?: 'return'|'link'}`
-- Build a contract v1 doc: tool `manual`, command `added by analyst`, target = the value, started/finished = now,
-  one finding (+ parent from `parentId`'s type/value, relation as given or the single allowed one).
-- `ingestDocument(db, doc, now, { allowManual: true, apply(tx, result) })`: the hook sets label/tag/notes/posX/posY on a
-  new node inside the ingest transaction (`updateNode` made to accept a tx).
-- 201 `{ id, created: true }`; 200 existing `{ id, created: false }` with nothing written; with `ifExists: 'link'` and a
-  parent: ingest just the link (manual finding on the existing node naming the parent) → `linked: true` (or false if
-  the edge exists). 422 `{ error, issues }` in validator wording without `findings[0].` (`value: domain value 'X' must be lowercase`).
-- `shared`: `describeManualNode(type, value)` → `{ error, normalized, id, warnings }`, and `relationsBetween(parentType, childType)`.
-- `deriveNodeState` / `deriveEdgeState`: skip `MANUAL_TOOL` in `sourceCount`.
-- Ingest entry points (`ingestText` via POST /ingest and CLI, and job results) refuse `tool: manual`:
-  "tool 'manual' is reserved for nodes added by the analyst".
+- `shared/src/manual.ts`: `describeManualValue(type, value)` → `{ ok, normalized, id }` or `{ ok: false, error }` in the
+  validator's wording; `relationsBetween`, `parentTypesOf`, `childTypesOf`; `manualDocument` (the synthetic v1 file:
+  tool `manual`, command `added by analyst`, target = value, both timestamps = now); `manualIssue` (drops `findings[0].`);
+  `manualWarnings` (the validator's lint for that one finding). Schemas `manualNodeSchema` / `manualNodeResponseSchema` in api.ts.
+- `server/src/graph/manual.ts` `addManualNode`: value check → parent (exists, not itself, relation from the two types or
+  the given one, contract wording) → exists? 200 (`ifExists: link` + parent: ingest only the link, unless the edge exists)
+  : ingest with `{ allowManual, apply }`; `apply` runs inside the ingest transaction (label, tag, notes, position).
+  Severity is only sent for a new node. Route broadcasts `scan.ingested` (tool manual) + `graph.updated`.
+- `ingestDocument(db, input, now, { allowManual?, apply? })`; without `allowManual` a `manual` file is `invalid` with
+  "tool: 'manual' is reserved for nodes added by the analyst" (POST /ingest, CLI, job results all go through it).
+- `deriveNodeState` / `deriveEdgeState` skip `manual` rows in `sourceCount`.
+
+## Step 3 plan (UI: add-node dialog)
+
+- `web/src/graph/events.ts`: `cxttap` on the core (target === cy) → `onCanvasContextMenu({ x, y, modelX, modelY })`.
+- Menu: canvas menu with "Add node…"; node menu gets "Add child node…" (not on groups/"more"). `web/src/menu/items.ts`.
+- `web/src/edit/AddNodeDialog.tsx` (hand-written dialog, Tailwind): type select with icon (`web/src/graph/icons.ts`),
+  value with live `describeManualValue` (error / "Stored as …"), exists check by `GET /nodes/:id` (debounced,
+  TanStack Query) with "Select existing node" / "Add the parent link"; parent search (`GET /nodes?q=&types=<parentTypesOf>`)
+  and relation select (`relationsBetween`); severity only for vulnerability/secret/leak; label, tag, notes (textarea +
+  NotesMarkdown preview); warnings from `manualWarnings` as grey hints. "Add child": type list = `childTypesOf(parent)`.
+- Submit: `POST /api/nodes` (hook in web/src/api/hooks.ts); x/y = right-click model position in Force, omitted in Tree.
+  On success: select the node and open its path (same as a table row click: `pick(id)` in App.tsx).
+- Tests: web/test/add-node-dialog.test.tsx (validation text, normalized value, exists offer, child type list,
+  submit payload incl. no x/y in Tree), menu.test.ts items.
 
 ## Next action
 
-Step 2: implement the plan above, tests (duplicate → existing, invalid → 422 wording, manual node discovered with
-source_count 0, manual-only edge source_count 0, POST /ingest with tool manual → 422), then commit "Graph editing
-step 2: manual node API".
+Step 3: implement the plan above, then commit "Graph editing step 3: add-node dialog".
