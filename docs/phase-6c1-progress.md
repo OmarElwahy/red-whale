@@ -24,7 +24,7 @@ approved plan is summarized under "Decisions".
 | 9 | job execution → ingest → raw output storage (fake runtime). The real-Docker integration test moved to 3b | done (out of order: 3b–7 blocked on Docker + domain) |
 | 10 | API + WS (`job.updated`, `runner.status`), group jobs | done (out of order) |
 | 11a | UI: API hooks (web/src/api/runner.ts), live split, Run tool submenu, header runner chip, run notices | done (out of order) |
-| 11b | UI: Jobs tab (status, duration, +N new/M updated, cancel, raw output, Show results), provenance raw link | next |
+| 11b | UI: Jobs tab (status, duration, +N new/M updated, cancel, raw output, Show results), provenance raw link | done (out of order) |
 | 12 | Docs: architecture.md (new §12 Orchestrator, §4, §6, §9, decisions log), team-guide.md rewrite, group README, handoff.md | |
 
 ## Decisions (approved plan + user's answers)
@@ -194,14 +194,26 @@ approved plan is summarized under "Decisions".
   queued 1 job" / "… refused: <reason>" / "… failed: <error>". `RunnerIndicator` (web/src/jobs/) in the header:
   green Docker / amber (images not built) / red Docker off / grey runner off, with running(+queued) count.
 
+## Notes from step 11b
+
+- `BottomPanel` has `'jobs'`; `ui.openBottomPanel(panel)` (open, never toggle), `ui.highlightScanId` +
+  `setHighlightScan`. Header: "Jobs (N)" toggle (running + queued), next to Scope. A queued run opens the Jobs tab.
+- `web/src/jobs/JobsPanel.tsx`: 25 per page newest first; status badge (error as title), tool, target (button →
+  pick the node, clears the highlight), started, duration (ticks each second while a job runs), Found
+  (`jobFindings`: "+14 new, 6 updated" / "nothing new" / "–"), actions Cancel (queued/running), Raw output
+  (dialog: argv, error, validation issues, tabs raw/stderr/stdout with the 4 KB tails from GET /jobs/:id and
+  "open full <stream>" links), Show results (scanId set: highlight that scan + pick the target node).
+- ProvenanceTable: rows with `jobId` get a "raw output" link (new tab); the highlighted scan's row has
+  `aria-current` and a tint. SidePanel reads `highlightScanId` from the store.
+- Tests: web/test/jobs-panel.test.tsx (11), panel.test.tsx (+1). Not checked in a real browser yet (no Docker
+  here); include in the manual checks.
+
 ## Next action
 
-Step 11b: `BottomPanel` gets `'jobs'` (web/src/state/ui.ts) + a "Jobs" PanelToggle (with running count) in the
-header next to Scope; `web/src/jobs/JobsPanel.tsx`: table of `useJobs(page)` (newest first, 25/page): status badge,
-tool, target (click = pick node), started, duration (tick every 1 s while running), "+N new, M updated" (nodesCreated
-/ nodesUpdated; "nothing new" when 0/0; "–" when null), error (title, truncated), actions: Cancel (queued/running;
-useCancelJob), Raw output (dialog with stdout/stderr/raw tabs; fetch `/api/jobs/:id` tails or full via outputUrl;
-show "open full output" links), Show results (scanId set: pick the target node → opens its path; set
-`highlightScanId` in ui store so ProvenanceTable highlights rows with that scanId). Open the Jobs panel after a run
-is queued. ProvenanceTable: rows with `jobId` get a "raw" link (outputUrl(jobId, 'raw'), target _blank). jsdom test
-for JobsPanel (render with a fake fetch). Then commit "6C-1 step 11b".
+Steps 3b, 4–8 and 12 remain. **3b–7 are blocked on the user**: Docker Desktop must be running (`docker version`
+shows a Server) and the fixture domain must be given (their message said `<DOMAIN>` literally). Not blocked:
+**step 12 docs** could be drafted now, but finish it last (it must describe the final state). Order when unblocked:
+3b (build + verify image + docker.integration.test.ts) → 4 subfinder → 5 assetfinder → 6 findomain → 7 crtsh
+(each: run in the built image against the domain, keep the raw capture in the scratchpad only, anonymize to
+northwind.example keeping format/edge cases, fixtures/raw.* + expected.json + NOTE.md, run.py with
+--replay test) → 8 tools:check → 12 docs.

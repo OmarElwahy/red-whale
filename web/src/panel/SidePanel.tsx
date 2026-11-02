@@ -8,6 +8,7 @@ import { RuleText, ScopeDecisionValue } from '@/components/ScopeDecision';
 import { SeverityValue } from '@/components/SeverityValue';
 import { Button } from '@/components/ui/button';
 import { riskText } from '@/graph/icons';
+import { useUi } from '@/state/ui';
 import type { MenuAction } from '@/menu/items';
 import { formatTime, formatValue } from './format';
 import { NotesEditor } from './NotesEditor';
@@ -145,6 +146,7 @@ function RevealSection({ blocked, onReveal }: NonNullable<SidePanelProps['reveal
 function NodePanel({ target, memberOf, reveal, onAction }: SidePanelProps & { target: GraphNode }) {
   const detail = useNodeDetail(target.id);
   const patch = usePatchNode(target.id);
+  const highlightScanId = useUi((s) => s.highlightScanId);
   const node = detail.data?.node;
 
   if (detail.error) {
@@ -244,7 +246,7 @@ function NodePanel({ target, memberOf, reveal, onAction }: SidePanelProps & { ta
         )}
       </Section>
       <Section title={`Provenance (${String(detail.data.observations.length)})`}>
-        <ProvenanceTable observations={detail.data.observations} />
+        <ProvenanceTable observations={detail.data.observations} highlightScanId={highlightScanId} />
       </Section>
       <Section title="Notes">
         <NotesEditor

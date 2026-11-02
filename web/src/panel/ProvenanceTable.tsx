@@ -1,13 +1,21 @@
 // Every scan that reported the node or edge (CLAUDE.md rule 4). A row opens to show that tool's raw data.
 import { Fragment, useState } from 'react';
 import type { NodeDetailResponse } from '@/api/hooks';
+import { outputUrl } from '@/api/runner';
+import { cn } from '@/lib/utils';
 import { formatTime } from './format';
 
 /** A node's observation, or an edge's (which has no role or severity). */
 type Observation = Pick<NodeDetailResponse['observations'][number], 'scanId' | 'tool' | 'command' | 'data' | 'observedAt'> &
-  Partial<Pick<NodeDetailResponse['observations'][number], 'role' | 'severity'>>;
+  Partial<Pick<NodeDetailResponse['observations'][number], 'role' | 'severity' | 'jobId'>>;
 
-export function ProvenanceTable({ observations }: { observations: readonly Observation[] }) {
+export interface ProvenanceTableProps {
+  observations: readonly Observation[];
+  /** A job's "Show results": its scan's rows are highlighted. */
+  highlightScanId?: string | null;
+}
+
+export function ProvenanceTable({ observations, highlightScanId = null }: ProvenanceTableProps) {
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   if (observations.length === 0) return <p className="text-muted-foreground text-xs">No observations.</p>;
 
@@ -33,7 +41,10 @@ export function ProvenanceTable({ observations }: { observations: readonly Obser
           const expanded = open.has(o.scanId);
           return (
             <Fragment key={o.scanId}>
-              <tr className="border-t align-top">
+              <tr
+                className={cn('border-t align-top', o.scanId === highlightScanId && 'bg-sky-500/10')}
+                aria-current={o.scanId === highlightScanId ? 'true' : undefined}
+              >
                 <td className="py-1 pr-2">
                   <button
                     type="button"
@@ -56,6 +67,17 @@ export function ProvenanceTable({ observations }: { observations: readonly Obser
                     </span>
                   )}
                   {o.severity && <span className="text-muted-foreground block pl-3">{o.severity}</span>}
+                  {o.jobId !== undefined && o.jobId !== null && (
+                    <a
+                      className="text-muted-foreground hover:text-foreground block pl-3 underline"
+                      href={outputUrl(o.jobId, 'raw')}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={`The tool's raw output (job ${String(o.jobId)})`}
+                    >
+                      raw output
+                    </a>
+                  )}
                 </td>
                 <td className="truncate py-1 pr-2 font-mono" title={o.command}>
                   {o.command}

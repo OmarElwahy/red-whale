@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { NodeDetailResponse } from '../src/api/hooks';
 import { SidePanel, type SidePanelProps } from '../src/panel/SidePanel';
+import { useUi } from '../src/state/ui';
 import { aggregate, node } from './fixtures';
 
 const ID = '00000000000000a1';
@@ -171,6 +172,23 @@ describe('node panel', () => {
     expect(rows[1]?.textContent).not.toContain('as parent');
     expect(rows[2]?.textContent).toContain('katana');
     expect(rows[2]?.textContent).toContain('as parent');
+  });
+
+  test('a row from a tool run links to its raw output; "Show results" highlights that scan', async () => {
+    const detail = makeDetail();
+    api = fakeApi({ ...detail, observations: detail.observations.map((o) => (o.scanId === 's2' ? { ...o, jobId: 7 } : o)) });
+    vi.stubGlobal('fetch', api.fetch);
+    useUi.getState().setHighlightScan('s2');
+    try {
+      renderPanel();
+      const table = within(await screen.findByRole('table'));
+      const links = table.getAllByRole('link', { name: 'raw output' });
+      expect(links.map((l) => l.getAttribute('href'))).toEqual(['/api/jobs/7/output/raw']);
+      const rows = table.getAllByRole('row').slice(1);
+      expect(rows.map((r) => r.getAttribute('aria-current'))).toEqual([null, 'true', null]);
+    } finally {
+      useUi.getState().setHighlightScan(null);
+    }
   });
 
   test('a node only referenced as a parent says so instead of "(0 tools)"', async () => {

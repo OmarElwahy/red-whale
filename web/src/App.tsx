@@ -40,6 +40,7 @@ import { menuItems, safeHttpUrl, type MenuAction, type RunContext } from '@/menu
 import { HighlightsView } from '@/highlights/HighlightsView';
 import { RunRefused, useRunnerStatus, useStartRun, useTools, type RunRequest } from '@/api/runner';
 import { scopeIsEmpty, useScopeRules, useScopeSettings } from '@/api/scope';
+import { JobsPanel } from '@/jobs/JobsPanel';
 import { RunnerIndicator } from '@/jobs/RunnerIndicator';
 import { ScopeBanner, ScopePanel } from '@/scope/ScopePanel';
 import { EdgePanel, GroupEdgePanel } from '@/panel/EdgePanel';
@@ -397,6 +398,7 @@ export function App() {
     startRun.mutate(req, {
       onSuccess: (jobs) => {
         ui.showNotice(`${label}: queued ${String(jobs.length)} job${jobs.length === 1 ? '' : 's'}`);
+        ui.openBottomPanel('jobs');
       },
       onError: (e) => {
         ui.showNotice(e instanceof RunRefused ? `${label} refused: ${e.message}` : `${label} failed: ${e.message}`);
@@ -594,6 +596,9 @@ export function App() {
             Highlights{highlights.data ? ` (${String(highlights.data.length)})` : ''}
           </PanelToggle>
           <ScopeToggle current={bottomPanel} />
+          <PanelToggle panel="jobs" current={bottomPanel}>
+            Jobs{runner.data && runner.data.running + runner.data.queued > 0 ? ` (${String(runner.data.running + runner.data.queued)})` : ''}
+          </PanelToggle>
           <span className="bg-border mx-1 h-5 w-px" aria-hidden />
           <ExportButtons
             png={() => graphRef.current?.png() ?? null}
@@ -688,6 +693,21 @@ export function App() {
           {bottomPanel === 'scope' && (
             <section aria-label="Scope" className="flex h-[45%] min-h-48 shrink-0 flex-col border-t">
               <ScopePanel className="flex-1" />
+            </section>
+          )}
+          {bottomPanel === 'jobs' && (
+            <section aria-label="Jobs" className="flex h-[40%] min-h-40 shrink-0 flex-col border-t">
+              <JobsPanel
+                className="flex-1"
+                onPickNode={(id) => {
+                  ui.setHighlightScan(null);
+                  pick(id);
+                }}
+                onShowResults={(job) => {
+                  ui.setHighlightScan(job.scanId);
+                  pick(job.nodeId);
+                }}
+              />
             </section>
           )}
           {bottomPanel === 'highlights' && (

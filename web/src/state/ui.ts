@@ -11,7 +11,7 @@ export interface MenuState {
 }
 
 /** The panel under the graph. */
-export type BottomPanel = 'table' | 'highlights' | 'scope';
+export type BottomPanel = 'table' | 'highlights' | 'scope' | 'jobs';
 
 export interface TableState {
   page: number;
@@ -51,6 +51,8 @@ export interface UiState {
   /** A one-line answer shown in the header until dismissed (what "Expand all below" did). */
   notice: string | null;
   bottomPanel: BottomPanel | null;
+  /** "Show results" of a job: that scan's rows are highlighted in the provenance table. */
+  highlightScanId: string | null;
   table: TableState;
   menu: MenuState | null;
   /** A request to pan to a node; `seq` changes on every request, so the same node can be centered again. */
@@ -89,6 +91,9 @@ export interface UiState {
   clearCenterWhenShown: () => void;
   /** Opens the panel, or closes it if it's already showing. */
   toggleBottomPanel: (panel: BottomPanel) => void;
+  /** Opens the panel (never closes it). */
+  openBottomPanel: (panel: BottomPanel) => void;
+  setHighlightScan: (scanId: string | null) => void;
   setTablePage: (page: number) => void;
   /** A new sort starts again at page 1. */
   setTableSort: (sort: string) => void;
@@ -118,6 +123,7 @@ export const initialUiState = {
   anchor: null,
   notice: null,
   bottomPanel: null,
+  highlightScanId: null,
   table: { page: 1, sort: DEFAULT_NODE_SORT },
   menu: null,
   centerOn: null,
@@ -237,6 +243,12 @@ export const useUi = create<UiState>()((set) => ({
   },
   toggleBottomPanel: (panel) => {
     set((s) => ({ bottomPanel: s.bottomPanel === panel ? null : panel }));
+  },
+  openBottomPanel: (panel) => {
+    set({ bottomPanel: panel });
+  },
+  setHighlightScan: (scanId) => {
+    set({ highlightScanId: scanId });
   },
   setTablePage: (page) => {
     set((s) => ({ table: { ...s.table, page } }));
