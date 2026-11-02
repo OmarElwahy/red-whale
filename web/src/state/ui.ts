@@ -4,10 +4,13 @@ import { DEFAULT_NODE_SORT, type GroupOpen, type ViewState } from '@redwhale/sha
 import { create } from 'zustand';
 
 export interface MenuState {
-  id: string;
+  /** The node or group right-clicked; null for the empty canvas. */
+  id: string | null;
   /** Rendered position inside the graph container, in px. */
   x: number;
   y: number;
+  /** Canvas menu: the graph position under the click (where "Add node…" puts the node). */
+  model?: { x: number; y: number };
 }
 
 /** The panel under the graph. */

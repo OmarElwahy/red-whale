@@ -12,6 +12,8 @@ export interface GraphHandlers {
   onDoubleTap: (id: string) => void;
   /** Right-click on a node, at its rendered position inside the container. */
   onContextMenu: (target: { id: string; x: number; y: number }) => void;
+  /** Right-click on the empty canvas: rendered position inside the container, and the graph position under it. */
+  onCanvasContextMenu: (target: { x: number; y: number; modelX: number; modelY: number }) => void;
   /**
    * A dragged node came to rest, after any momentum glide (emitted by graph/momentum.ts via the wrapper, not
    * here). Not called in Tree mode, whose positions aren't saved.
@@ -66,7 +68,13 @@ export function bindGraphEvents(cy: Core, handlers: () => GraphHandlers): () => 
   cy.on('tap', CLICKABLE_EDGES, onTapEdge);
   cy.on('tap', onTapCanvas);
   cy.on('dbltap', DOUBLE_TAP, onDoubleTap);
+  const onCanvasRightClick = (e: EventObject) => {
+    if (e.target !== cy) return;
+    handlers().onCanvasContextMenu({ x: e.renderedPosition.x, y: e.renderedPosition.y, modelX: e.position.x, modelY: e.position.y });
+  };
+
   cy.on('cxttap', 'node', onRightClick);
+  cy.on('cxttap', onCanvasRightClick);
   cy.on('mouseover', 'node[kind = "aggregate"]', onOver);
   cy.on('mouseout', 'node[kind = "aggregate"]', onOut);
   return () => {
@@ -75,6 +83,7 @@ export function bindGraphEvents(cy: Core, handlers: () => GraphHandlers): () => 
     cy.off('tap', onTapCanvas);
     cy.off('dbltap', DOUBLE_TAP, onDoubleTap);
     cy.off('cxttap', 'node', onRightClick);
+    cy.off('cxttap', onCanvasRightClick);
     cy.off('mouseover', 'node[kind = "aggregate"]', onOver);
     cy.off('mouseout', 'node[kind = "aggregate"]', onOut);
   };

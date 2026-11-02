@@ -17,7 +17,7 @@ describe('ContextMenu', () => {
   test('lists the items for the node, with "Run tool" disabled while the tools load', () => {
     renderMenu();
     const labels = screen.getAllByRole('menuitem').map((b) => b.textContent);
-    expect(labels).toEqual(['Focus', 'Expand neighbors', 'Expand all below', 'Copy value', 'Open URL in new tab', 'Run tool']);
+    expect(labels).toEqual(['Focus', 'Expand neighbors', 'Expand all below', 'Copy value', 'Open URL in new tab', 'Run tool', 'Add child node…']);
     expect(screen.getByRole<HTMLButtonElement>('menuitem', { name: 'Run tool' }).disabled).toBe(true);
   });
 

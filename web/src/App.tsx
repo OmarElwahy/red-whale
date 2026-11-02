@@ -36,7 +36,8 @@ import { toElements } from '@/graph/elements';
 import type { GraphHandlers } from '@/graph/events';
 import { PositionSaver } from '@/graph/positions';
 import { ContextMenu } from '@/menu/ContextMenu';
-import { menuItems, safeHttpUrl, type MenuAction, type RunContext } from '@/menu/items';
+import { canvasMenuItems, menuItems, safeHttpUrl, type MenuAction, type RunContext } from '@/menu/items';
+import { AddNodeDialog, type NodeRef } from '@/edit/AddNodeDialog';
 import { HighlightsView } from '@/highlights/HighlightsView';
 import { RunRefused, useRunnerStatus, useStartRun, useTools, type RunRequest } from '@/api/runner';
 import { scopeIsEmpty, useScopeRules, useScopeSettings } from '@/api/scope';
@@ -253,6 +254,8 @@ export function App() {
   const relayoutSeq = useUi((s) => s.relayoutSeq);
   const [layingOut, setLayingOut] = useState(false);
   const [legendOpen, setLegendOpen] = useState(false);
+  /** The Add node dialog: under which node (or none), and where on the canvas (null: laid out automatically). */
+  const [adding, setAdding] = useState<{ parent: NodeRef | null; position: { x: number; y: number } | null } | null>(null);
   useLiveUpdates();
   const liveStatus = useLive((s) => s.status);
   const fresh = useLive((s) => s.fresh);
@@ -406,9 +409,15 @@ export function App() {
     });
   };
 
-  const run = (action: MenuAction, target: ViewNode, name?: string) => {
+  const run = (action: MenuAction, target: ViewNode | null, name?: string) => {
+    const at = menu?.model;
     closeMenu();
-    if (!ix) return;
+    if (action === 'add-node') {
+      // Force: the node stays where the analyst right-clicked (saved like a drag). Tree: the tree places it.
+      setAdding({ parent: null, position: at && layout === 'force' ? at : null });
+      return;
+    }
+    if (!ix || target === null) return;
     const group = target.type === 'aggregate' ? target : undefined;
     switch (action) {
       case 'focus':
@@ -462,6 +471,12 @@ export function App() {
           );
         }
         break;
+      case 'add-child':
+        // Laid out next to its parent (no saved position), in either mode.
+        if (target.type !== 'aggregate' && target.type !== 'more') {
+          setAdding({ parent: { id: target.id, type: target.type, value: target.value, label: target.label }, position: null });
+        }
+        break;
       case 'run-menu':
         break;
     }
@@ -487,6 +502,9 @@ export function App() {
     },
     onContextMenu: ({ id, x, y }) => {
       openMenu({ id, x, y });
+    },
+    onCanvasContextMenu: ({ x, y, modelX, modelY }) => {
+      openMenu({ id: null, x, y, model: { x: modelX, y: modelY } });
     },
     onMoved: (positions) => {
       saver.current?.queue(positions);
@@ -518,7 +536,7 @@ export function App() {
         : ix !== null && ix.size >= ELEMENT_BUDGET
           ? 'The graph is at its ~2,000-element limit. Collapse a group to make room.'
           : null;
-  const menuTarget = menu === null ? undefined : ix?.byId.get(menu.id);
+  const menuTarget = menu === null || menu.id === null ? undefined : ix?.byId.get(menu.id);
   const filtered = hasFilters(filters);
   const workspaceEmpty =
     stats.data?.totals.nodes === 0 || (view !== undefined && view.totals.nodes === 0 && !filtered);
@@ -620,7 +638,17 @@ export function App() {
             ) : workspaceEmpty ? (
               <Message>
                 The workspace is empty. Load some data with <code className="font-mono">pnpm mock</code> or{' '}
-                <code className="font-mono">pnpm ingest &lt;file.json&gt;</code>.
+                <code className="font-mono">pnpm ingest &lt;file.json&gt;</code>, or{' '}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setAdding({ parent: null, position: null });
+                  }}
+                >
+                  add a node
+                </Button>
+                .
               </Message>
             ) : (
               <CytoscapeGraph
@@ -673,6 +701,18 @@ export function App() {
                 })}
                 onAction={(item) => {
                   run(item.action, menuTarget, item.name);
+                }}
+                onClose={closeMenu}
+              />
+            )}
+            {menu && menu.id === null && (
+              <ContextMenu
+                x={menu.x}
+                y={menu.y}
+                title="Canvas"
+                items={canvasMenuItems()}
+                onAction={(item) => {
+                  run(item.action, null);
                 }}
                 onClose={closeMenu}
               />
@@ -764,6 +804,23 @@ export function App() {
           />
         )}
       </main>
+      {adding && (
+        <AddNodeDialog
+          parent={adding.parent}
+          position={adding.position}
+          onDone={(id) => {
+            setAdding(null);
+            pick(id);
+          }}
+          onSelectExisting={(id) => {
+            setAdding(null);
+            pick(id);
+          }}
+          onClose={() => {
+            setAdding(null);
+          }}
+        />
+      )}
     </div>
   );
 }

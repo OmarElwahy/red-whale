@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { RunnerStatus, ToolInfo, ToolsResponse } from '@redwhale/shared';
-import { menuItems, runItems, safeHttpUrl, type MenuContext, type RunContext } from '../src/menu/items';
+import { canvasMenuItems, menuItems, runItems, safeHttpUrl, type MenuContext, type RunContext } from '../src/menu/items';
 import { aggregate, more, node } from './fixtures';
 
 const ctx = (over: Partial<MenuContext> = {}): MenuContext => ({
@@ -15,8 +15,23 @@ const actions = (items: ReturnType<typeof menuItems>) => items.map((i) => i.acti
 describe('menuItems', () => {
   test('an ordinary node: focus, expand neighbors, expand all below, copy, and run tool (loading until the tools come)', () => {
     const items = menuItems(node('a'), ctx());
-    expect(actions(items)).toEqual(['focus', 'expand-neighbors', 'expand-all-below', 'copy-value', 'run-menu']);
+    expect(actions(items)).toEqual(['focus', 'expand-neighbors', 'expand-all-below', 'copy-value', 'run-menu', 'add-child']);
     expect(items.find((i) => i.action === 'run-menu')).toMatchObject({ disabled: true, label: 'Run tool', hint: 'Loading the tools…' });
+  });
+
+  test('"Add child node…" on a node that can have children; disabled (and why) on one that cannot', () => {
+    expect(menuItems(node('a'), ctx()).find((i) => i.action === 'add-child')).toEqual({ action: 'add-child', label: 'Add child node…' });
+    expect(menuItems(node('l', { type: 'leak', value: 'LinkedIn-2016' }), ctx()).find((i) => i.action === 'add-child')).toEqual({
+      action: 'add-child',
+      label: 'Add child node…',
+      disabled: true,
+      hint: 'Nothing can hang under a leak.',
+    });
+    expect(actions(menuItems(openGroup, ctx()))).not.toContain('add-child');
+  });
+
+  test('the empty canvas offers "Add node…"', () => {
+    expect(canvasMenuItems()).toEqual([{ action: 'add-node', label: 'Add node…' }]);
   });
 
   test('a URL node can be opened in a new tab', () => {
@@ -126,7 +141,7 @@ describe('run tool submenu', () => {
 
   test('a node type no tool takes: Run tool is disabled and says so', () => {
     expect(runItems(node('s'), run())).toEqual([]);
-    expect(menuItems(node('s'), ctx({ run: run() })).at(-1)).toMatchObject({ disabled: true, hint: 'No tool runs against a subdomain yet.' });
+    expect(menuItems(node('s'), ctx({ run: run() })).find((i) => i.action === 'run-menu')).toMatchObject({ disabled: true, hint: 'No tool runs against a subdomain yet.' });
   });
 
   const down: RunnerStatus = { ...RUNNER, docker: { reachable: false, version: null, error: 'x' } };
@@ -154,6 +169,6 @@ describe('run tool submenu', () => {
 
   test('a server without the runner says why', () => {
     const items = menuItems(domain(), ctx({ run: run({ tools: undefined, toolsError: 'Tool runs are off: 503' }) }));
-    expect(items.at(-1)).toMatchObject({ action: 'run-menu', disabled: true, hint: 'Tool runs are off: 503' });
+    expect(items.find((i) => i.action === 'run-menu')).toMatchObject({ action: 'run-menu', disabled: true, hint: 'Tool runs are off: 503' });
   });
 });

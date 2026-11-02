@@ -2,7 +2,8 @@
 import type { ContractFile } from './contract';
 import type { NodeType } from './enums';
 
-const NEEDS_SEVERITY: readonly NodeType[] = ['vulnerability', 'secret', 'leak'];
+/** Types the validator warns about when they come without a severity (the Add node dialog asks for one). */
+export const NEEDS_SEVERITY: readonly NodeType[] = ['vulnerability', 'secret', 'leak'];
 const MAY_BE_ROOT: readonly NodeType[] = ['domain', 'subdomain', 'ip', 'url'];
 
 export function lintContract(doc: ContractFile): string[] {

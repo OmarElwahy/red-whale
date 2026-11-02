@@ -37,6 +37,7 @@ function spies() {
     onSelectEdge: vi.fn<GraphHandlers['onSelectEdge']>(),
     onDoubleTap: vi.fn<GraphHandlers['onDoubleTap']>(),
     onContextMenu: vi.fn<GraphHandlers['onContextMenu']>(),
+    onCanvasContextMenu: vi.fn<GraphHandlers['onCanvasContextMenu']>(),
     onMoved: vi.fn<GraphHandlers['onMoved']>(),
   };
 }
@@ -90,6 +91,13 @@ describe('bindGraphEvents', () => {
   test('right-click opens the menu at the rendered position of the click', () => {
     cy.getElementById('c').emit({ type: 'cxttap', renderedPosition: { x: 120, y: 45 } } as never);
     expect(h.onContextMenu).toHaveBeenCalledWith({ id: 'c', x: 120, y: 45 });
+    expect(h.onCanvasContextMenu).not.toHaveBeenCalled();
+  });
+
+  test('right-click on the empty canvas reports where, on screen and in the graph (Add node…)', () => {
+    cy.emit({ type: 'cxttap', renderedPosition: { x: 30, y: 40 }, position: { x: -12.5, y: 300 } } as never);
+    expect(h.onCanvasContextMenu).toHaveBeenCalledWith({ x: 30, y: 40, modelX: -12.5, modelY: 300 });
+    expect(h.onContextMenu).not.toHaveBeenCalled();
   });
 
   test('the end of a drag is left to graph/momentum.ts (it reports the resting position)', () => {

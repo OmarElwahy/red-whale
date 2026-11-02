@@ -1,6 +1,6 @@
 // What the right-click menu offers for a node, a group or a "more" node (docs/architecture.md §8). Pure, so it's
 // unit-tested.
-import { scopeModeFor, type AggregateNode, type GraphNode, type RunnerStatus, type ToolMode, type ToolsResponse, type ViewNode } from '@redwhale/shared';
+import { childTypesOf, scopeModeFor, type AggregateNode, type GraphNode, type RunnerStatus, type ToolMode, type ToolsResponse, type ViewNode } from '@redwhale/shared';
 
 export type MenuAction =
   | 'focus'
@@ -16,7 +16,11 @@ export type MenuAction =
   /** Opens the "Run tool" submenu. */
   | 'run-menu'
   | 'run-group'
-  | 'run-tool';
+  | 'run-tool'
+  /** The empty canvas: open the Add node dialog. */
+  | 'add-node'
+  /** A node: the Add node dialog with this node as the parent. */
+  | 'add-child';
 
 export interface MenuBadge {
   text: string;
@@ -100,8 +104,19 @@ export function menuItems(target: ViewNode, ctx: MenuContext): MenuItem[] {
     }
     if (ctx.group) items.push({ action: 'collapse-parent', label: 'Collapse group' });
     items.push(runMenu(target, ctx.run));
+    const children = childTypesOf(target.type);
+    items.push({
+      action: 'add-child',
+      label: 'Add child node…',
+      ...(children.length > 0 ? {} : { disabled: true, hint: `Nothing can hang under a ${target.type}.` }),
+    });
   }
   return items;
+}
+
+/** Right-click on the empty canvas. */
+export function canvasMenuItems(): MenuItem[] {
+  return [{ action: 'add-node', label: 'Add node…' }];
 }
 
 /** Why a tool of this mode can't run against `node` right now, as far as the UI can tell (the server decides). */
