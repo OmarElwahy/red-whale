@@ -36,7 +36,7 @@ const sortFindings = (findings: Record<string, unknown>[]) =>
 
 describe.skipIf(!python)('tool parsers against their saved real output', () => {
   test('the subdomain tools have fixtures', () => {
-    expect(withFixtures.map((t) => t.tool)).toEqual(expect.arrayContaining(['subfinder']));
+    expect(withFixtures.map((t) => t.tool)).toEqual(['subfinder', 'assetfinder', 'findomain', 'crtsh']);
   });
 
   test.each(withFixtures)('$tool', ({ tool, dir, raw, expected }) => {

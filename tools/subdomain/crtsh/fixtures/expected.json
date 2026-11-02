@@ -1,0 +1,119 @@
+{
+  "target": "northwind.example",
+  "status": "success",
+  "errors": [],
+  "findings": [
+    {
+      "type": "subdomain",
+      "value": "ember2.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "certificates": 1,
+        "first_cert": "2017-03-21",
+        "last_cert": "2017-03-21"
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "indigo.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "certificates": 9,
+        "first_cert": "2026-07-03",
+        "last_cert": "2026-08-31"
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "iris1.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "certificates": 2,
+        "first_cert": "2023-07-07",
+        "last_cert": "2023-07-07"
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "sable.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "certificates": 5,
+        "first_cert": "2025-04-10",
+        "last_cert": "2026-07-27"
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "umber.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "certificates": 1,
+        "first_cert": "2026-03-02",
+        "last_cert": "2026-03-02"
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.ember2.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "certificates": 1,
+        "first_cert": "2017-03-21",
+        "last_cert": "2017-03-21"
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "certificates": 2,
+        "first_cert": "2013-07-30",
+        "last_cert": "2023-07-03"
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "www.umber.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain",
+      "data": {
+        "certificates": 1,
+        "first_cert": "2026-03-02",
+        "last_cert": "2026-03-02"
+      }
+    }
+  ]
+}

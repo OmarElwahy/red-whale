@@ -19,7 +19,7 @@ approved plan is summarized under "Decisions".
 | 4 | subfinder script + anonymized real fixture + expected.json | done |
 | 5 | assetfinder (same) | done |
 | 6 | findomain (same) | done |
-| 7 | crt.sh (same; retries unit-tested in Python) | |
+| 7 | crt.sh (same; retries unit-tested in Python) | done |
 | 8 | `pnpm tools:check <tool\|--all>` (tools/check.py + TS wrapper), Vitest runs it for every tool | |
 | 9 | job execution → ingest → raw output storage (fake runtime). The real-Docker integration test moved to 3b | done (out of order: 3b–7 blocked on Docker + domain) |
 | 10 | API + WS (`job.updated`, `runner.status`), group jobs | done (out of order) |
@@ -259,14 +259,30 @@ approved plan is summarized under "Decisions".
   ThreatMiner — now the tool.json `external` list) gave 6 lines incl. the apex (~21 s); fixture = 6 real + 6 edited
   edge-case lines; replay 5 findings, 3 ignored. Image now `redwhale-tools/subdomain:738501433543`.
 
+## Notes from step 7
+
+- `tools/subdomain/crtsh/run.py`: `main(TOOL, parse, fetch=fetch)`. fetch: `GET https://crt.sh/?q=%25.<t>&output=json`
+  (urllib, UA `redwhale-crtsh/1`), 3 tries, per-try timeout min(90 s, time left), backoff 5/15 s, retries on
+  timeout/URLError/429/5xx/HTML-instead-of-JSON, not on other 4xx, never past the script's timeout; failure →
+  run.error("crt.sh gave no usable answer (<reason>)"). parse: names from common_name + name_value per cert,
+  aggregated per cleaned name → data `{certificates, first_cert, last_cert}` (not_before dates). opener/sleep/clock
+  are injectable: `test_crtsh.py` (7 tests, no network). In replay mode the contract `command` is
+  "crtsh northwind.example (replayed)" (main doesn't know the URL for fetch tools; fine).
+- Real answer: 306 certs, 14 names, already full of edge cases (237 wildcards, uppercase, multi-name, CN outside the
+  names, org names like "<company>.com, Inc."). It also named a sister domain (.mobi) → anon.py now maps any
+  `<realname>.<tld>` to `<word>-corp.example`. Cert `id` and `serial_number` replaced (they lead to the real certs).
+  Fixture 40 certs + 1 edited (trailing dot, email, other domain): replay 8 findings, 10 ignored.
+- tools-fixtures test now requires all four tools. Image now `redwhale-tools/subdomain:87f3ae116d72`.
+
 ## Next action
 
-Step 7 (crt.sh): no binary. `tools/subdomain/crtsh/run.py` uses `main(TOOL, parse, fetch=fetch)`: GET
-`https://crt.sh/?q=%25.<t>&output=json` with urllib (timeout ~60 s per try, 3 tries with backoff 5/15/45 s on
-timeout, 5xx, 429 or a body that isn't JSON; stop early if the total would pass the script timeout), set
-`run.command` to the URL, return the body (raw.txt). parse: JSON array of certs; `name_value` (newline-separated
-names) + `common_name`; add_subdomain each; data e.g. `{"crtsh_ids": [...]}` or issuer — keep it small. Unit test
-`tools/subdomain/crtsh/test_crtsh.py` for the retry logic with a fake opener (no network). Capture the real JSON
-in the image; anonymize names AND other identifying fields (emails, other real domains in SANs → anon.fake_domain,
-issuer names can stay: public CAs); keep ~40 entries + edge cases (wildcards, uppercase, multi-name name_value,
-emails in name_value). NOTE.md, expected.json, rebuild, real run, checks, grep, commit "6C-1 step 7".
+Step 8: `pnpm tools:check <tool|--all> [--update]`. `tools/check.py` (Python, readable by teammates): for the tool
+(found by folder under tools/*/<tool>/): tool.json present and its basic fields; run.py present; fixtures/raw.* (one),
+NOTE.md, expected.json present; replay run.py → temp dir; validate result.json with validate_output.validate;
+compare with expected.json (findings order-insensitive; print added/missing values); run the folder's test_*.py
+(unittest) if any; `--update` writes expected.json from the replay. Clear ✓/✗ lines and a final verdict; exit 1 on
+any ✗. TS wrapper `server/src/runner/cli-check.ts` (child_process allowed under runner/): validates tool.json with
+the Zod schema + loadCatalog consistency first (so teammates see the same errors the server would), then runs
+check.py with findPython(). Root script `"tools:check": "tsx server/src/runner/cli-check.ts"`. Switch
+server/test/tools-fixtures.test.ts to call check.py (one implementation), plus a test that a broken parser/fixture
+gives ✗ and exit 1. Commit "6C-1 step 8". Then step 12 (docs).
