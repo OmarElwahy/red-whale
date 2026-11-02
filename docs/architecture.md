@@ -1,6 +1,7 @@
 # RED WHALE — Architecture & Build Plan
 
-Scope of this document: the **data contract, database, API, graph UI**, and since 6C-1 the **tool runner** (§11).
+Scope of this document: the **data contract, database, API, graph UI**, since 6C-1 the **tool runner** (§11), and
+**graph editing** (adding nodes by hand, deleting nodes; §12).
 AI layers and CVE monitoring come later (see Phase 7+).
 
 ## 1. Data flow
@@ -12,13 +13,14 @@ Python tool scripts ──JSON (docs/contract.md)──▶ Ingest ──▶ SQLi
 
 Files enter through `pnpm ingest <file.json>`, `POST /api/ingest`, or a tool run (§11): the orchestrator runs a
 tool's script in a container and puts its `result.json` through the same ingest. It is just another producer of
-the same JSON.
+the same JSON. A node the analyst adds by hand (`POST /api/nodes`, §12) is one more: a one-finding file by the
+reserved tool `manual`.
 
 ## 2. Packages
 
 | Package | Contains |
 |---|---|
-| `shared/` | Zod schemas for the tool-output contract and API responses; `normalize.ts` (value normalization); `nodeId.ts` (deterministic IDs); `scope.ts` (scope rules and `checkScope`, §10); shared enums (node types, relations, severities, confidence, tags) |
+| `shared/` | Zod schemas for the tool-output contract and API responses; `normalize.ts` (value normalization); `nodeId.ts` (deterministic IDs); `scope.ts` (scope rules and `checkScope`, §10); `manual.ts` (the Add node checks and the synthetic `manual` file, §12); shared enums (node types, relations, severities, confidence, tags) |
 | `server/` | Fastify app bound to `127.0.0.1:4100`; Drizzle schema + migrations; ingest pipeline; graph query + aggregation; WebSocket broadcaster; the tool runner (`src/runner/`, §11); CLI entry for `ingest`, `mock`, `tools:build`, `tools:check` |
 | `web/` | Vite + React app on `127.0.0.1:5173`, proxying `/api` to the server |
 
@@ -91,8 +93,8 @@ in file order, highest `severity`. `role` is `finding` if the file reports the n
 **scope_settings** — one row (`id = 1`, CHECK), created by the migration: `passive_only` (default on) · `updated_at`.
 
 **jobs** — one row per tool run (§11), from queueing to the ingested scan. Never deleted (the mock wipe aside).
-`id` (integer) · `tool` · `tool_group` · `node_id` → nodes · `target_type` · `target_value` (the node's value when
-queued) · `mode` (`passive` | `active` | `intrusive`) · `status` (`queued` | `running` | `succeeded` | `failed` |
+`id` (integer) · `tool` · `tool_group` · `node_id` → nodes (**NULL once the analyst deleted the node**, §12; the job
+then shows "node deleted") · `target_type` · `target_value` (the node's value when queued) · `mode` (`passive` | `active` | `intrusive`) · `status` (`queued` | `running` | `succeeded` | `failed` |
 `cancelled` | `refused`) · `queued_scope_log_id` → scope_log (the `authorize()` decision at queueing) ·
 `scope_log_id` → scope_log (the decision right before the container started) · `argv` (json, the command as run) ·
 `image` · `container_id` · `timeout_sec` · `exit_code` · `error` · `issues` (json, why `result.json` was rejected) ·
@@ -102,6 +104,13 @@ Indexes on `status`, `created_at`, `scan_id`, `node_id`; CHECKs on the enums.
 **runner_state** — one row (`id = 1`), created by migration `0004_jobs`: `workspace_id` (random, labels this
 workspace's containers and volumes) · `created_at`. `0004_jobs` adds tables only: not breaking.
 
+**deletions** — one row per analyst delete (§12): a record, not a restore. Never deleted (the mock wipe aside).
+`id` (integer) · `at` · `kind` (`node` | `group`) · `mode` (`node` | `subtree`) · `root_type` (the node's type, a group's
+member type) · `root_value` (the node's value, a group's parent value, `''` for a group of roots) · `root_label`
+("a.example.com", "37 subdomains under example.com") · `node_count` · `edge_count` · `removed` (json, every removed
+`{ type, value }`). Index on `at`; CHECKs on the enums. Migration `0005_graph_editing` adds it and rebuilds `jobs` with a
+nullable `node_id` (rows copied): not breaking.
+
 All timestamps are stored as TEXT in `Date#toISOString()` form (`YYYY-MM-DDTHH:MM:SS.sssZ`) so they sort as text.
 Enum columns have CHECK constraints.
 
@@ -109,10 +118,12 @@ Confidence rule: after each ingest, recompute `source_count = COUNT(DISTINCT too
 for touched nodes; `0 or 1 → discovered`, `≥2 → corroborated`; `verified` is only set by the analyst and never
 downgraded automatically. Parent rows are kept as provenance and count as sightings (`first_seen`/`last_seen`,
 the `tool` filter), but never toward `source_count`, so a node that tools only name as a parent stays `discovered`
-with `source_count` 0.
+with `source_count` 0. The same goes for rows by the reserved tool `manual` (a node or link the analyst added, §12):
+provenance and sightings, never corroboration; the analyst can still mark the node `verified`.
 
 Edge confidence: `source_count = COUNT(DISTINCT tool)` over **all** of the edge's observations (every one is a report of
-the relation; there is no parent-only role for edges); `1 → discovered`, `≥2 → corroborated`. No analyst `verified`.
+the relation; there is no parent-only role for edges) except `manual` ones (a link the analyst drew: `source_count` 0);
+`1 → discovered`, `≥2 → corroborated`. No analyst `verified`.
 
 Schema changes: until there is real engagement data, migrations don't backfill. A migration that can't carry old
 rows forward is listed in `BREAKING_MIGRATIONS` (`server/src/db/client.ts`), and `openDb` refuses to run it on a
@@ -127,6 +138,14 @@ pnpm mock (or re-ingest your files)."). Breaking so far: `0001_observation_role`
    upsert edge, insert observation; for every finding that names a parent, one edge observation per edge →
    recompute derived fields for touched nodes and edges.
 4. After commit, broadcast `{ type: "graph.updated", nodeIds, edgeIds }` over WebSocket.
+
+The tool name `manual` is reserved: the validators accept it (it's a valid file), but `ingestDocument` refuses it
+("tool: 'manual' is reserved for nodes added by the analyst") unless called with `{ allowManual: true }`, which only
+`POST /api/nodes` does. So `POST /ingest`, `pnpm ingest` and job results can't pose as the analyst. The `apply` option
+runs a callback inside the ingest transaction (the Add node path sets label, tag, notes and position there).
+
+Ingest never deletes anything. A node the analyst deleted (§12) that a later scan reports again is inserted fresh, as if
+never seen; re-ingesting a file that was already ingested stays a no-op (`file_hash`), so it doesn't bring one back.
 
 Merging `data`: keep per-tool details in `observations.data`; `nodes.data` holds a shallow merge where
 newer values win. Severity = max severity across observations.
@@ -150,6 +169,10 @@ edge's full set of `edge_observations` in the same order (`recomputeEdges`, `der
 | `GET /nodes/:id` | Node detail + edges (each with `sourceCount`, `confidence`, first/last seen) + all observations (provenance) |
 | `GET /edges/:id` | Edge detail: relation, both ends (`id`, `type`, `label`), derived fields, every edge observation (provenance) |
 | `PATCH /nodes/:id` | Update `tag`, `notes`, `confidence: "verified"`, `pos_x/pos_y` |
+| `POST /nodes` | Add a node by hand (§12): `{ type, value, label?, parentId?, relation?, severity?, tag?, notes?, x?, y?, ifExists? }` → 201 created · 200 already there (its `id`; nothing written, or only the parent link with `ifExists: "link"`) · 422 `{ error, issues }` in the validator's wording |
+| `GET /nodes/:id/delete-preview?…filters` | What a delete would remove, in both modes (node and group IDs; filters pick a group's members) |
+| `DELETE /nodes/:id?mode=node\|subtree&expect=&cancelJobs=&…filters` | Permanent delete of a node or a group's members (§12) → `{ deletionId, nodeIds, edgeIds, cancelledJobs }` · 409 `{ error, reason, preview }` (a job running on one of them, or the count changed) |
+| `GET /deletions?page=&pageSize=` | The deletion log, newest first (`pageSize` ≤ 100) |
 | `PUT /layout` | Bulk-save node positions |
 | `GET /nodes?…&page=&sort=&at=` | Paged flat list for the table view |
 | `GET /highlights` | Every `interesting` node with its notes, riskiest first (not filtered, not paged) |
@@ -172,7 +195,7 @@ edge's full set of `edge_observations` in the same order (`recomputeEdges`, `der
 | `GET /jobs/:id/output/:stream` | `stdout` \| `stderr` \| `raw` as `text/plain` (≤ 5 MB, as kept) |
 | `POST /jobs/:id/cancel` | Queued → cancelled; running → killed, cancelled, nothing ingested; 409 if finished |
 | `GET /runner/status` | `{ docker: { reachable, version, error }, images: [{ group, image, status }], running, queued, maxConcurrent }` |
-| `WS /ws` (i.e. `/api/ws`) | Push events: `graph.updated`, `scan.ingested`, `scope.changed`, `job.updated { job }`, `runner.status { reachable, error }` |
+| `WS /ws` (i.e. `/api/ws`) | Push events: `graph.updated`, `graph.deleted { nodeIds, edgeIds }`, `scan.ingested`, `scope.changed`, `job.updated { job }`, `runner.status { reachable, error }` |
 
 Request and response shapes are the Zod schemas in `shared/src/api.ts`. Details:
 - **Filters** (shared by `/graph`, `/graph/expand`, `/nodes`): `types`, `confidence`, `tool`, `tag`, `excludeTag`
@@ -210,14 +233,16 @@ Request and response shapes are the Zod schemas in `shared/src/api.ts`. Details:
   edges), so results show their path to the root. Only ancestors that pass the other filters are kept; a filtered-out
   parent ends the path. `/nodes` lists the matches only. The rule itself is `matchesQuery` in `shared/src/api.ts`, so the
   UI can tell a match from a path node without a response field.
-- Hiding a node is done with the `ignored` tag (+ `excludeTag=ignored`). Nothing is ever deleted (rule 4).
+- Hiding a node is done with the `ignored` tag (+ `excludeTag=ignored`). Deleting one is the analyst's explicit
+  `DELETE /nodes/:id` (§12); no code path deletes nodes on its own (CLAUDE.md rule 4).
 - `GET /nodes` sorts with `sort=-effectiveSeverity,label` (the default); `-` means descending; nodes without a
   severity sort last in both directions. `pageSize` ≤ 500. `at=<nodeId>` returns the page that holds that node
   (under the same filters and sort) instead of `page`; if the node isn't listed, `page` is used.
 - `GET /highlights` takes no params (a filter param is a 400): it is the analyst's list, whatever the view.
 - `GET /export` downloads as `redwhale-export-<UTC time, no colons>.json`; it holds nodes, edges (with derived fields), scans,
   `observations` and `edgeObservations` (`edgeId, scanId, tool, data, observedAt`).
-- `PUT /layout` takes `{ positions: [{ id, x, y }] }` (≤ 5,000); an unknown or duplicate ID rejects the whole batch.
+- `PUT /layout` takes `{ positions: [{ id, x, y }] }` (≤ 5,000) and answers `{ updated, skipped }`: an unknown ID (a node
+  deleted meanwhile, e.g. from another tab) is skipped, not fatal; a duplicate ID rejects the whole batch (400).
 - `POST /ingest`: 201 ingested, 200 duplicate, 422 `{ error, issues }` with the exact validation errors, 400 bad JSON,
   415 not `application/json`, 413 over 50 MB. Errors are always `{ error, issues? }`.
 - Localhost only: requests whose `Host` isn't `127.0.0.1`/`localhost` on the API or Vite port, or whose `Origin`
@@ -394,7 +419,9 @@ included (1,945 elements, truncated).
   load more. On a node, **Run tool ▸** (§11) opens a submenu in place: "Run group: subdomain enumeration" first, then
   each tool that takes the node's type, with a mode badge and an "external" badge; disabled items say why (Docker not
   running, image not built or out of date, passive-only mode, not a target, out of scope). Groups have no Run tool
-  (6D). Expand, load more and expand-all are disabled at the element budget (the group's `canLoadMore`).
+  (6D). Expand, load more and expand-all are disabled at the element budget (the group's `canLoadMore`). Graph
+  editing (§12): a node's menu ends with **Add child node…** (disabled, with why, for a type nothing hangs under) and
+  **Delete…**, a group's with **Delete group…**; right-click on the empty canvas → **Add node…**.
 - **Focus mode:** the node + its N-hop neighborhood (1–3, either edge direction) stay bright, plus the edges among
   them; everything else is faded. Computed on the canvas (`web/src/graph/emphasis.ts`), nothing is fetched. A group is
   **no hop of its own**: from a parent a step goes on through its groups to their members, from a member up through its
@@ -410,7 +437,8 @@ included (1,945 elements, truncated).
   them, plus view-only `mute=1` and `hops=N`, which never reach the API. Bad values are dropped one by one.
 - **Mute low-risk:** fades nodes whose effective severity is below medium (aggregates by `maxSeverity`), and edges
   touching them; a quiet parent above a serious finding stays bright.
-- **Bottom panel:** toggled from the header, under the canvas: **Table**, **Highlights**, **Scope** or **Jobs**.
+- **Bottom panel:** toggled from the header, under the canvas: **Table**, **Highlights**, **Scope**, **Deleted** (§12) or
+  **Jobs**. A job whose target node was deleted shows its target value with "(node deleted)" instead of a link.
 - **Jobs** (`web/src/jobs/JobsPanel.tsx`, §11): every run, newest first, live (`job.updated` refetches only the runner's
   queries and the scope log, never the graph): status, tool, target (click = pick the node), started, duration
   (ticking while running), what it found ("+14 new, 6 updated" / "nothing new"), the error; **Cancel** (queued or
@@ -442,7 +470,9 @@ included (1,945 elements, truncated).
   result in: only new nodes are laid out, nothing on the canvas moves. New members of an open group appear inside it;
   a collapsed group's count goes up. New nodes named by an event in the last 15 s, groups that grew, and groups the
   server folded instead of auto-opening (no room) flash a cyan halo for 2.5 s. Nothing on screen disappears because a
-  scan finished: a group that now holds a node the canvas showed directly opens (§7, `keep`).
+  scan finished: a group that now holds a node the canvas showed directly opens (§7, `keep`). `graph.deleted` (§12)
+  first makes the UI forget the deleted nodes (selection, focus, menu, open groups under them, pins, expansions, flashes;
+  a side panel on one closes with "What you had selected was deleted."), then refetches like any event.
 - **Highlights:** cards for every `interesting` node with its notes (markdown, no raw HTML); click = same as a row
   (opens the path to it).
 - **Export:** JSON = a plain download of `GET /export` (the whole workspace). PNG = `cy.png({ full: true })` on the
@@ -514,6 +544,9 @@ Each phase ends with passing `pnpm typecheck` and `pnpm test`, and a short demo.
    `pnpm tools:check`, API, Jobs tab. Later 6C steps: the other groups.
 4. (6D) Presets & auto-chaining; redirect-following tools re-check scope on every hop (decisions log, 2026-10-31).
 5. (6E) Diffing between scans: what a scan added, lost or changed, for nodes and edges (both have per-scan provenance).
+
+**Graph editing** (between 6C-1 and the other 6C groups; branch `graph-editing`, §12): add nodes by hand through ingest as
+tool `manual`; permanent delete of a node, its subtree or a group's members, with a deletion log.
 
 **Phase 7+ — Later (not now)**
 Reports · CVE monitoring · local LLM scoring · JS analysis agent.
@@ -652,7 +685,68 @@ survives parser crashes, validates with `validate_output.py`, writes `result.jso
 output, anonymized to `northwind.example`, with `expected.json` and a `NOTE.md`; `pnpm tools:check` (and `pnpm test`)
 replays it. How to add a tool: `docs/team-guide.md`.
 
-## 12. Decisions log
+## 12. Graph editing
+
+The analyst can add nodes by hand and delete nodes. Both go through the normal paths: an added node is ingested, a
+delete is one transaction with a record.
+
+**Adding** (`POST /api/nodes`, `server/src/graph/manual.ts`; UI `web/src/edit/AddNodeDialog.tsx`):
+- Right-click the empty canvas → **Add node…**; right-click a node → **Add child node…** (the same dialog, that node as
+  the parent; the type list is the types that can hang under it, `childTypesOf`). The empty workspace offers it too.
+- The dialog checks the value live with `describeManualValue` (`shared/src/manual.ts`): the contract validator's
+  `checkValue` and its wording (`domain value 'Example.com' must be lowercase`; nothing is silently fixed), then
+  `normalize`, showing "Stored as …" when that differs. It computes the node ID in the browser and asks
+  `GET /nodes/:id` whether it exists: if so it says so and offers **Select existing node** and, with a parent, **Add the
+  parent link**. Parent: search over `GET /nodes?q=&types=<parentTypesOf>`; relation pre-filled from the two types
+  (`relationsBetween`; today every pair has exactly one), editable among the allowed ones. Severity only for the types the
+  validator wants one for (`NEEDS_SEVERITY`: vulnerability, secret, leak); label, tag, notes (markdown, preview); the
+  validator's warnings for that finding show as hints.
+- The server builds a contract v1 file (`manualDocument`): tool `manual`, command `added by analyst`, target = the value,
+  both timestamps = now, one finding (with `parent`/`relation` when a parent is given), and ingests it with
+  `{ allowManual: true }`; label, tag, notes and position are applied inside the same transaction. So the node gets the
+  normal ID, normalization, observation, edge observation, provenance and live update (`scan.ingested` with tool
+  `manual`, `graph.updated`). 201 `{ id, created: true, linked, warnings }`.
+- Already there (same normalized value): 200 with its ID and nothing written: never a duplicate, never a change to the
+  existing node. With `ifExists: "link"` and a parent, only the link is ingested (a `manual` finding on the existing node
+  naming that parent); `linked: false` if that edge exists already.
+- Invalid: 422 `{ error, issues }` in the validator's wording without the `findings[0].` prefix (`value: …`,
+  `parentId: node '…' not found`, `relation: 'has_port' can't link ip -> ip (allowed: ip -> port)`).
+- `manual` rows never count toward `source_count` (nodes and edges, §4): a hand-added node is `discovered` with
+  `source_count` 0 until tools report it; the analyst can mark it `verified`.
+- Position: in Force mode the node is saved where the analyst right-clicked (like a dragged node); in Tree mode, and for
+  "Add child node…", no position is sent and the layout places it (under / next to its parent). After adding, the node
+  is selected and the path to it opened (pins), as a table row does, since it may land inside a collapsed group.
+- Out-of-scope values can be added (they show hatched); `authorize()` still refuses running tools on them.
+
+**Deleting** (`DELETE /api/nodes/:id`, `server/src/graph/delete.ts`; UI `web/src/edit/DeleteDialog.tsx`):
+- Right-click a node → **Delete…**, a group → **Delete group…**. The dialog shows `GET /nodes/:id/delete-preview`: for each
+  choice, nodes and edges removed, nodes that become roots, shared nodes kept; for a group "Delete 37 subdomains. 5 more
+  are hidden by your filters and will be kept."; running and queued jobs. It says in red that it can't be undone and
+  that tools may find the nodes again.
+- **Node mode** removes the node(s) named; children with no other parent become roots. **Subtree mode** (`planDeletion`):
+  S = the roots and everything below them; a node of S (not a root) **stays** if a walk down from any node outside S
+  reaches it without passing through a root; the rest goes. So a shared node (an IP also under another subdomain) stays
+  with everything below it, and a cycle below the roots (url ⇄ url) goes. The walk uses the whole graph.
+- **A group's members** are the ones the request's filters keep (the view's filters, every page, not only what's drawn):
+  `groupMembers` in `server/src/graph/store.ts`, shared with `/graph/expand`. Members the filters hide are kept and
+  counted (`hiddenByFilters`).
+- One `immediate` transaction: the affected edges' `edge_observations`, the edges (every edge touching a removed node), the
+  nodes' `observations`, the nodes; `jobs.node_id` set to NULL; a `deletions` row. **Scans and their raw files stay**
+  (provenance for other nodes). Export simply no longer has the nodes.
+- **Jobs:** refused (409 `jobs-running`, naming the jobs) while a job is **running** on any node being deleted; the dialog
+  offers **Cancel job and delete** = `cancelJobs=1`: the server cancels them and waits (≤ 30 s, `cancelAndWait`) until
+  each has stopped (nothing a cancelled run produced is ingested), then deletes. **Queued** jobs on removed nodes are
+  cancelled ("target node deleted"). Every job keeps its row and target value. A job on another node that later
+  rediscovers a deleted node simply brings it back (intended).
+- `expect` = the node count the analyst confirmed: if the graph changed since the preview, 409 `changed` with a fresh
+  preview, and the dialog asks again.
+- Broadcast `graph.deleted { nodeIds, edgeIds }` (+ `job.updated` for cancelled jobs). Every tab forgets the nodes
+  (`forgetDeleted`, §8) and refetches. `PUT /layout` skips unknown IDs, so a pending drag save in another tab isn't lost.
+- **Deleted** tab (`web/src/edit/DeletionsPanel.tsx`): `GET /deletions`, newest first, paged; each row expands to the
+  removed `type value` list. Read-only: a record, not a restore; there is no undo.
+- A deleted node that a later scan reports is created fresh (no old tag, notes, position or provenance).
+
+## 13. Decisions log
 
 | Date | Decision |
 |---|---|
@@ -755,3 +849,15 @@ replays it. How to add a tool: `docs/team-guide.md`.
 | 2026-11-02 | Commands: subfinder `-oJ -cs -silent -duc -max-time 8` (JSON lines with every source, no update check); assetfinder `--subs-only` (text: it has no JSON mode); findomain `-t <d> -q` (text, no resolving); crt.sh queried from Python (`?q=%25.<d>&output=json`, 3 tries, backoff 5/15 s, inside the script's time). None resolves names: the group stays passive. amass, sublist3r, chaos, shosubgo, github-subdomains and ffuf later |
 | 2026-11-02 | Fixtures are real outputs (captured in the image against an authorized bug-bounty target) anonymized to `northwind.example` with one mapping shared by all tools; certificate IDs and serials replaced; edge cases the real output lacked are edited copies, marked in each `NOTE.md`. The real target is not named in the repo |
 | 2026-11-02 | UI: Run tool is a submenu in place (disabled items show why); groups get no Run tool until 6D. `job.updated`/`runner.status` refetch only runner queries and the scope log, not the graph. "Show results" = pick the target node and highlight that scan's provenance rows |
+| 2026-11-03 | **Graph editing.** Supersedes 2026-10-30 "No node deletion: the `ignored` tag hides nodes": the analyst can delete nodes permanently from the UI or API (`DELETE /nodes/:id`, node or subtree mode, also a group's members). CLAUDE.md rule 4 now reads "…except an analyst's explicit delete from the UI or API, which removes the nodes with their provenance and records it in the deletion log. No code path deletes nodes automatically." The `ignored` tag still hides without deleting |
+| 2026-11-03 | Delete removes the nodes, their observations, every edge touching them and those edges' observations in one transaction; scans and raw files stay. A `deletions` row records when, mode, the root (type, value, label), counts and every removed `{ type, value }`: a record, not a restore. No undo |
+| 2026-11-03 | Subtree rule = reachability: below the roots, a node stays if a node outside the deleted set reaches it without passing through a root (shared nodes and everything under them stay; cycles under the roots go). Not "every parent deleted", which would keep a url ⇄ url cycle forever |
+| 2026-11-03 | A group delete takes every member the current filters keep, on the server (all pages, not only what's drawn); the dialog states both numbers ("Delete 37 subdomains. 5 more are hidden by your filters and will be kept.") |
+| 2026-11-03 | A delete is refused while a job is **running** on any node it would remove; "Cancel job and delete" (`cancelJobs=1`) cancels them, waits until they've stopped, then deletes. Queued jobs on removed nodes are cancelled ("target node deleted"). `jobs.node_id` becomes nullable (migration `0005_graph_editing`, a table rebuild that copies the rows: not breaking); such jobs show "node deleted", even if the node comes back later |
+| 2026-11-03 | DELETE carries `expect` (the confirmed node count): a 409 with a fresh preview if the graph changed in between, so a scan finishing during the confirm can't widen a permanent delete unseen |
+| 2026-11-03 | `PUT /layout` skips unknown IDs (`{ updated, skipped }`) instead of rejecting the batch: with deletes, another tab's pending drag save would otherwise lose every position in it. Duplicates are still a 400 |
+| 2026-11-03 | Nodes added by hand go through the existing ingest as a one-finding scan by tool `manual` (command "added by analyst"). `manual` is reserved: the validators accept it (contract unchanged; contract.md notes it), the server refuses it on `POST /ingest`, `pnpm ingest` and job results; only `POST /nodes` produces it. Its observations (node and edge) never count toward `source_count`, like parent rows; `verified` still possible |
+| 2026-11-03 | The Add node dialog validates with the validator's exact rules and wording (no silent lowercasing) and shows the normalized value. An existing value is never duplicated or changed: 200 with its ID, or only the parent link on request (`ifExists: "link"`) |
+| 2026-11-03 | Added nodes are placed where the analyst right-clicked in Force mode (saved like a drag); Tree mode and "Add child node…" send no position (the layout places them next to / under the parent). After adding, the node is selected and its path opened, since it may join a collapsed group |
+| 2026-11-03 | Accepted: a hand-added node whose value isn't under `.example` makes the next `pnpm mock` on that workspace need `--force` (its synthetic scan's target is the value), like any real file |
+| 2026-11-03 | `TYPE_PLURAL` moved to `shared/src/enums.ts` (group labels on the server, the delete dialog on the client) |

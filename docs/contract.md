@@ -31,7 +31,7 @@ python3 tools/validate_output.py my_output.json
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `contract_version` | integer | yes | Always `1` for now |
-| `tool` | string | yes | Lowercase tool name: `subfinder`, `nmap`, `httpx` ... |
+| `tool` | string | yes | Lowercase tool name: `subfinder`, `nmap`, `httpx` ... (`manual` is reserved, see below) |
 | `tool_version` | string | no | Output of the tool's `--version` if easy to get |
 | `target` | string | yes | What the tool was run against (domain, IP, CIDR, or URL) |
 | `command` | string | yes | The exact command line that was executed |
@@ -40,6 +40,10 @@ python3 tools/validate_output.py my_output.json
 | `status` | string | yes | `success`, `partial`, or `failed` |
 | `errors` | string[] | yes | Error messages; empty list if none |
 | `findings` | object[] | yes | Empty list is allowed (e.g. nothing found, or failed) |
+
+**Reserved tool name:** `manual` is what the server writes for nodes the analyst adds by hand. The validator accepts it
+(such a file is valid), but the server refuses a file by `manual` on `POST /api/ingest` and `pnpm ingest`, so never use
+it as your tool's name.
 
 ---
 

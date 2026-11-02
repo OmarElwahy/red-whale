@@ -36,8 +36,8 @@ tools/<group>/<yourtool>/
 
 ## 2. Change what's yours
 
-**`tool.json`**: change `name` (= the folder name, lowercase), `label`, `description`, `mode`, `accepts`, the script
-path inside `argv`, `timeoutSec` and `external`:
+**`tool.json`**: change `name` (= the folder name, lowercase; not `manual`, which is reserved for nodes the analyst adds
+by hand), `label`, `description`, `mode`, `accepts`, the script path inside `argv`, `timeoutSec` and `external`:
 
 ```json
 {

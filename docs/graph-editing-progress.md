@@ -16,7 +16,7 @@ its subtree or a group, with a deletion log). Approved plan and the user's answe
 | 2 | Manual node API (`POST /nodes`) through ingest as tool `manual` + duplicate handling (`ifExists: return\|link`) + validation (422 in validator wording) + `manual` reserved on `POST /ingest` and CLI ingest + manual rows don't count toward `source_count` (nodes and edges), tests | done |
 | 3 | UI: add-node dialog (canvas "Add node…" and node "Add child node…") | done |
 | 4 | UI: delete dialog, Deleted tab, live-update cleanup on `graph.deleted` | done |
-| 5 | Docs: architecture.md (§4, §5, §6, §8, decisions log), contract.md note on `manual`, handoff.md, team-guide note | next |
+| 5 | Docs: architecture.md (§4, §5, §6, §8, decisions log), contract.md note on `manual`, handoff.md, team-guide note | done |
 
 ## Decisions (approved plan + user's answers, 2026-11-02)
 
@@ -89,17 +89,15 @@ its subtree or a group, with a deletion log). Approved plan and the user's answe
 - `TYPE_PLURAL` moved to shared/src/enums.ts (server aggregate.ts re-exports it as `PLURAL`).
 - Bottom panel "Deleted" (`web/src/edit/DeletionsPanel.tsx`): paged, rows expand to the removed list.
 
-## Step 5 plan (docs)
+## Step 5 as built
 
-- architecture.md: §2 (shared manual.ts), §4 (deletions table, jobs.node_id nullable, manual rule in the confidence
-  paragraphs), §5 (manual scans, reserved tool, `IngestOptions`), §6 (POST /nodes, GET /nodes/:id/delete-preview,
-  DELETE /nodes/:id, GET /deletions, graph.deleted, PUT /layout skips; replace "Nothing is ever deleted (rule 4)"),
-  §8 (menus, dialogs, Deleted tab, cleanup), §9 (a "Graph editing" entry), decisions log (supersede 2026-10-30
-  "No node deletion"; every decision above), Breaking-migrations line unchanged (0005 not breaking).
-- contract.md: note that `manual` is reserved (validator accepts it; server refuses it on ingest).
-- team-guide.md: don't name a tool `manual`. handoff.md: Status row + recent decisions.
-- Then give the user the manual checks (in the final message).
+architecture.md: header, §1, §2, §4 (jobs.node_id, deletions table, manual in both confidence rules), §5 (reserved
+tool, IngestOptions, deleted nodes come back fresh), §6 (routes, graph.deleted, PUT /layout skips, the rule-4 line), §8
+(menus, Deleted tab, graph.deleted cleanup), §9 (graph editing entry), new **§12 Graph editing**, decisions log is now
+§13 with the 2026-11-03 entries. contract.md: `manual` reserved note. team-guide.md: don't name a tool `manual`.
+handoff.md: Status row, recent decisions, the manual check in open items.
 
 ## Next action
 
-Step 5: docs as planned above, commit "Graph editing step 5: docs", push. Then report to the user with the manual checks.
+All 5 steps done. The user runs the manual checks (listed in the final message of the session; also in handoff.md
+"Open items") and merges `graph-editing` into main themselves. Nothing else is planned on this branch.

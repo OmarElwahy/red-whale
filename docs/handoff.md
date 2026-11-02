@@ -4,7 +4,7 @@ Paste this file into a new chat to continue where we left off. It holds the cont
 other docs. Source of truth for design details is still `docs/architecture.md` (incl. the decisions log),
 `docs/contract.md` and `CLAUDE.md` — attach `docs/architecture.md` too if the question is technical.
 
-_Last updated: 2026-11-02_
+_Last updated: 2026-11-03_
 
 ## Who / what
 
@@ -40,6 +40,7 @@ Dropped: `cytoscape-expand-collapse` (aggregation is server-side). Added in 6C-1
 | 6A | Scope guard: rules + `checkScope`, `authorize()` → `ScopedTarget`, dockerode/child_process lint guard, scope API + log, `inScope` on nodes, Scope panel, banner, out-of-scope hatch, mocks seed a scope | ✅ code + tests done; manual check pending |
 | 6B | Edge provenance: `edge_observations` (one per edge per scan), derived edge first/last seen, source_count, confidence (discovered/corroborated); `GET /edges/:id`; provenance on node-detail and graph edges (group edges: union of members' tools); edge side panel; corroborated edges thicker | ✅ code + tests done on branch `phase-6b` (not merged); manual check pending |
 | 6C-1 | Orchestrator core + subdomain enumeration group: hardened containers (non-root, read-only, cap-drop ALL, limits, per-job `/out` volume), jobs table + SQLite queue (cap 2), `authorize()` at queueing and right before each start, restart/orphan cleanup, tool.json/group.json, one image per group (`pnpm tools:build`), subfinder/assetfinder/findomain/crt.sh with anonymized real fixtures, `pnpm tools:check`, jobs API + WS, Run tool menu, Jobs tab, Docker status chip, team guide rewritten | ✅ code + tests done on branch `phase-6c1` (not merged); manual check pending |
+| Edit | Graph editing (branch `graph-editing`): add nodes by hand (canvas "Add node…", node "Add child node…"; validator rules and wording live; ingested as tool `manual`, never counts toward corroboration; duplicates never created); permanent delete of a node / its subtree / a group's members (under the current filters), with a deletion log ("Deleted" tab); refused while a job runs on a node being deleted ("Cancel job and delete") | ✅ code + tests done; manual check pending |
 | 6C+ | Other tool groups (teammates' scripts), 6D presets + auto-chaining (redirects re-check scope per hop), 6E scan diffing; then reports, CVE monitor, local LLM scoring, JS agent | later |
 
 ## How I work with Claude Code
@@ -125,7 +126,27 @@ Dropped: `cytoscape-expand-collapse` (aggregation is server-side). Added in 6C-1
   named in the repo; it was once, in a pushed progress-doc commit, then removed).
 - Jobs show "+N new, M updated"; "Show results" = the target node with that scan's provenance rows highlighted.
 
+## Recent decisions (graph editing)
+
+- **Deleting nodes is allowed now** (supersedes "No node deletion; the `ignored` tag hides nodes"). Only the analyst's
+  explicit delete from the UI or API; no code path deletes nodes on its own (CLAUDE.md rule 4 amended). No undo; the
+  "Deleted" tab is a record, not a restore. Scans and jobs stay; a job on a deleted node says "node deleted".
+- Two modes: the node only (its children with no other parent become roots), or with everything below (shared nodes,
+  e.g. an IP also under another subdomain, stay with what's under them).
+- A group delete = every member the current filters keep (not only what's drawn); the dialog says how many the filters
+  hide and keep.
+- Refused while a job is running on any node being deleted; "Cancel job and delete" cancels and waits first. Queued jobs
+  on deleted nodes are cancelled. A later scan that finds a deleted node brings it back as a new node.
+- Nodes added by hand go through the normal ingest as tool `manual` ("added by analyst"): normal ID, provenance and live
+  update; never counts toward corroboration (like parent rows); `manual` is reserved (the server refuses it on ingest).
+- The Add node dialog uses the validator's exact rules and wording (no silent lowercasing) and shows the stored value; an
+  existing value offers "Select existing node" / "Add the parent link" instead of a duplicate.
+
 ## Open items to remember
+
+- Graph editing manual check: add a node on the empty canvas, add a child under a domain, try a duplicate, delete a node
+  with its subtree, watch a second tab update, then run subfinder on the domain and see a deleted subdomain come back.
+
 
 - 5D manual check: `pnpm mock`, open groups at three levels, search deep, live ingest into an open group (see the
   5D chat for the exact steps). Re-run `await redwhale.bench()` with icons on (icons are one more background image
