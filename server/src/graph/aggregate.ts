@@ -54,7 +54,8 @@ export interface ViewResult {
   expandAll: { nodeId: string; opened: number; hidden: number }[];
 }
 
-const PLURAL: Record<NodeType, string> = {
+/** "412 subdomains", "2 IPs": a group's label. */
+export const PLURAL: Record<NodeType, string> = {
   domain: 'domains',
   subdomain: 'subdomains',
   ip: 'IPs',

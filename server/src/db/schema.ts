@@ -1,6 +1,8 @@
 // Drizzle schema (docs/architecture.md §4). After editing, run `pnpm db:generate` and commit server/drizzle/.
 import {
   CONFIDENCE_LEVELS,
+  DELETION_KINDS,
+  DELETION_MODES,
   EDGE_CONFIDENCE_LEVELS,
   JOB_STATUSES,
   NODE_TYPES,
@@ -15,6 +17,7 @@ import {
   SEVERITIES,
   TAGS,
   TOOL_MODES,
+  type NodeType,
 } from '@redwhale/shared';
 import { sql } from 'drizzle-orm';
 import {
@@ -241,9 +244,8 @@ export const jobs = sqliteTable(
     id: integer('id').primaryKey({ autoIncrement: true }),
     tool: text('tool').notNull(),
     toolGroup: text('tool_group').notNull(),
-    nodeId: text('node_id')
-      .notNull()
-      .references(() => nodes.id),
+    /** The target node; null once the analyst deleted it (target_type/target_value still say what it was). */
+    nodeId: text('node_id').references(() => nodes.id),
     targetType: text('target_type', { enum: NODE_TYPES }).notNull(),
     /** The node's value when the job was queued. */
     targetValue: text('target_value').notNull(),
@@ -280,6 +282,40 @@ export const jobs = sqliteTable(
     check('jobs_status_ck', oneOf(t.status, JOB_STATUSES)),
     check('jobs_mode_ck', oneOf(t.mode, TOOL_MODES)),
     check('jobs_target_type_ck', oneOf(t.targetType, NODE_TYPES)),
+  ],
+);
+
+// --- graph editing -----------------------------------------------------------------------------------
+
+/**
+ * One row per analyst delete (DELETE /api/nodes/:id): what was removed, for the record. Not a restore: the nodes,
+ * their observations and edges are gone. Never deleted, except by the mock wipe.
+ */
+export const deletions = sqliteTable(
+  'deletions',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    at: text('at').notNull(),
+    /** A node, or a group (its members under the filters of the request). */
+    kind: text('kind', { enum: DELETION_KINDS }).notNull(),
+    /** `node`: only the node(s) named; `subtree`: with everything below that has no other parent. */
+    mode: text('mode', { enum: DELETION_MODES }).notNull(),
+    /** The node's type; for a group, its members' type. */
+    rootType: text('root_type', { enum: NODE_TYPES }).notNull(),
+    /** The node's value; for a group, its parent's value ('' for a group of roots). */
+    rootValue: text('root_value').notNull(),
+    /** Display text: the node's label, or e.g. "37 subdomains under example.com". */
+    rootLabel: text('root_label').notNull(),
+    nodeCount: integer('node_count').notNull(),
+    edgeCount: integer('edge_count').notNull(),
+    /** Every removed node, as `{ type, value }`. */
+    removed: text('removed', { mode: 'json' }).$type<{ type: NodeType; value: string }[]>().notNull(),
+  },
+  (t) => [
+    index('deletions_at_idx').on(t.at),
+    check('deletions_kind_ck', oneOf(t.kind, DELETION_KINDS)),
+    check('deletions_mode_ck', oneOf(t.mode, DELETION_MODES)),
+    check('deletions_root_type_ck', oneOf(t.rootType, NODE_TYPES)),
   ],
 );
 

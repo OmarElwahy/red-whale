@@ -90,9 +90,9 @@ describe('sendJson', () => {
   }
 
   test('sends the method, a JSON body and content type, and parses the answer', async () => {
-    const { fetch, requests } = recordingFetch(200, { updated: 1 });
+    const { fetch, requests } = recordingFetch(200, { updated: 1, skipped: [] });
     const positions = [{ id: 'a', x: 1, y: 2 }];
-    await expect(sendJson('PUT', '/api/layout', { positions }, layoutResponseSchema, { fetch })).resolves.toEqual({ updated: 1 });
+    await expect(sendJson('PUT', '/api/layout', { positions }, layoutResponseSchema, { fetch })).resolves.toEqual({ updated: 1, skipped: [] });
     expect(requests).toHaveLength(1);
     const init = requests[0]?.init;
     expect(init?.method).toBe('PUT');
@@ -101,7 +101,7 @@ describe('sendJson', () => {
   });
 
   test('keepalive is passed through, so a save can outlive the page', async () => {
-    const { fetch, requests } = recordingFetch(200, { updated: 0 });
+    const { fetch, requests } = recordingFetch(200, { updated: 0, skipped: [] });
     await sendJson('PUT', '/api/layout', { positions: [] }, layoutResponseSchema, { fetch, keepalive: true });
     expect(requests[0]?.init?.keepalive).toBe(true);
   });

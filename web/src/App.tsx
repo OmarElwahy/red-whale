@@ -704,6 +704,7 @@ export function App() {
                   pick(id);
                 }}
                 onShowResults={(job) => {
+                  if (job.nodeId === null) return;
                   ui.setHighlightScan(job.scanId);
                   pick(job.nodeId);
                 }}

@@ -8,13 +8,11 @@ import {
   graphViewRequestSchema,
   neighborsQuerySchema,
   parseAggregateId,
-  type GraphEdge,
-  type GraphNode,
 } from '@redwhale/shared';
 import { eq } from 'drizzle-orm';
 import { nodes } from '../db/schema';
 import { groupPath, groupedView } from '../graph/aggregate';
-import { filteredGraph, loadGraph, riskFirst, type Graph } from '../graph/store';
+import { filteredGraph, groupMembers, loadGraph, type Graph } from '../graph/store';
 import { HttpError, notFound, parseInput } from '../http';
 import type { RouteContext } from './context';
 
@@ -56,22 +54,7 @@ export function graphRoutes({ app, db, maxElements }: RouteContext): void {
       }
     }
 
-    const graph = filteredGraph(db, filters, { searchPaths: true });
-    const byId = new Map(graph.nodes.map((n) => [n.id, n]));
-    const edgeTo = new Map<string, GraphEdge>();
-    let members: GraphNode[];
-    if (key.parentId !== null) {
-      for (const e of graph.edges) {
-        if (e.source === key.parentId && e.relation === key.relation && byId.get(e.target)?.type === key.childType) {
-          edgeTo.set(e.target, e);
-        }
-      }
-      members = [...edgeTo.keys()].map((m) => byId.get(m) as GraphNode);
-    } else {
-      const hasParent = new Set(graph.edges.map((e) => e.target));
-      members = graph.nodes.filter((n) => n.type === key.childType && !hasParent.has(n.id));
-    }
-    members.sort(riskFirst);
+    const { members, edgeTo } = groupMembers(filteredGraph(db, filters, { searchPaths: true }), key);
 
     const pageNodes = members.slice((page - 1) * pageSize, page * pageSize);
     return {

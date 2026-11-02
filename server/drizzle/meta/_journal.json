@@ -36,6 +36,13 @@
       "when": 1793634986606,
       "tag": "0004_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1793656067192,
+      "tag": "0005_graph_editing",
+      "breakpoints": true
     }
   ]
 }

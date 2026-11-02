@@ -10,7 +10,7 @@ function recorder(fail: (n: number) => Error | undefined = () => undefined) {
   const send: SendLayout = (positions, options) => {
     calls.push({ positions, keepalive: options.keepalive });
     const err = fail(calls.length);
-    return err === undefined ? Promise.resolve({ updated: positions.length }) : Promise.reject(err);
+    return err === undefined ? Promise.resolve({ updated: positions.length, skipped: [] }) : Promise.reject(err);
   };
   return { calls, send };
 }

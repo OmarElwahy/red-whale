@@ -215,6 +215,26 @@ export class Orchestrator {
   }
 
   /**
+   * Cancels these jobs and waits until each running one has really stopped (container killed, row final), at most
+   * `timeoutMs`. Used by "Cancel job and delete": nothing a cancelled run produced is ingested.
+   */
+  async cancelAndWait(ids: readonly number[], timeoutMs = 30_000): Promise<void> {
+    const waits: Promise<void>[] = [];
+    for (const id of ids) {
+      this.cancel(id);
+      const active = this.active.get(id);
+      if (active) waits.push(active.done);
+    }
+    if (waits.length === 0) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, timeoutMs);
+    });
+    await Promise.race([Promise.all(waits).then(() => undefined), timeout]);
+    clearTimeout(timer);
+  }
+
+  /**
    * After any scope change: queued jobs whose target is now out of scope are cancelled. Not logged (nothing runs
    * on it); a job that stays queued gets a fresh, logged authorize() at its start anyway.
    */

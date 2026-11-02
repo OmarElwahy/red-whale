@@ -66,7 +66,9 @@ Run `pnpm typecheck` and `pnpm test` after every change, and before saying a tas
    Tool scripts never create IDs.
 3. **Ingest is idempotent.** Ingesting the same file twice must not create duplicate nodes, edges,
    or observations. Merging = upsert by node ID, then add an observation row.
-4. **Never drop provenance.** Every node keeps every observation: which tool, command, scan, timestamp, raw data.
+4. **Never drop provenance.** Every node keeps every observation: which tool, command, scan, timestamp, raw data,
+   except an analyst's explicit delete from the UI or API, which removes the nodes with their provenance and records
+   it in the deletion log. No code path deletes nodes automatically.
 5. **Confidence is computed, not stored by tools.** 1 distinct tool = `discovered`,
    2+ distinct tools = `corroborated`, analyst-confirmed = `verified`.
 6. **Cytoscape owns the canvas; React owns everything around it.** Create the Cytoscape instance once

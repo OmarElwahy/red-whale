@@ -6,6 +6,7 @@ import {
   NODE_TYPES,
   SEVERITIES,
   matchesQuery,
+  type AggregateKey,
   type GraphEdge,
   type GraphFilters,
   type GraphNode,
@@ -191,6 +192,29 @@ export function applyFilters(
     edges: graph.edges.filter((e) => ids.has(e.source) && ids.has(e.target)),
     edgeTools: graph.edgeTools,
   };
+}
+
+/**
+ * A group's members in this graph, riskiest first, with the parent → member edge of each (none for a group of roots).
+ * The same rule as the view's groups: the parent's children by that relation and type, or the parentless nodes of the type.
+ */
+export function groupMembers(graph: Graph, key: AggregateKey): { members: GraphNode[]; edgeTo: Map<string, GraphEdge> } {
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
+  const edgeTo = new Map<string, GraphEdge>();
+  let members: GraphNode[];
+  if (key.parentId !== null) {
+    for (const e of graph.edges) {
+      if (e.source === key.parentId && e.relation === key.relation && byId.get(e.target)?.type === key.childType) {
+        edgeTo.set(e.target, e);
+      }
+    }
+    members = [...edgeTo.keys()].flatMap((m) => byId.get(m) ?? []);
+  } else {
+    const hasParent = new Set(graph.edges.map((e) => e.target));
+    members = graph.nodes.filter((n) => n.type === key.childType && !hasParent.has(n.id));
+  }
+  members.sort(riskFirst);
+  return { members, edgeTo };
 }
 
 /** Loads the graph and applies the filters. */

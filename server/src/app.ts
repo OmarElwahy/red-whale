@@ -6,6 +6,7 @@ import { MAX_ELEMENTS } from './graph/aggregate';
 import { HttpError } from './http';
 import type { RouteContext } from './routes/context';
 import { dataRoutes } from './routes/data';
+import { deletionRoutes } from './routes/deletions';
 import { edgeRoutes } from './routes/edges';
 import { graphRoutes } from './routes/graph';
 import { jobDto, jobRoutes, type RunnerContext } from './routes/jobs';
@@ -137,6 +138,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   };
   graphRoutes(ctx);
   nodeRoutes(ctx);
+  deletionRoutes(ctx);
   edgeRoutes(ctx);
   dataRoutes(ctx);
   scopeRoutes(ctx);

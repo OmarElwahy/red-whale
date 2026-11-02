@@ -18,7 +18,7 @@ import { maxSeverity } from '../ingest/derive';
 import { currentScope } from '../scope/store';
 import { filteredGraph, nodeComparator } from '../graph/store';
 import { updateNode } from '../graph/update';
-import { HttpError, jsonObject, notFound, parseInput } from '../http';
+import { jsonObject, notFound, parseInput } from '../http';
 import type { RouteContext } from './context';
 
 /** Highest severity of the node and everything reachable below it (the same rule as loadGraph). */
@@ -175,12 +175,11 @@ export function nodeRoutes({ app, db, broadcaster }: RouteContext): void {
           .all()
           .map((r) => r.id),
       );
-      const unknown = ids.filter((id) => !known.has(id));
-      if (unknown.length > 0) {
-        throw new HttpError(400, 'unknown node IDs; nothing was saved', unknown.map((id) => `unknown node '${id}'`));
-      }
-      for (const p of positions) tx.update(nodes).set({ posX: p.x, posY: p.y }).where(eq(nodes.id, p.id)).run();
-      return { updated: positions.length };
+      // Unknown IDs are skipped, not fatal: a node deleted meanwhile (another tab) mustn't lose every other position.
+      const skipped = ids.filter((id) => !known.has(id));
+      const saved = positions.filter((p) => known.has(p.id));
+      for (const p of saved) tx.update(nodes).set({ posX: p.x, posY: p.y }).where(eq(nodes.id, p.id)).run();
+      return { updated: saved.length, skipped };
     });
   });
 }

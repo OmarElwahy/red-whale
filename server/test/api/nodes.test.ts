@@ -134,14 +134,14 @@ describe('PUT /api/layout', () => {
     const api = await examples();
     const ids = ['example.com', 'api.example.com', 'dev.example.com'].map((l) => idOf(api.db, l));
     const positions = ids.map((id, i) => ({ id, x: i * 100, y: 5 - i }));
-    expect(body(await api.send('PUT', '/api/layout', { positions }), 200, layoutResponseSchema)).toEqual({ updated: 3 });
+    expect(body(await api.send('PUT', '/api/layout', { positions }), 200, layoutResponseSchema)).toEqual({ updated: 3, skipped: [] });
     for (const [i, id] of ids.entries()) {
       const d = body(await api.get(`/api/nodes/${id}`), 200, nodeDetailResponseSchema);
       expect(d.node).toMatchObject({ posX: i * 100, posY: 5 - i });
     }
   });
 
-  test('an unknown ID rejects the whole batch and saves nothing', async () => {
+  test('an unknown ID (e.g. a node deleted from another tab) is skipped; the rest are saved', async () => {
     const api = await examples();
     const known = idOf(api.db, 'example.com');
     const res = await api.send('PUT', '/api/layout', {
@@ -150,11 +150,11 @@ describe('PUT /api/layout', () => {
         { id: '0000000000000000', x: 2, y: 2 },
       ],
     });
-    error(res, 400, "unknown node '0000000000000000'");
-    expect(body(await api.get(`/api/nodes/${known}`), 200, nodeDetailResponseSchema).node.posX).toBeNull();
+    expect(body(res, 200, layoutResponseSchema)).toEqual({ updated: 1, skipped: ['0000000000000000'] });
+    expect(body(await api.get(`/api/nodes/${known}`), 200, nodeDetailResponseSchema).node.posX).toBe(1);
   });
 
-  test('an aggregate ID is not a node: the batch is rejected (the UI leaves aggregates out)', async () => {
+  test('an aggregate ID is not a node: skipped (the UI leaves aggregates out)', async () => {
     const api = await examples();
     const known = idOf(api.db, 'example.com');
     const aggId = `agg:${known}:has_subdomain:subdomain`;
@@ -164,13 +164,12 @@ describe('PUT /api/layout', () => {
         { id: aggId, x: 2, y: 2 },
       ],
     });
-    error(res, 400, `unknown node '${aggId}'`);
-    expect(body(await api.get(`/api/nodes/${known}`), 200, nodeDetailResponseSchema).node.posX).toBeNull();
+    expect(body(res, 200, layoutResponseSchema)).toEqual({ updated: 1, skipped: [aggId] });
   });
 
   test('an empty list is fine', async () => {
     const api = await examples();
-    expect(body(await api.send('PUT', '/api/layout', { positions: [] }), 200, layoutResponseSchema)).toEqual({ updated: 0 });
+    expect(body(await api.send('PUT', '/api/layout', { positions: [] }), 200, layoutResponseSchema)).toEqual({ updated: 0, skipped: [] });
   });
 
   test('duplicate IDs → 400', async () => {

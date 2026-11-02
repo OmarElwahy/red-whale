@@ -179,9 +179,15 @@ export function JobsPanel({ className, onPickNode, onShowResults }: JobsPanelPro
                 </td>
                 <td className="py-1">{job.tool}</td>
                 <td className="truncate py-1 pr-2">
-                  <button type="button" className="hover:text-foreground font-mono hover:underline" title="Show this node" onClick={() => { onPickNode(job.nodeId); }}>
-                    {job.targetValue}
-                  </button>
+                  {job.nodeId === null ? (
+                    <span className="font-mono" title="The analyst deleted this node">
+                      {job.targetValue} <span className="text-muted-foreground font-sans">(node deleted)</span>
+                    </span>
+                  ) : (
+                    <button type="button" className="hover:text-foreground font-mono hover:underline" title="Show this node" onClick={() => { const nodeId = job.nodeId; if (nodeId !== null) onPickNode(nodeId); }}>
+                      {job.targetValue}
+                    </button>
+                  )}
                   {job.error && (
                     <span className="text-muted-foreground block truncate" title={job.error}>
                       {job.error}
@@ -203,7 +209,7 @@ export function JobsPanel({ className, onPickNode, onShowResults }: JobsPanelPro
                         Raw output
                       </Button>
                     )}
-                    {job.scanId !== null && (
+                    {job.scanId !== null && job.nodeId !== null && (
                       <Button size="sm" variant="ghost" onClick={() => { onShowResults(job); }}>
                         Show results
                       </Button>

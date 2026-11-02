@@ -67,3 +67,17 @@ export type ObservationRole = (typeof OBSERVATION_ROLES)[number];
 
 export const TAGS = ['interesting', 'checked', 'ignored'] as const;
 export type Tag = (typeof TAGS)[number];
+
+/** What an analyst delete names: one node, or a group (its members under the request's filters). */
+export const DELETION_KINDS = ['node', 'group'] as const;
+export type DeletionKind = (typeof DELETION_KINDS)[number];
+
+/** `node`: only the named node(s); `subtree`: with everything below them that has no other parent. */
+export const DELETION_MODES = ['node', 'subtree'] as const;
+export type DeletionMode = (typeof DELETION_MODES)[number];
+
+/**
+ * The tool name of nodes and links the analyst adds by hand (POST /api/nodes). Reserved: ingest refuses files that
+ * use it, and its observations never count toward source_count / corroboration.
+ */
+export const MANUAL_TOOL = 'manual';

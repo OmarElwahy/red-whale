@@ -64,7 +64,7 @@ test('running migrations on an existing database is a no-op', () => {
 
   const second = open(path);
   const migrations = second.$client.prepare('SELECT COUNT(*) AS n FROM __drizzle_migrations').get();
-  expect(migrations).toEqual({ n: 5 });
+  expect(migrations).toEqual({ n: 6 });
   expect(second.$client.prepare('SELECT COUNT(*) AS n FROM nodes').get()).toEqual({ n: 1 });
 });
 
@@ -168,7 +168,7 @@ describe('a database from before a breaking migration', () => {
 
   test('empty: migrates normally', () => {
     const db = open(schema0000Db(false));
-    expect(db.$client.prepare('SELECT COUNT(*) AS n FROM __drizzle_migrations').get()).toEqual({ n: 5 });
+    expect(db.$client.prepare('SELECT COUNT(*) AS n FROM __drizzle_migrations').get()).toEqual({ n: 6 });
     const columns = db.$client.prepare<[], { name: string }>("SELECT name FROM pragma_table_info('observations')").all();
     expect(columns.map((c) => c.name)).toContain('role');
   });

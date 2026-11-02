@@ -3,6 +3,8 @@
 import { z } from 'zod';
 import {
   CONFIDENCE_LEVELS,
+  DELETION_KINDS,
+  DELETION_MODES,
   EDGE_CONFIDENCE_LEVELS,
   NODE_TYPES,
   OBSERVATION_ROLES,
@@ -571,7 +573,8 @@ export type Highlight = z.infer<typeof highlightSchema>;
 /** Every `interesting` node in the workspace, riskiest first. Not filtered, not paged. */
 export const highlightsResponseSchema = z.strictObject({ items: z.array(highlightSchema) });
 
-export const layoutResponseSchema = z.strictObject({ updated: z.number().int() });
+/** `skipped`: IDs of nodes that no longer exist (deleted meanwhile, e.g. from another tab); the rest are saved. */
+export const layoutResponseSchema = z.strictObject({ updated: z.number().int(), skipped: z.array(z.string()) });
 
 const countsBy = <const T extends readonly [string, ...string[]]>(keys: T) =>
   z.record(z.enum(keys), z.number().int().min(0));
@@ -692,7 +695,8 @@ export const jobSchema = z.strictObject({
   id: z.number().int(),
   tool: z.string(),
   group: z.string(),
-  nodeId: z.string(),
+  /** Null once the analyst deleted the target node ("node deleted"); targetType/targetValue still say what it was. */
+  nodeId: z.string().nullable(),
   targetType: z.enum(NODE_TYPES),
   targetValue: z.string(),
   mode: z.enum(TOOL_MODES),
@@ -765,6 +769,97 @@ export const runnerStatusSchema = z.strictObject({
 });
 export type RunnerStatus = z.infer<typeof runnerStatusSchema>;
 
+// --- graph editing: deleting nodes ------------------------------------------------------------------
+
+/**
+ * GET /nodes/:id/delete-preview takes the graph filters: they only matter for a group, whose members are the ones
+ * the filters keep (every one, not only the pages on the canvas).
+ */
+export const deletePreviewQuerySchema = graphFiltersSchema;
+
+export const deleteQuerySchema = graphFiltersSchema.extend({
+  mode: z.enum(DELETION_MODES),
+  /** The node count the analyst confirmed; if the graph changed since the preview, a 409 instead. */
+  expect: z.coerce.number().int().min(0).optional(),
+  /** `1`: cancel the running jobs on the nodes being deleted, wait for them to stop, then delete. */
+  cancelJobs: z.enum(['0', '1']).default('0'),
+});
+
+const deletionCountsSchema = z.strictObject({
+  /** Nodes removed. */
+  nodes: z.number().int().min(0),
+  /** Edges removed (every edge touching a removed node). */
+  edges: z.number().int().min(0),
+  /** Nodes left with no parent, which become roots. */
+  orphans: z.number().int().min(0),
+  /** Nodes below that stay because they also hang under a node that isn't deleted (always 0 in `node` mode). */
+  keptShared: z.number().int().min(0),
+  /** Running jobs on removed nodes: the delete is refused while any is running. */
+  runningJobs: z.array(jobSchema),
+  /** Queued jobs on removed nodes, cancelled by the delete. */
+  queuedJobs: z.number().int().min(0),
+});
+
+export const deletePreviewSchema = z.strictObject({
+  target: z.strictObject({
+    kind: z.enum(DELETION_KINDS),
+    id: z.string(),
+    /** The node's type; a group's member type. */
+    type: z.enum(NODE_TYPES),
+    label: z.string(),
+    /** A group's members the filters keep: these are deleted (1 for a node). */
+    members: z.number().int().min(0),
+    /** A group's members the filters hide: kept (0 for a node). */
+    hiddenByFilters: z.number().int().min(0),
+  }),
+  node: deletionCountsSchema,
+  subtree: deletionCountsSchema,
+});
+export type DeletePreview = z.infer<typeof deletePreviewSchema>;
+
+export const deleteResponseSchema = z.strictObject({
+  deletionId: z.number().int(),
+  nodeIds: z.array(z.string()),
+  edgeIds: z.array(z.string()),
+  /** Jobs that were queued on removed nodes, now cancelled. */
+  cancelledJobs: z.array(z.number().int()),
+});
+export type DeleteResponse = z.infer<typeof deleteResponseSchema>;
+
+/** 409: a job is running on a node being deleted, or the graph changed since the preview (`expect`). */
+export const deleteConflictSchema = z.strictObject({
+  error: z.string(),
+  reason: z.enum(['jobs-running', 'changed']),
+  preview: deletePreviewSchema,
+});
+
+export const deletionSchema = z.strictObject({
+  id: z.number().int(),
+  at: timestamp,
+  kind: z.enum(DELETION_KINDS),
+  mode: z.enum(DELETION_MODES),
+  rootType: z.enum(NODE_TYPES),
+  rootValue: z.string(),
+  rootLabel: z.string(),
+  nodeCount: z.number().int(),
+  edgeCount: z.number().int(),
+  removed: z.array(z.strictObject({ type: z.enum(NODE_TYPES), value: z.string() })),
+});
+export type Deletion = z.infer<typeof deletionSchema>;
+
+export const DELETION_PAGE_SIZE = { default: 20, max: 100 } as const;
+export const deletionsQuerySchema = z.strictObject({
+  page: positiveInt.default(1),
+  pageSize: positiveInt.max(DELETION_PAGE_SIZE.max).default(DELETION_PAGE_SIZE.default),
+});
+export const deletionsResponseSchema = z.strictObject({
+  items: z.array(deletionSchema),
+  page: z.number().int(),
+  pageSize: z.number().int(),
+  total: z.number().int(),
+});
+export type DeletionsResponse = z.infer<typeof deletionsResponseSchema>;
+
 export const errorResponseSchema = z.strictObject({
   error: z.string(),
   issues: z.array(z.string()).optional(),
@@ -773,6 +868,8 @@ export const errorResponseSchema = z.strictObject({
 export const wsEventSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('graph.updated'), nodeIds: z.array(z.string()), edgeIds: z.array(z.string()) }),
   z.strictObject({ type: z.literal('scan.ingested'), scanId: z.string(), tool: z.string() }),
+  /** The analyst deleted these nodes and edges (DELETE /nodes/:id). */
+  z.strictObject({ type: z.literal('graph.deleted'), nodeIds: z.array(z.string()), edgeIds: z.array(z.string()) }),
   /** A scope rule or setting changed: every node's `inScope` may be different. */
   z.strictObject({ type: z.literal('scope.changed') }),
   /** A job was queued, started, finished, cancelled or refused. */
