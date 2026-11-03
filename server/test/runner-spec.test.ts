@@ -4,6 +4,7 @@ import { toolDefSchema, type ToolDef } from '../src/runner/defs';
 import { ArgumentInjection, DEFAULT_LIMITS, buildArgv, containerSpec, safeArgValue } from '../src/runner/spec';
 import { ScopeViolation, authorize, type ScopedTarget } from '../src/scope/authorize';
 import { addRule } from '../src/scope/store';
+import { toolsNetwork } from '../src/runner/network';
 import { FakeRuntime } from './fakeRuntime';
 import { freshDb } from './helpers';
 
@@ -108,7 +109,7 @@ describe('container hardening', () => {
     expect(Object.keys(h.Tmpfs)).toEqual(['/tmp']);
     expect(h.Tmpfs['/tmp']).toMatch(/noexec/);
     expect(h.Mounts).toEqual([{ Type: 'volume', Source: 'redwhale-ws-1-job-job-1', Target: '/out', ReadOnly: false }]);
-    expect(h.NetworkMode).toBe('bridge');
+    expect(h.NetworkMode).toBe('redwhale-tools'); // the tools network, never the default bridge
     expect(h.AutoRemove).toBe(false);
   });
 
@@ -126,6 +127,7 @@ describe('fake runtime', () => {
   test('runs a scripted container and records every call', async () => {
     const rt = new FakeRuntime(() => ({ files: { 'result.json': '{}', 'big.bin': 'x'.repeat(10) }, exitCode: 3 }));
     rt.addImage('redwhale-tools/subdomain:abc');
+    await rt.ensureNetwork(toolsNetwork({}));
     const id = await rt.create(spec());
     await rt.start(id);
     expect(await rt.wait(id)).toEqual({ exitCode: 3 });
@@ -142,6 +144,7 @@ describe('fake runtime', () => {
   test('a hanging container exits only when killed', async () => {
     const rt = new FakeRuntime(() => ({ hang: true }));
     rt.addImage('redwhale-tools/subdomain:abc');
+    await rt.ensureNetwork(toolsNetwork({}));
     const id = await rt.create(spec());
     await rt.start(id);
     const waited = rt.wait(id);

@@ -8,6 +8,7 @@ import type {
   FetchedOutput,
   ImageInfo,
   LabeledResources,
+  NetworkSpec,
   RuntimePing,
 } from '../src/runner/runtime';
 
@@ -44,6 +45,10 @@ export class FakeRuntime implements ContainerRuntime {
   /** Images that "exist", by reference (repo:tag). */
   readonly images = new Map<string, ImageInfo>();
   reachable = true;
+  /** Networks that "exist", by name. */
+  readonly networks = new Map<string, NetworkSpec>();
+  /** ensureNetwork() throws this (a subnet clash, say). */
+  networkError: string | null = null;
   private next = 0;
 
   /** Decides each new container's behavior; defaults to an immediate clean exit with no files. */
@@ -88,8 +93,18 @@ export class FakeRuntime implements ContainerRuntime {
     );
   }
 
+  async ensureNetwork(spec: NetworkSpec): Promise<void> {
+    this.record('ensureNetwork', spec.name);
+    if (this.networkError !== null) throw new Error(this.networkError);
+    if (!this.networks.has(spec.name)) this.networks.set(spec.name, spec);
+    return Promise.resolve();
+  }
+
   async create(spec: ContainerSpec): Promise<string> {
     this.record('create', spec.name);
+    // Like Docker: the container's network must exist.
+    const network = spec.body.HostConfig.NetworkMode;
+    if (!this.networks.has(network)) throw new Error(`network ${network} not found`);
     if (!this.images.has(spec.body.Image)) throw new Error(`No such image: ${spec.body.Image}`);
     this.volumes.set(spec.volume.Name, spec.volume.Labels);
     this.created.push(spec);

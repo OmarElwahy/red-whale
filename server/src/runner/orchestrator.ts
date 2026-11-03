@@ -9,7 +9,8 @@ import { jobs, nodes, runnerState } from '../db/schema';
 import { authorize } from '../scope/authorize';
 import { currentScope } from '../scope/store';
 import type { GroupDef, ToolDef } from './defs';
-import type { ContainerRuntime, ContainerSpec, RuntimePing } from './runtime';
+import { toolsNetwork } from './network';
+import type { ContainerRuntime, ContainerSpec, NetworkSpec, RuntimePing } from './runtime';
 import { LABEL_JOB, LABEL_WORKSPACE, containerSpec } from './spec';
 
 export type JobRow = typeof jobs.$inferSelect;
@@ -54,6 +55,8 @@ export interface OrchestratorOptions {
   runtime: ContainerRuntime;
   catalog: ToolCatalog;
   maxConcurrent?: number;
+  /** The network every job joins (default: the tools network, subnet from REDWHALE_NET_SUBNET). */
+  network?: NetworkSpec;
   finish?: FinishHook;
   /** Every change to a job (for the job.updated WS event). */
   onJob?: (job: JobRow) => void;
@@ -86,6 +89,7 @@ export class Orchestrator {
   readonly catalog: ToolCatalog;
   readonly maxConcurrent: number;
   readonly workspaceId: string;
+  readonly network: NetworkSpec;
   private readonly finish: FinishHook;
   private readonly onJob: (job: JobRow) => void;
   private readonly onRunnerChange: (ping: RuntimePing) => void;
@@ -101,6 +105,7 @@ export class Orchestrator {
     this.runtime = options.runtime;
     this.catalog = options.catalog;
     this.maxConcurrent = Math.max(1, options.maxConcurrent ?? DEFAULT_MAX_CONCURRENT);
+    this.network = options.network ?? toolsNetwork();
     this.finish = options.finish ?? exitCodeOnly;
     this.onJob = options.onJob ?? (() => undefined);
     this.onRunnerChange = options.onRunnerChange ?? (() => undefined);
@@ -318,6 +323,8 @@ export class Orchestrator {
     // cancel() flips it while we wait; a function so the compiler doesn't assume it stays false.
     const cancelled = () => active.cancelled;
     try {
+      // Every job joins the tools network; it's created on first use (and after someone removed it).
+      await this.runtime.ensureNetwork(this.network);
       const containerId = await this.runtime.create(spec);
       active.containerId = containerId;
       this.update(job.id, { containerId });

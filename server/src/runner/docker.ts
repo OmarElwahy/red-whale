@@ -16,8 +16,11 @@ import type {
   FetchedOutput,
   ImageInfo,
   LabeledResources,
+  NetworkInfo,
+  NetworkSpec,
   RuntimePing,
 } from './runtime';
+import { NetworkError, existingNetworkProblem, networkCreateError } from './network';
 
 /** HTTP status of a Docker Engine error, if it is one. */
 function statusOf(e: unknown): number | null {
@@ -184,6 +187,56 @@ export class DockerRuntime implements ContainerRuntime {
   async listImages(label: string, value?: string): Promise<ImageInfo[]> {
     const images = await this.docker.listImages({ filters: labelFilter(label, value) });
     return images.map((i) => ({ id: i.Id, tags: i.RepoTags ?? [], labels: i.Labels }));
+  }
+
+  private async inspectNetwork(name: string): Promise<NetworkInfo | null> {
+    try {
+      const n = (await this.docker.getNetwork(name).inspect()) as {
+        Driver?: string;
+        Internal?: boolean;
+        IPAM?: { Config?: { Subnet?: string }[] | null } | null;
+        Labels?: Record<string, string> | null;
+      };
+      return {
+        driver: n.Driver ?? '',
+        internal: n.Internal === true,
+        subnets: (n.IPAM?.Config ?? []).map((c) => c.Subnet ?? '').filter(Boolean),
+        labels: { ...n.Labels },
+      };
+    } catch (e) {
+      if (statusOf(e) === 404) return null;
+      throw e;
+    }
+  }
+
+  async ensureNetwork(spec: NetworkSpec): Promise<void> {
+    const check = (found: NetworkInfo) => {
+      const problem = existingNetworkProblem(spec, found);
+      if (problem) throw new NetworkError(problem);
+    };
+    const found = await this.inspectNetwork(spec.name);
+    if (found) {
+      check(found);
+      return;
+    }
+    try {
+      await this.docker.createNetwork({
+        Name: spec.name,
+        Driver: 'bridge',
+        Internal: false,
+        CheckDuplicate: true,
+        Labels: spec.labels,
+        IPAM: { Driver: 'default', Config: [{ Subnet: spec.subnet }] },
+      });
+    } catch (e) {
+      // Two jobs starting at once: the other one created it first.
+      const raced = statusOf(e) === 409 ? await this.inspectNetwork(spec.name) : null;
+      if (raced) {
+        check(raced);
+        return;
+      }
+      throw new NetworkError(networkCreateError(spec, e instanceof Error ? e.message : String(e)));
+    }
   }
 
   async create(spec: ContainerSpec): Promise<string> {

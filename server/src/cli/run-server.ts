@@ -5,6 +5,7 @@ import { listenOptions } from '../listen';
 import { CatalogError, loadCatalog } from '../runner/catalog';
 import { DockerRuntime } from '../runner/docker';
 import { jobsDirFor } from '../runner/finish';
+import { NetworkError, SUBNET_ENV, toolsNetwork } from '../runner/network';
 
 const listen = listenOptions();
 const dbPath = process.env.REDWHALE_DB ?? DEFAULT_DB_PATH;
@@ -27,10 +28,15 @@ function runnerOptions(): RunnerOptions | undefined {
     return {
       runtime: new DockerRuntime(),
       catalog,
+      network: toolsNetwork(),
       jobsDir: jobsDirFor(dbPath),
       maxJobs: Number.isInteger(maxJobs) && maxJobs > 0 ? maxJobs : 2,
     };
   } catch (e) {
+    if (e instanceof NetworkError) {
+      console.error(`${e.message}\nThe tool runner is OFF until ${SUBNET_ENV} is fixed.`);
+      return undefined;
+    }
     if (!(e instanceof CatalogError)) throw e;
     console.error(`${e.message}\nThe tool runner is OFF until these are fixed (pnpm tools:check).`);
     return undefined;

@@ -2,6 +2,7 @@
 // The hardening lives here, as plain Engine API JSON, so every option is unit-tested without Docker.
 import { assertScoped, type ScopedTarget } from '../scope/authorize';
 import { TARGET_PLACEHOLDER, type ToolDef } from './defs';
+import { TOOLS_NETWORK } from './network';
 import type { ContainerSpec } from './runtime';
 
 export const LABEL_JOB = 'redwhale.job';
@@ -108,7 +109,8 @@ export function containerSpec({ def, target, image, jobId, workspaceId, limits =
         PidsLimit: limits.pidsLimit,
         Tmpfs: { '/tmp': `rw,noexec,nosuid,nodev,size=${String(limits.tmpSizeMb)}m` },
         Mounts: [{ Type: 'volume', Source: volume, Target: def.outputDir, ReadOnly: false }],
-        NetworkMode: 'bridge',
+        // The tools network (network.ts): a user-defined bridge, so a local lab is reachable by name; not internal.
+        NetworkMode: TOOLS_NETWORK,
         Init: true,
         AutoRemove: false, // the runner fetches /out after exit, then removes it
         RestartPolicy: { Name: 'no' },

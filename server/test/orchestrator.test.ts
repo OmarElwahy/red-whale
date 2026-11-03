@@ -107,6 +107,35 @@ describe('scope', () => {
     expect(rt.volumes.size).toBe(0);
   });
 
+  test('every job joins the tools network, ensured right before its container is created', async () => {
+    const { rt, orch } = setup();
+    orch.enqueue('subfinder', DOMAIN);
+    await orch.idle();
+    const ops = rt.calls.map((c) => c.op);
+    expect(ops.indexOf('ensureNetwork')).toBeGreaterThan(-1);
+    expect(ops.indexOf('ensureNetwork')).toBeLessThan(ops.indexOf('create'));
+    expect(rt.calls.find((c) => c.op === 'ensureNetwork')?.arg).toBe('redwhale-tools');
+    expect(rt.networks.get('redwhale-tools')?.subnet).toBe('172.29.250.0/24');
+    expect(rt.created[0]?.body.HostConfig.NetworkMode).toBe('redwhale-tools');
+  });
+
+  test('the subnet comes from the orchestrator options (REDWHALE_NET_SUBNET in the server)', async () => {
+    const { rt, orch } = setup(undefined, { network: { name: 'redwhale-tools', subnet: '10.77.0.0/16', labels: { 'redwhale.network': 'tools' } } });
+    orch.enqueue('subfinder', DOMAIN);
+    await orch.idle();
+    expect(rt.networks.get('redwhale-tools')?.subnet).toBe('10.77.0.0/16');
+  });
+
+  test('a network failure (subnet clash) fails the job with its message; no container is created', async () => {
+    const { rt, orch } = setup();
+    rt.networkError = "can't create the Docker network 'redwhale-tools': subnet 172.29.250.0/24 overlaps another Docker network";
+    orch.enqueue('subfinder', DOMAIN);
+    await orch.idle();
+    expect(orch.get(1)).toMatchObject({ status: 'failed', error: rt.networkError });
+    expect(rt.created).toEqual([]);
+    expect(rt.volumes.size).toBe(0);
+  });
+
   test('a scope change cancels a queued job that is now out of scope (not the running one)', async () => {
     const { db, orch, other } = setup((name) => (name === 'subfinder' ? { hang: true } : {}), { maxConcurrent: 1 });
     orch.enqueue('subfinder', DOMAIN);
@@ -233,7 +262,7 @@ describe('restarts, orphans and Docker going away', () => {
     const { db, rt, orch } = setup(() => ({ hang: true }), { maxConcurrent: 1 });
     orch.enqueue('subfinder', DOMAIN);
     orch.enqueue('assetfinder', DOMAIN);
-    await Promise.resolve();
+    await tick(); // network, then the container
     orch.stop(); // "the server died": the container keeps running, the row says running
     // Another workspace's container on the same Docker must survive our cleanup.
     rt.addImage('other');

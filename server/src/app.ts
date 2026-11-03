@@ -16,7 +16,7 @@ import type { Catalog } from './runner/catalog';
 import type { ToolDef } from './runner/defs';
 import { ingestFinish } from './runner/finish';
 import { Orchestrator } from './runner/orchestrator';
-import type { ContainerRuntime } from './runner/runtime';
+import type { ContainerRuntime, NetworkSpec } from './runner/runtime';
 import { Broadcaster } from './ws';
 
 declare module 'fastify' {
@@ -49,6 +49,8 @@ export interface RunnerOptions {
   maxJobs?: number;
   /** The hard kill per tool; tests shorten it. */
   timeoutMs?: (def: ToolDef) => number;
+  /** The network jobs join (default: the tools network). */
+  network?: NetworkSpec;
 }
 
 /**
@@ -99,13 +101,14 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   const db = options.db;
   let runner: RunnerContext | null = null;
   if (options.runner) {
-    const { runtime, catalog, jobsDir, maxJobs, timeoutMs } = options.runner;
+    const { runtime, catalog, jobsDir, maxJobs, timeoutMs, network } = options.runner;
     const orchestrator = new Orchestrator({
       db,
       runtime,
       catalog,
       ...(maxJobs === undefined ? {} : { maxConcurrent: maxJobs }),
       ...(timeoutMs === undefined ? {} : { timeoutMs }),
+      ...(network === undefined ? {} : { network }),
       finish: ingestFinish({
         db,
         jobsDir,

@@ -12,6 +12,7 @@ import { toolDefSchema, type ToolDef } from '../src/runner/defs';
 import { DockerRuntime } from '../src/runner/docker';
 import { ingestFinish } from '../src/runner/finish';
 import { Orchestrator, type ToolCatalog } from '../src/runner/orchestrator';
+import { TOOLS_NETWORK, toolsNetwork } from '../src/runner/network';
 import { LABEL_WORKSPACE, containerSpec } from '../src/runner/spec';
 import { authorize } from '../src/scope/authorize';
 import { addRule } from '../src/scope/store';
@@ -20,6 +21,7 @@ import { baseDoc, freshDb, tempDir } from './helpers';
 const runtime = new DockerRuntime();
 const IMAGE = loadCatalog().imageRef('subdomain');
 const ready = (await runtime.ping()).ok && (await runtime.inspectImage(IMAGE).catch(() => null)) !== null;
+const NETWORK = toolsNetwork();
 const WORKSPACE = `itest${randomUUID().replaceAll('-', '')}`;
 
 /** A tool whose program is `python3 -c <code> <target>` (the code may not contain braces: tool.json forbids them). */
@@ -71,6 +73,14 @@ describe.skipIf(!ready)('real Docker', () => {
     const auth = authorize(db, { type: 'domain', value: 'example.com' }, 'passive');
     if (!auth.ok) throw new Error(auth.reason);
     const spec = containerSpec({ def: pyTool('itest', WRITE_RESULT), target: auth.target, image: IMAGE, jobId: '1', workspaceId: WORKSPACE });
+    // The tools network: created if missing (or the user's existing one is accepted), ours, bridge, NOT internal.
+    await runtime.ensureNetwork(NETWORK);
+    await runtime.ensureNetwork(NETWORK); // idempotent
+    const net = JSON.parse(spawnSync('docker', ['network', 'inspect', TOOLS_NETWORK], { encoding: 'utf8' }).stdout) as {
+      Driver: string; Internal: boolean; IPAM: { Config: { Subnet: string }[] }; Labels: Record<string, string>;
+    }[];
+    expect(net[0]).toMatchObject({ Driver: 'bridge', Internal: false, Labels: { 'redwhale.network': 'tools' } });
+    expect(net[0]?.IPAM.Config.map((c) => c.Subnet)).toContain(NETWORK.subnet);
     const id = await runtime.create(spec);
 
     const info = inspect(id) as { Config: { User: string; Labels: Record<string, string> }; HostConfig: Record<string, unknown>; Mounts: { Type: string; Name?: string; Destination: string }[] };
@@ -84,7 +94,7 @@ describe.skipIf(!ready)('real Docker', () => {
       NanoCpus: 1e9,
       PidsLimit: 256,
       Privileged: false,
-      NetworkMode: 'bridge',
+      NetworkMode: 'redwhale-tools',
     });
     expect(info.HostConfig.Binds ?? null).toBeNull();
     expect(info.Mounts).toEqual([expect.objectContaining({ Type: 'volume', Name: spec.volume.Name, Destination: '/out' })]);

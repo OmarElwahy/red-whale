@@ -30,12 +30,29 @@ export interface ContainerCreateBody {
     PidsLimit: number;
     Tmpfs: Record<string, string>;
     Mounts: { Type: 'volume'; Source: string; Target: string; ReadOnly: false }[];
-    NetworkMode: 'bridge';
+    /** The tools network (network.ts), never the default bridge. */
+    NetworkMode: 'redwhale-tools';
     Init: true;
     AutoRemove: false;
     RestartPolicy: { Name: 'no' };
     LogConfig: { Type: 'json-file'; Config: Record<string, string> };
   };
+}
+
+/** A user-defined bridge network (network.ts builds it). */
+export interface NetworkSpec {
+  name: string;
+  /** IPv4 CIDR, canonical. */
+  subnet: string;
+  labels: Record<string, string>;
+}
+
+/** What inspecting a network tells us. */
+export interface NetworkInfo {
+  driver: string;
+  internal: boolean;
+  subnets: string[];
+  labels: Record<string, string>;
 }
 
 export interface ContainerSpec {
@@ -93,6 +110,11 @@ export interface ContainerRuntime {
   inspectImage(ref: string): Promise<ImageInfo | null>;
   /** Images carrying `label=value`. */
   listImages(label: string, value?: string): Promise<ImageInfo[]>;
+  /**
+   * Creates the network if it's missing; accepts an existing one only if it matches (ours, bridge, not internal, same
+   * subnet). Throws NetworkError with a message the analyst can act on.
+   */
+  ensureNetwork(spec: NetworkSpec): Promise<void>;
   /** Creates the volume, then the container. Returns the container ID. */
   create(spec: ContainerSpec): Promise<string>;
   start(containerId: string): Promise<void>;
