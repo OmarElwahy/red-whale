@@ -19,6 +19,7 @@ Pick the example closest to your tool:
 | JSON lines / JSON (most tools: `-json`, `-oJ`, `-jsonl`) | `tools/subdomain/subfinder/` |
 | plain text, one item per line (only if it has no JSON mode) | `tools/subdomain/assetfinder/` |
 | nothing: it's a web API you call | `tools/subdomain/crtsh/` |
+| JSON lines, and it **talks to the target** (an active tool) | `tools/http/httpx/` |
 
 Your tool goes in its **group's** folder (ask the team leader which group, e.g. `ports`, `http`, `vulns`). If the group
 doesn't exist yet, the team leader creates it (`group.json` + `Dockerfile`).
@@ -37,46 +38,66 @@ tools/<group>/<yourtool>/
 ## 2. Change what's yours
 
 **`tool.json`**: change `name` (= the folder name, lowercase; not `manual`, which is reserved for nodes the analyst adds
-by hand), `label`, `description`, `mode`, `accepts`, the script path inside `argv`, `timeoutSec` and `external`:
+by hand), `label`, `description`, `mode`, `accepts`, the script path inside `argv`, `timeoutSec`, `external` and
+`contacts`. The real `tools/http/httpx/tool.json`:
 
 ```json
 {
   "name": "httpx",
   "group": "http",
   "label": "httpx",
-  "description": "ProjectDiscovery httpx: which hosts answer over HTTP(S), with title, status and tech.",
+  "description": "ProjectDiscovery httpx: which of the host's HTTP(S) ports answer, with status, title, web server and technologies. Never follows redirects.",
   "mode": "active",
-  "accepts": ["subdomain", "domain"],
-  "argv": ["python3", "-I", "/opt/redwhale/http/httpx/run.py", "--target", "{target}", "--out", "/out"],
-  "timeoutSec": 600,
+  "accepts": ["domain", "subdomain"],
+  "argv": ["python3", "-I", "/opt/redwhale/http/httpx/run.py", "--target", "{target}", "--target-type", "{targetType}", "--out", "/out"],
+  "timeoutSec": 300,
   "external": [],
+  "contacts": "sends HTTP(S) requests to {target} on ports 80 and 443 (GET /, at most 5 per second; redirects are not followed)",
   "outputDir": "/out"
 }
 ```
 
 - `mode`: `passive` (only asks third-party sources, never touches the target), `active` (talks to the target),
-  `intrusive` (could break or change something). If you're not sure, it's `active`.
+  `intrusive` (could break or change something). If you're not sure, it's `active`. Active and intrusive runs only
+  start after the analyst confirms them in a dialog, and only with passive-only mode off.
 - `accepts`: the node types it can be pointed at: `domain`, `subdomain`, `ip`, `port`, `url`.
 - `{target}` stays exactly like that, as its own item. Never build a command string.
+- `{targetType}` (optional, at most once, its own item): the server replaces it with the target node's type
+  (`domain`, `subdomain`…). Add `"--target-type", "{targetType}"` when your script names the target as a finding's
+  `parent` (see `run.target_type` below). Never guess the type in Python: a wrong type makes a second, duplicate node.
 - `external`: the outside services it contacts (shown in the UI).
+- `contacts`: **required for `active` and `intrusive` tools** (optional for passive ones). One plain sentence saying
+  what a run touches, with `{target}` where the target goes, e.g. `"sends HTTP(S) requests to {target} on ports 80 and
+  443"`. The confirmation dialog shows it. `{target}` is the only placeholder allowed; it is display text, never part
+  of the command.
 
 **`run.py`**: change three things and nothing else:
 
 ```python
-TOOL = "httpx"                                   # = name in tool.json
-VERSION_COMMAND = ["httpx", "-version"]          # or None if the tool can't print its version
+TOOL = "mytool"                                         # = name in tool.json
+VERSION_COMMAND = ["/usr/local/bin/mytool", "-version"] # or None if the tool can't print its version
 
 def build_command(target):
     # The exact command, as a list. Always use the tool's machine-readable output (JSON / XML).
-    return ["httpx", "-u", target, "-json", "-silent"]
+    # Call the program by its absolute path in the image.
+    return ["/usr/local/bin/mytool", "-u", target, "-json", "-silent"]
 
 def parse(raw, run, target):
     # `raw` is everything the tool printed. Turn it into findings.
     for item in json_lines(raw, run):            # one JSON object per line; bad lines are reported for you
-        url = item.get("url")
-        if url:
-            run.add("url", url, parent=("subdomain", target), data={"status": item.get("status_code")})
+        ip = item.get("ip")
+        if ip:
+            # run.target_type: the target node's type, from --target-type (tool.json has "{targetType}")
+            run.add("ip", ip, parent=(run.target_type, target))
+        for tech in item.get("tech") or []:
+            run.add("technology", tech_value(tech["name"], tech.get("version")), parent=("ip", ip))
+
+if __name__ == "__main__":
+    # needs_target_type=True: the script stops with an error if --target-type is missing (it never guesses)
+    sys.exit(main(TOOL, parse, command=build_command, version_command=VERSION_COMMAND, needs_target_type=True))
 ```
+
+A real one to read: `tools/http/httpx/run.py` (target → ip → port → url → technology).
 
 The helper calls you'll use:
 
@@ -87,6 +108,8 @@ The helper calls you'll use:
 | `run.error("what went wrong")` | Records a problem: the result becomes `partial` (or `failed` with no findings) |
 | `json_lines(raw, run)` | Each JSON line of the output |
 | `port_value(ip, port, "tcp")`, `mask_secret(s)` | Build a `port` value; mask a secret (never output a real one) |
+| `tech_value(name, version)` | A `technology` value, always spelled one way: lowercase, spaces → `-`, then `/version` if there is one. `tech_value("Microsoft ASP.NET", "4.0")` → `microsoft-asp.net/4.0`, `tech_value("Nginx", "1.30.6")` → `nginx/1.30.6`, `tech_value("PHP")` → `php`. Always use it for technologies, so two tools land on one node |
+| `run.target_type` | The target node's type (`domain`, `subdomain`…), when tool.json passes `--target-type {targetType}` and `main(..., needs_target_type=True)`; use it for the target's `parent=(run.target_type, target)` |
 
 You never write `result.json` yourself, never create IDs, and never put raw terminal text into findings.
 
@@ -97,10 +120,26 @@ Run your tool **for real, once**, against a target you are allowed to test, with
 
 ```bash
 pnpm tools:build <group>                   # the team leader adds your tool to the group's Dockerfile first
-docker run --rm redwhale-tools/<group>:<tag> httpx -u <target> -json -silent > raw.jsonl
+docker run --rm redwhale-tools/<group>:<tag> /usr/local/bin/mytool -u <target> -json -silent > raw.jsonl
 ```
 
 (Or run the tool on your own machine if it's installed; the output must be the same format.)
+
+**Active tools: capture against the local lab**, never a real host you haven't been cleared for. `pnpm lab:up` starts
+`lab.redwhale.test` on the tools network (see `lab/README.md`); run your container on that network:
+
+```bash
+pnpm lab:up
+docker run --rm --network redwhale-tools redwhale-tools/<group>:<tag> python3 -I /opt/redwhale/<group>/<yourtool>/run.py --target lab.redwhale.test --target-type subdomain --out /tmp/out
+```
+
+and copy `/tmp/out/raw.txt` out (e.g. add `; cat /tmp/out/raw.txt` inside `sh -c '…'`, as `tools/http/httpx/fixtures/NOTE.md`
+describes). Anonymize the lab like any host: `lab.redwhale.test` → `lab.northwind.example`, `172.29.250.10` →
+`198.18.0.10`.
+
+If your tool uses `{targetType}`, `pnpm tools:check` must know the fixture target's type: before the first `--update`,
+create `fixtures/expected.json` with just `{"target": "lab.northwind.example", "target_type": "subdomain"}`; `--update`
+keeps both.
 
 The repo is **public**: before it goes in `fixtures/`, rewrite every real hostname, IP and identifier to fake ones,
 consistently (the same real name always becomes the same fake name): hosts under `northwind.example`, IPs from
@@ -149,7 +188,7 @@ It writes `out/raw.txt` (what the tool printed) and `out/result.json` (the contr
 - Only node types and relations from `docs/contract.md`. Need another? Ask the team leader.
 - Machine-readable output only (JSON, JSONL, XML). Parse text only when the tool has nothing else.
 - Hosts are lowercase ASCII (punycode: `host.encode('idna').decode()`); IPv6 ports in brackets; CVE IDs uppercase;
-  technologies `name/version`.
+  technologies through `tech_value(name, version)` (`name/version`, lowercase, one spelling).
 - Naming a node only as a `parent` doesn't count as your tool finding it; report it as a finding too if it did.
 - Never output real passwords, tokens or keys: `mask_secret()`.
 - Never commit real hostnames, IPs or customer data: fixtures are anonymized.

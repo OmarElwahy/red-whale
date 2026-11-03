@@ -21,8 +21,9 @@ reserved tool `manual`.
 | Package | Contains |
 |---|---|
 | `shared/` | Zod schemas for the tool-output contract and API responses; `normalize.ts` (value normalization); `nodeId.ts` (deterministic IDs); `scope.ts` (scope rules and `checkScope`, §10); `manual.ts` (the Add node checks and the synthetic `manual` file, §12); shared enums (node types, relations, severities, confidence, tags) |
-| `server/` | Fastify app bound to `127.0.0.1:4100`; Drizzle schema + migrations; ingest pipeline; graph query + aggregation; WebSocket broadcaster; the tool runner (`src/runner/`, §11); CLI entry for `ingest`, `mock`, `tools:build`, `tools:check` |
+| `server/` | Fastify app bound to `127.0.0.1:4100`; Drizzle schema + migrations; ingest pipeline; graph query + aggregation; WebSocket broadcaster; the tool runner (`src/runner/`, §11), the tools network and the local lab (`network.ts`, `lab.ts`); CLI entry for `ingest`, `mock`, `tools:build`, `tools:check`, `lab:up/down/status` |
 | `web/` | Vite + React app on `127.0.0.1:5173`, proxying `/api` to the server |
+| `lab/` | The local lab target (nginx image, `lab/README.md`): `lab.redwhale.test` on the tools network, for trying active tools safely |
 
 ## 3. Node identity
 
@@ -187,9 +188,9 @@ edge's full set of `edge_observations` in the same order (`recomputeEdges`, `der
 | `POST /scope/check` | Same body/answer, **logged** as `check`: the UI's "test a target" box, on submit only |
 | `GET /scope/log?source=&page=&pageSize=` | Decision log, newest first; `source` defaults to `run` (`run,check` adds the test box) |
 | `GET /scope/settings`, `PATCH /scope/settings` | `{ passiveOnly }` |
-| `GET /tools` | Tool groups (label, image, `imageStatus` built/outdated/missing/unknown, tools) and tools (mode, accepted types, external services, timeout) |
-| `POST /jobs` | `{ tool, nodeId }`: 201 `{ jobs }` queued · 403 `{ error, decision, jobs }` refused by scope (kept as `refused`) · 404 · 400 · 409 image not built · 503 Docker unreachable |
-| `POST /jobs/group` | `{ group, nodeId }`: one job per tool of the group that takes the node's type, one `authorize()` each |
+| `GET /tools` | Tool groups (label, image, `imageStatus` built/outdated/missing/unknown, tools) and tools (mode, accepted types, external services, `contacts`, timeout) |
+| `POST /jobs` | `{ tool, nodeId, confirmActive? }`: 201 `{ jobs }` queued · 403 `{ error, decision, jobs }` refused by scope (kept as `refused`) · 404 · 400 · 409 image not built · 428 `{ error, reason: "confirm-required" }` a non-passive tool without `confirmActive: true` · 503 Docker unreachable |
+| `POST /jobs/group` | `{ group, nodeId, confirmActive? }`: one job per tool of the group that takes the node's type, one `authorize()` each; 428 if any of those tools isn't passive and `confirmActive` isn't true |
 | `GET /jobs?page=&pageSize=&status=&nodeId=` | Jobs, newest first (`pageSize` ≤ 200) |
 | `GET /jobs/:id` | `{ job, tails: { stdout, stderr, raw } }`: the last 4 KB of each kept output (null: none) |
 | `GET /jobs/:id/output/:stream` | `stdout` \| `stderr` \| `raw` as `text/plain` (≤ 5 MB, as kept) |
@@ -205,8 +206,8 @@ Request and response shapes are the Zod schemas in `shared/src/api.ts`. Details:
   **Known limit (`tool`):** it keeps nodes that tool saw, so it also keeps an edge between two such nodes that the tool
   itself never reported (decisions log, 2026-11-01).
 - **Tool runs** (§11): node- and edge-detail observations carry `jobId` (the job whose run produced the scan; null for
-  an upload), so the provenance table can open the raw output. A run's 409/503 store no job and log no scope decision;
-  a 403 stores the refused job and its decision. Without the runner (no Docker client, or invalid tool definitions)
+  an upload), so the provenance table can open the raw output. A run's 409/428/503 store no job and log no scope
+  decision (order: 404 → 400 → 503 → 409 → 428 → `authorize()`); a 403 stores the refused job and its decision. Without the runner (no Docker client, or invalid tool definitions)
   the tool, job and runner routes answer 503.
 - **Edge provenance on graph edges:** graph edges (`/graph/expand`, export) carry `sourceCount` and `confidence`. View edges
   (`/graph`, `/graph/view`) carry `edgeId`, `sourceCount`, `confidence`, `tools` and `edgeCount`, always present, null where
@@ -626,8 +627,11 @@ group, `tools/<group>/{group.json, Dockerfile, README.md}`, one folder per tool,
 run.py, fixtures/, test_*.py}`. `group.json`: `name`, `label`, `image` (repository), `tools` (run order). `tool.json`:
 `name` (= folder = the contract's `tool`), `group`, `label`, `description`, `mode` (`passive` | `active` | `intrusive`;
 scope checks `passive` as passive, the others as active), `accepts` (targetable node types), `argv` (an array; the
-target is the item `{target}`, exactly once, whole), `timeoutSec`, `external` (services it contacts), `outputDir`
-(`/out`). Every inconsistency (name ≠ folder, unlisted or missing tool, bad field) is reported at once; the server then
+target is the item `{target}`, exactly once, whole; optionally `{targetType}`, at most once, whole: the target node's
+type, for scripts that name the target as a parent: the server knows it, a script must never guess it), `timeoutSec`,
+`external` (services it contacts), `contacts` (what a run touches, in plain words, e.g. "sends HTTP(S) requests to
+{target} on ports 80 and 443"; **required for active and intrusive tools**, its only placeholder `{target}`; display
+text for the confirmation, never part of a command), `outputDir` (`/out`). Every inconsistency (name ≠ folder, unlisted or missing tool, bad field) is reported at once; the server then
 runs with the runner off (the graph still works) and `pnpm tools:check` prints the same list.
 
 **Images:** one per group, built by `pnpm tools:build [group]` through dockerode (classic builder) from exactly the
@@ -643,15 +647,41 @@ container and volume/list by label/images); `docker.ts` implements it (named pip
 (`server/test/fakeRuntime.ts`) and a real-Docker suite that runs only when Docker and the image are there. Every
 container is built by `spec.ts` as plain Engine API JSON:
 - user `10001:10001`, read-only root filesystem, `cap-drop ALL`, `no-new-privileges`, 1 GB memory (no swap), 1 CPU,
-  256 pids, `init`, bridge network (the tools need the internet), no bind mounts, no Docker socket, json-file logs
-  capped at 10 MB;
+  256 pids, `init`, the **tools network** (below), no bind mounts, no Docker socket, json-file logs capped at 10 MB;
 - `/tmp` a tmpfs (`noexec`, 256 MB), `HOME=/tmp`; **`/out` a per-job named volume** `redwhale-<ws>-job-<id>` (a tmpfs
   is gone once the container exits, so it couldn't be fetched); labels `redwhale.job`, `redwhale.workspace`,
   `redwhale.tool` on both;
 - entrypoint + cmd = the argv exactly (no shell); the target value is one argv item and is refused if it starts with
   `-` or holds whitespace/control characters (argument injection; `authorize()` already refuses such hostnames);
+  `{targetType}` becomes the scoped target's type, re-checked against the targetable types;
 - `REDWHALE_TOOL_TIMEOUT` = the tool's timeout − 30 s, so the script stops its tool and writes a partial result before
   the hard kill.
+
+**Tools network** (`network.ts`, 6C-2): every job container joins one user-defined bridge network, `redwhale-tools`
+(label `redwhale.network=tools`), **not internal** (tools still need the internet), so a local lab can be reached by
+name. Subnet `172.29.250.0/24`, or `REDWHALE_NET_SUBNET` (IPv4, /16 to /28; a bad value turns the runner off at start,
+with the reason). Docker gives job containers addresses from the upper half only (`IPRange` `172.29.250.128/25`), so
+the lower half stays free for fixed addresses (the lab's `.10`). The runner creates it on demand (`ensureNetwork`
+right before each container; `docker.ts` is still the only Docker client); an existing one must be ours, bridge, not
+internal, on the same subnet and range, else the job fails with what to do (`docker network rm redwhale-tools`, or
+`REDWHALE_NET_SUBNET` on a "Pool overlaps" clash). Nothing removes it: it is shared by every workspace and the lab.
+
+**Lab** (`lab.ts`, `lab/`, `pnpm lab:up | lab:down | lab:status`; `lab/README.md`): one nginx container (alpine, pinned
+by digest; self-signed certificate made at build) on the tools network as `lab.redwhale.test` and
+`elsewhere.redwhale.test`, at host `.10` of the subnet (`172.29.250.10`), **no host ports**. `http://` `/` answers
+301 to `https://elsewhere.redwhale.test/` (another host: tools must not follow it; the same container, whose access
+log records the `Host`, so a followed redirect would show); `https://` serves the page; both send `Server` and
+`X-Powered-By`. Hardened like a job (nginx's own user 101, read-only root, no capabilities, ports 80/443 via the
+container's `ip_unprivileged_port_start` sysctl, 128 MB), label `redwhale.lab`, image `redwhale-lab:<hash of lab/>`.
+`lab:up` builds/replaces as needed and **never adds scope rules**: it prints them (domain `lab.redwhale.test`, ip
+`172.29.250.10`). The mock wipe treats `.test` scans as disposable, like `.example`.
+
+**Active runs** (6C-2): `POST /jobs` and `/jobs/group` need `confirmActive: true` when a tool that would run isn't
+passive; otherwise 428 `confirm-required`, checked in `orchestrator.enqueue*` before `authorize()` (no job, no scope
+log). The UI asks every time (Run tool ▸ on an active tool or group opens a dialog: the tools, mode, canonical target,
+`contacts` with the target filled in, external services, and the active-mode decision and rule from
+`GET /scope/check`, unlogged; **Run active scan** / **Cancel**; no "don't ask again"). A confirmed run still meets
+`authorize()` twice like any other (passive-only on → refused).
 
 **Queue** (`orchestrator.ts`): jobs live in SQLite, oldest first, at most `REDWHALE_MAX_JOBS` (default 2) running.
 1. Queueing (`POST /jobs`, `/jobs/group`): tool, node, type, Docker and image are checked first (no row, nothing
@@ -684,6 +714,11 @@ tools report become `corroborated`. A result whose `status` is `failed` fails th
 survives parser crashes, validates with `validate_output.py`, writes `result.json`). Each tool keeps a saved real
 output, anonymized to `northwind.example`, with `expected.json` and a `NOTE.md`; `pnpm tools:check` (and `pnpm test`)
 replays it. How to add a tool: `docs/team-guide.md`.
+
+**Groups:** `subdomain` (subfinder, assetfinder, findomain, crt.sh; passive) and `http` (httpx; **active**: probes
+80/443, never follows redirects, DNS only through the container's resolver; `tools/http/README.md`). Scripts that need
+the target's type call `main(..., needs_target_type=True)` and get `--target-type` (`{targetType}`); `tech_value(name,
+version)` spells technologies one way (lowercase, spaces → `-`, `name/version`).
 
 ## 12. Graph editing
 
@@ -861,3 +896,10 @@ delete is one transaction with a record.
 | 2026-11-03 | Added nodes are placed where the analyst right-clicked in Force mode (saved like a drag); Tree mode and "Add child node…" send no position (the layout places them next to / under the parent). After adding, the node is selected and its path opened, since it may join a collapsed group |
 | 2026-11-03 | Accepted: a hand-added node whose value isn't under `.example` makes the next `pnpm mock` on that workspace need `--force` (its synthetic scan's target is the value), like any real file |
 | 2026-11-03 | `TYPE_PLURAL` moved to `shared/src/enums.ts` (group labels on the server, the delete dialog on the client) |
+| 2026-11-03 | **6C-2 tools network.** Job containers join the user-defined bridge network `redwhale-tools` (not internal; `172.29.250.0/24`, `REDWHALE_NET_SUBNET`), created by the runner if missing; dynamic addresses only in the upper half (`IPRange`) so fixed ones (the lab) never collide. Replaces the default bridge; all other hardening unchanged |
+| 2026-11-03 | **Local lab** `lab.redwhale.test` (`pnpm lab:up/down/status`, server CLI through the runtime interface, not compose): nginx, no host ports, fixed `.10`, a second alias `elsewhere.redwhale.test` as the redirect target so a followed redirect lands in its own access log. `lab:up` prints the scope rules, never adds them. The mock wipe accepts `.test` targets as disposable (`isDisposableTarget`; `--domain` stays `.example`) |
+| 2026-11-03 | **Active runs need confirmation**: `confirmActive?: boolean` on `POST /jobs` and `/jobs/group`; without it a non-passive run is a 428 `confirm-required` before `authorize()` (no job, no scope log; the same rule as 409/503). For a group only the tools that take the node's type count. The UI asks every time, showing the active-mode decision from the unlogged `GET /scope/check` |
+| 2026-11-03 | **`{targetType}`**: an optional argv placeholder (at most once, a whole item) that `spec.ts` fills from the ScopedTarget's type (re-checked against the enum); `main()` takes `--target-type`, a tool that needs it fails without it and never guesses; `check.py` reads `target_type` from expected.json. Why: the server knows the node type; guessing in Python (no PSL) would create duplicate nodes with different IDs. Subdomain tools unchanged |
+| 2026-11-03 | **`contacts`** in tool.json: required for active/intrusive tools, optional for passive; only `{target}` as placeholder (catalog rejects others); returned by `GET /tools`; display text only. Why: the confirmation must say what will be touched, and the tool definition is the one place that knows it |
+| 2026-11-03 | **httpx** (group `http`, v1.12.0, checksum-pinned): `-u <t> -p http:80,https:443 -nf -j -silent -nc -no-stdin -duc -sc -title -server -td -ip -location -rl 5 -t 5 -timeout 10 -retries 1 -r <own resolvers>`. No `-fr`: redirects are never followed; `Location` is url data, the other host is not a finding (6D). `-r` from `/etc/resolv.conf` (Docker's 127.0.0.11 in a job) because httpx otherwise also asks public resolvers. Findings: target → ip → `ip:port/tcp` → url (WHATWG href) → technology |
+| 2026-11-03 | **`tech_value(name, version)`** in `redwhale_tool.py`: lowercase; runs of spaces or `/` in the name → one `-`; version without spaces (`/` → `-`); `name/version`, or the name alone. `check.py` and the fixture test now key findings by type, value **and parent** (the same technology under http:// and https:// is two findings) |

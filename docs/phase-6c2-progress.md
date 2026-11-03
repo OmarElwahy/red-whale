@@ -18,7 +18,7 @@ in docs must work in PowerShell (no `&&`). No DB schema change expected; ask fir
 | 3 | Server confirmation gate (428 `confirm-required`) + tests + `shared/` API schema | done |
 | 4 | `http` group + httpx (Dockerfile, tool.json with `contacts`, run.py, `tech_value`, `{targetType}`, lab fixture, `tools:check`) | done |
 | 5 | UI: active-run confirmation dialog, Run tool menu wiring, Jobs tab check | done |
-| 6 | Real-Docker end-to-end test; docs (architecture §2/§6/§11/§13, team-guide, handoff); manual checklist below | |
+| 6 | Real-Docker end-to-end test; docs (architecture §2/§6/§11/§13, team-guide, handoff); manual checklist below | done |
 
 ## Decisions (approved plan + user's answers)
 
@@ -94,13 +94,71 @@ in docs must work in PowerShell (no `&&`). No DB schema change expected; ask fir
   `/api/scope/check?mode=active` (new `useScopeDecision`, key under `['api','scope']` so `scope.changed` refetches)
   answers `in`; otherwise it says the server would refuse. Cancel has focus. `startRun` sends `confirmActive` only when
   true and maps 428 → `ConfirmRequired`. Jobs tab: a non-passive job shows a mode badge next to the tool.
+- **E2E (step 6):** `server/test/httpx.e2e.test.ts`, skipped unless Docker + the http image + the lab image exist. It
+  runs `labUp` (leaves an already-running lab running, else takes it down after), seeds subdomain `lab.redwhale.test`,
+  adds the two printed rules, turns passive-only off, checks the unconfirmed enqueue is `confirm-required`, runs httpx
+  confirmed through the orchestrator + ingest, then asserts ip/ports/urls/technologies, the http:// url data (301 +
+  location) and the https:// one (200, title), no node mentioning `elsewhere`, and no new lab log line with
+  `host=elsewhere.redwhale.test`. Checked by hand that the proof works: `httpx -nfs -fr` against the lab does log
+  `host=elsewhere.redwhale.test`.
+- **Docs (step 6):** architecture §2 (lab/, network/lab in server), §6 (`confirmActive`, 428, `contacts`, error
+  order), §11 (`{targetType}`, `contacts`, tools network, lab, active runs, groups), §13 (7 rows); team-guide
+  (real httpx tool.json, `{targetType}`, `contacts`, `tech_value`, `run.target_type`, capturing against the lab,
+  the `target_type` stub); CLAUDE.md commands (`lab:*`, `REDWHALE_NET_SUBNET`, `.test` wipe); handoff status.
 - **Images on this machine:** `redwhale-tools/http:b024501487e6`, `redwhale-tools/subdomain:750752d2440e` (rebuilt:
   `redwhale_tool.py` changed), `redwhale-lab:664379ba014e`.
 
 ## Next action
 
-Step 6: real-Docker e2e test (`server/test/httpx.e2e.test.ts`, skipped without Docker / the http or lab image):
-lab up → scope rules (domain + ip) + passive-only off → run httpx on a subdomain node `lab.redwhale.test` through the
-orchestrator with ingest (confirmActive) → assert url/technology nodes, the http:// url 301 + location data, and no
-lab log line with host=elsewhere.redwhale.test. Then docs: architecture §2/§6/§11/§13, team-guide ({targetType},
-contacts, tech_value, active tools, lab), CLAUDE.md commands (lab:*), handoff status, manual checklist here.
+All six steps are done and pushed. Waiting for the user's manual check (below); the user merges. Nothing else to do
+on this branch unless the check finds something.
+
+## Manual check (PowerShell, from the repo root)
+
+Setup:
+
+1. `git switch phase-6c2` then `pnpm install` (no new dependencies, but harmless).
+2. `pnpm tools:build`: builds `http` (new) and rebuilds `subdomain` (the helper changed).
+3. `pnpm lab:up`: first run builds the lab image. It prints two scope rules and says it added none.
+   `pnpm lab:status` shows the network (subnet, dynamic range), the image (built), the container (running) and
+   `172.29.250.10` with both names.
+4. If an older `redwhale-tools` network exists from a previous run, `lab:up` says so and how to fix it
+   (`docker network rm redwhale-tools`, then `pnpm lab:up` again).
+5. `pnpm dev`, open http://127.0.0.1:5173.
+
+Confirmation flow:
+
+6. Scope panel: add `include domain lab.redwhale.test` and `include ip 172.29.250.10`. Leave passive-only **on**.
+7. Canvas right-click ▸ Add node… ▸ subdomain `lab.redwhale.test`. Right-click it ▸ Run tool ▸: **httpx** and
+   **Run group: HTTP probing** are disabled with "Passive-only mode is on (Scope panel)." The subdomain tools don't
+   appear (they take domains only).
+8. Turn passive-only **off**. Click **httpx**: a dialog opens (not a run). It shows ACTIVE, target `subdomain
+   lab.redwhale.test`, "Contacts the target: sends HTTP(S) requests to lab.redwhale.test on ports 80 and 443 (GET /,
+   at most 5 per second; redirects are not followed)", "External services: none", and **In scope** with the rule
+   `include domain lab.redwhale.test #N`.
+9. **Cancel** (also try Escape): no job in the Jobs tab, and the Scope panel's log has no new `run` entry.
+10. Run tool ▸ httpx again ▸ **Run active scan**: notice "queued 1 job", the Jobs tab shows httpx with an ACTIVE badge,
+    status succeeded within seconds.
+11. The graph: `lab.redwhale.test` → `172.29.250.10` → `172.29.250.10:80/tcp` and `:443/tcp` →
+    `http://lab.redwhale.test/` and `https://lab.redwhale.test/` → `nginx/1.30.6`, `php/8.3.12`. Select the
+    http:// url: its provenance data has `status_code 301` and `location https://elsewhere.redwhale.test/`. There is
+    no `elsewhere` node anywhere.
+12. `docker logs redwhale-lab` shows only `host=lab.redwhale.test` lines; this prints nothing:
+    `docker logs redwhale-lab 2>&1 | Select-String elsewhere`
+13. Run tool ▸ **Run group: HTTP probing**: the dialog says "group HTTP probing" and lists httpx. Run it: 1 job.
+14. Scope panel: add `exclude domain lab.redwhale.test`. Run tool ▸ httpx: the menu item is disabled (out of scope).
+    Remove the exclude again.
+15. Every time you click an active tool, the dialog asks again (there is no "don't ask again").
+
+Server gate (optional, PowerShell 5.1 shows the 428 as an error, which is the point). Copy the node ID from the
+side panel of `lab.redwhale.test`, then:
+
+16. `Invoke-WebRequest -Method Post -Uri http://127.0.0.1:4100/api/jobs -ContentType application/json -Body '{"tool":"httpx","nodeId":"<id>"}'`
+    fails with `(428)` and the body says "would contact lab.redwhale.test directly: confirm the active run first".
+    No new job appears, and no scope log entry.
+
+Nothing broken:
+
+17. A domain node with `pnpm mock` data: Run group: subdomain enumeration still runs with no dialog (passive).
+18. `pnpm lab:down`, then `pnpm lab:status`: container none, image still built.
+19. `pnpm mock` runs **without** `--force` even though the workspace had lab scans (`.test` counts as disposable).

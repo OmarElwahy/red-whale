@@ -30,9 +30,9 @@ Dropped: `cytoscape-expand-collapse` (groups are server-side).
 
 ## Status
 
-Main has everything through 6A. 5D, 6B, 6C-1 and graph editing are stacked branches
-(`phase-5d-icons-groups` → `phase-6b` → `phase-6c1` → `graph-editing`; each contains the ones before it, and all but
-the 5D branch are on GitHub), **not merged** until my manual check. Merging `graph-editing` brings in all four.
+Main has everything through 6A. 5D, 6B, 6C-1, graph editing and 6C-2 are stacked branches
+(`phase-5d-icons-groups` → `phase-6b` → `phase-6c1` → `graph-editing` → `phase-6c2`; each contains the ones before it,
+and all but the 5D branch are on GitHub), **not merged** until my manual check. Merging `phase-6c2` brings in all five.
 
 | Phase | What | Status |
 |---|---|---|
@@ -45,7 +45,7 @@ the 5D branch are on GitHub), **not merged** until my manual check. Merging `gra
 | 6B | Edge provenance: `edge_observations`, edge confidence, edge side panel, thicker corroborated edges | ✅ done · manual check pending |
 | 6C-1 | Orchestrator (hardened containers, SQLite job queue, scope re-check before each start, Jobs tab, Docker chip) + subdomain enumeration group: subfinder, assetfinder, findomain, crt.sh; `pnpm tools:build`, `pnpm tools:check` | ✅ done · manual check pending |
 | Edit | Graph editing: add nodes by hand (tool `manual`), permanent delete (node / subtree / group) with a "Deleted" log | ✅ done · manual check pending |
-| 6C-2 | First active tool | ⏳ next (see below) |
+| 6C-2 | First active tool: tools network `redwhale-tools`, local lab `lab.redwhale.test` (`pnpm lab:up/down/status`), 428 + confirmation dialog for active runs, `http` group with httpx (never follows redirects); `{targetType}`, `contacts`, `tech_value` | ✅ done · manual check pending (checklist in `docs/phase-6c2-progress.md`) |
 
 ## How I work with Claude Code
 
@@ -60,9 +60,9 @@ the 5D branch are on GitHub), **not merged** until my manual check. Merging `gra
 
 ## Next up
 
-1. **6C-2: first active tool** — httpx (plus dnsx); a **confirmation dialog** before any active run; a **small local
-   lab target** so active tools can be tested safely (never against a real target by accident).
-2. Tool batches, in order: naabu + nmap → katana + gau → nuclei → wafw00f + testssl → the rest.
+1. Tool batches, in order: dnsx → naabu + nmap → katana + gau → nuclei → wafw00f + testssl → the rest (active ones
+   use `contacts`, the confirmation and the lab; scripts that name the target as a parent use `{targetType}`).
+2. Redirect following stays out until 6D (httpx keeps the `Location` as data).
 3. **6D** presets + auto-chaining (redirect-following tools re-check scope on every hop) → **6E** scan diffing →
    **6F** reports.
 
@@ -84,13 +84,18 @@ the 5D branch are on GitHub), **not merged** until my manual check. Merging `gra
 - **Editing:** delete is allowed but only by the analyst (CLAUDE.md rule 4 amended), no undo; subtree delete keeps
   shared nodes that something else still reaches; group delete = members the current filters keep; refused while a job
   runs on a node ("Cancel job and delete"). Hand-added nodes go through ingest as tool `manual` and never corroborate.
+- **Active tools (6C-2):** jobs run on the `redwhale-tools` network (not internal; `172.29.250.0/24`,
+  `REDWHALE_NET_SUBNET`); the lab `lab.redwhale.test` (`172.29.250.10`, no host ports) is the only place to try active
+  tools, and `lab:up` never touches the scope. Active runs need `confirmActive` (428 otherwise, before `authorize()`);
+  the UI asks every time. Tool definitions: `{targetType}` (the server passes the node type; scripts never guess it)
+  and `contacts` (required for active tools). httpx never follows redirects; technologies via `tech_value()`.
 
 ## Open items
 
-- **Manual checks** for 5B–Edit (steps in each `docs/phase-*-progress.md` / `docs/graph-editing-progress.md`), then merge.
+- **Manual checks** for 5B–6C-2 (steps in each `docs/phase-*-progress.md` / `docs/graph-editing-progress.md`), then merge.
 - **Teammates' real scripts** not yet tested end to end (`pnpm tools:check` → run in the group → check the graph).
-- **Technology name/version spelling** must match exactly across scripts, or corroboration silently fails
-  (maybe an alias table later: `microsoft-iis` = `iis`).
+- **Technology spelling:** `tech_value()` fixes case/spaces, but different tools still name things differently
+  (`iis` vs `microsoft-iis`), so corroboration can silently fail: maybe an alias table later.
 - **Intrusive tools** (sqlmap, SSRFmap, dalfox) vs the "no destructive payloads" promise in features.md: undecided.
 - **Local authentication for the UI** is promised but not built.
 - **DEPI demo plan:** live `pnpm ingest` (map grows), a group run showing corroboration, the scope guard refusing a

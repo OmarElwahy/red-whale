@@ -49,10 +49,11 @@ Once scaffolded, these must work from the repo root:
 - `pnpm ingest <file.json>` — load one tool-output file into the DB
 - `pnpm mock` — small showcase graph (~80 nodes, every node type/relation/severity/confidence/tag; files in `data/mock/showcase/`)
 - `pnpm mock:large -- --subdomains 400` — large fake graph for aggregation/performance (files in `data/mock/large/`; `--seed`, `--domain x.example`)
-- Both **wipe the workspace DB first** and refuse if it holds a scan not from a mock (target not under `.example`) unless `--force`; both take `--db`, `--out`, `--no-ingest`, `--skip-python`
-- `pnpm dev:server` — API only, on `127.0.0.1:4100` (`REDWHALE_DB` picks the database; `REDWHALE_MAX_JOBS` caps running tool jobs, default 2)
+- Both **wipe the workspace DB first** and refuse if it holds a scan not from a mock or the lab (target not under `.example` or `.test`) unless `--force`; both take `--db`, `--out`, `--no-ingest`, `--skip-python`
+- `pnpm dev:server` — API only, on `127.0.0.1:4100` (`REDWHALE_DB` picks the database; `REDWHALE_MAX_JOBS` caps running tool jobs, default 2; `REDWHALE_NET_SUBNET` overrides the tools network subnet, default `172.29.250.0/24`)
 - `pnpm tools:build [group]` — build the tool group images (needs Docker Desktop)
 - `pnpm tools:check <tool|--all> [--update]` — check a tool folder against its fixture (no network)
+- `pnpm lab:up` / `pnpm lab:down` / `pnpm lab:status` — the local lab `lab.redwhale.test` for active tools (`lab/README.md`; needs Docker Desktop; never changes the scope, prints the rules to add)
 
 Run `pnpm typecheck` and `pnpm test` after every change, and before saying a task is done.
 
