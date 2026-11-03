@@ -749,9 +749,31 @@ export const jobDetailResponseSchema = z.strictObject({
 });
 export type JobDetailResponse = z.infer<typeof jobDetailResponseSchema>;
 
-export const jobCreateSchema = z.strictObject({ tool: z.string().min(1), nodeId: z.string().min(1) });
-export const groupJobCreateSchema = z.strictObject({ group: z.string().min(1), nodeId: z.string().min(1) });
+/**
+ * `confirmActive`: the analyst confirmed a run that contacts the target (any tool whose mode isn't passive). Without
+ * it such a run is a 428 `confirm-required`, before any scope decision (nothing stored, nothing logged).
+ */
+export const jobCreateSchema = z.strictObject({
+  tool: z.string().min(1),
+  nodeId: z.string().min(1),
+  confirmActive: z.boolean().optional(),
+});
+export const groupJobCreateSchema = z.strictObject({
+  group: z.string().min(1),
+  nodeId: z.string().min(1),
+  confirmActive: z.boolean().optional(),
+});
+export type JobCreateInput = z.input<typeof jobCreateSchema>;
+export type GroupJobCreateInput = z.input<typeof groupJobCreateSchema>;
 export const jobsCreatedResponseSchema = z.strictObject({ jobs: z.array(jobSchema) });
+
+export const CONFIRM_REQUIRED = 'confirm-required';
+/** 428: an active run without `confirmActive: true`. No job is stored and no scope decision is logged. */
+export const jobConfirmRequiredResponseSchema = z.strictObject({
+  error: z.string(),
+  reason: z.literal(CONFIRM_REQUIRED),
+});
+export type JobConfirmRequiredResponse = z.infer<typeof jobConfirmRequiredResponseSchema>;
 
 /** 403: the scope guard refused the run. The jobs are stored as `refused`. */
 export const jobRefusedResponseSchema = z.strictObject({

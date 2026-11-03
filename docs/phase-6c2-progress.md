@@ -15,7 +15,7 @@ in docs must work in PowerShell (no `&&`). No DB schema change expected; ask fir
 |---|---|---|
 | 1 | Tools network `redwhale-tools` in the runner (`network.ts`, `ensureNetwork` in runtime/docker/fake, spec uses it) + tests; real-Docker subdomain suite re-run | done |
 | 2 | Lab image (`lab/`) + `pnpm lab:up/down/status` (server CLI through the runtime) + `lab/README.md` + `.test` wipe allowance | done |
-| 3 | Server confirmation gate (428 `confirm-required`) + tests + `shared/` API schema | |
+| 3 | Server confirmation gate (428 `confirm-required`) + tests + `shared/` API schema | done |
 | 4 | `http` group + httpx (Dockerfile, tool.json with `contacts`, run.py, `tech_value`, `{targetType}`, lab fixture, `tools:check`) | |
 | 5 | UI: active-run confirmation dialog, Run tool menu wiring, Jobs tab check | |
 | 6 | Real-Docker end-to-end test; docs (architecture §2/§6/§11/§13, team-guide, handoff); manual checklist below | |
@@ -52,6 +52,12 @@ in docs must work in PowerShell (no `&&`). No DB schema change expected; ask fir
   `{ error, reason: "confirm-required" }`, checked in `orchestrator.enqueue*` before `authorize()` (no job row, no
   scope log). Order: 404 → 400 → 503 → 409 (preflight) → 428 → authorize. For a group, only the tools that accept the
   node's type count.
+- **Gate, as built (step 3):** `EnqueueOptions { confirmActive? }` on `enqueue`/`enqueueGroup`; error code
+  `confirm-required`, message `<tool> (<mode>) would contact <value> directly: confirm the active run first
+  (confirmActive: true)`. shared: `confirmActive: z.boolean().optional()` on both create schemas,
+  `CONFIRM_REQUIRED`, `jobConfirmRequiredResponseSchema` (strict `{ error, reason: 'confirm-required' }`),
+  `JobCreateInput`/`GroupJobCreateInput`. A confirmed run still meets `authorize()` (passive-only on → 403 refused, logged).
+  API tests use a temp copy of tools/ with findomain made active.
 - **`{targetType}`** (user's answer 1): optional argv placeholder, at most once, whole item; `spec.ts` fills it from the
   ScopedTarget's type (checked against the node-type enum); `main()` takes optional `--target-type`, a tool that needs it
   and doesn't get it fails clearly, never guesses; `check.py` reads `target_type` from expected.json; subdomain tools
@@ -67,6 +73,9 @@ in docs must work in PowerShell (no `&&`). No DB schema change expected; ask fir
 
 ## Next action
 
-Step 3: `confirmActive?: boolean` in `jobCreateSchema`/`groupJobCreateSchema` (shared/src/api.ts) + 428 response schema;
-`orchestrator.enqueue*` returns `confirm-required` before `authorize()` (group: only tools that accept the node's
-type); route maps to 428 after preflight; tests (single tool, group, passive needs nothing, no job row/scope log).
+Step 4: `defs.ts` (`contacts`: required for active/intrusive, only `{target}`; `{targetType}` argv placeholder,
+optional, at most once, whole item), `spec.ts` fills `{targetType}` (checked against NODE_TYPES), `toolDto` returns
+`contacts` (+ shared `toolInfoSchema`); `redwhale_tool.py` `--target-type` + `tech_value` (+ unit tests);
+`check.py` reads `target_type`; `tools/http/` group (Dockerfile with httpx v1.12.0 + checksum, group.json, README),
+`tools/http/httpx/` (tool.json, run.py), verify flags with `httpx -h` in the built image, capture fixture from the
+lab (`pnpm lab:up` is already built on this machine), anonymize, `pnpm tools:check httpx --update`.

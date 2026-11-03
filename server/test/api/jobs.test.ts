@@ -1,7 +1,9 @@
 // /api/tools, /api/jobs, /api/runner (docs/architecture.md §6, §11), on the real tool catalog (tools/) and a fake
 // container runtime.
+import { cpSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  jobConfirmRequiredResponseSchema,
   jobDetailResponseSchema,
   jobRefusedResponseSchema,
   jobsCreatedResponseSchema,
@@ -16,7 +18,8 @@ import {
   type WsEvent,
 } from '@redwhale/shared';
 import { describe, expect, test, vi } from 'vitest';
-import { loadCatalog } from '../../src/runner/catalog';
+import { z } from 'zod';
+import { TOOLS_DIR, loadCatalog } from '../../src/runner/catalog';
 import { FakeRuntime, type FakeBehavior } from '../fakeRuntime';
 import { baseDoc, tempDir } from '../helpers';
 import { HOST, body, error, idOf, ingestExamples, testApi } from './helpers';
@@ -37,11 +40,14 @@ function result(tool: string, subs: string[]): string {
 /** Each tool finds shared.example.com, plus one of its own. */
 const finds = (tool: string): FakeBehavior => ({ files: { 'result.json': result(tool, ['shared.example.com', `${tool}.example.com`]), 'raw.txt': `raw of ${tool}\n` }, stderr: `[run] ${tool}\n` });
 
-async function setup(behave: (tool: string) => FakeBehavior = finds, { image = true, scope = true, maxJobs = 2 } = {}) {
+async function setup(
+  behave: (tool: string) => FakeBehavior = finds,
+  { image = true, scope = true, maxJobs = 2, tools = catalog } = {},
+) {
   const rt = new FakeRuntime((spec) => behave(spec.body.Labels['redwhale.tool'] ?? ''));
-  if (image) rt.addImage(IMAGE, { 'redwhale.group': 'subdomain' });
+  if (image) rt.addImage(tools.imageRef('subdomain'), { 'redwhale.group': 'subdomain' });
   const jobsDir = join(tempDir(), 'jobs');
-  const api = await testApi({ runner: { runtime: rt, catalog, jobsDir, maxJobs } });
+  const api = await testApi({ runner: { runtime: rt, catalog: tools, jobsDir, maxJobs } });
   ingestExamples(api.db);
   if (scope) body(await api.send('POST', '/api/scope/rules', { kind: 'domain', value: 'example.com', action: 'include' }), 201, scopeRuleSchema);
   const domain = idOf(api.db, 'example.com');
@@ -226,6 +232,75 @@ describe('GET /api/jobs, cancel, and scope changes', () => {
     expect(jobs.map((j) => j.status)).toEqual(['cancelled', 'cancelled', 'cancelled', 'running']);
     expect(jobs[0]?.error).toMatch(/^scope changed: /);
     await api.send('POST', '/api/jobs/1/cancel', {});
+    await orch.idle();
+  });
+});
+
+describe('active runs: 428 confirm-required', () => {
+  /** The real tools/, with findomain made active (an active tool in a group, before 6C-2 ships one). */
+  function withActiveTool() {
+    const dir = join(tempDir(), 'tools');
+    cpSync(TOOLS_DIR, dir, { recursive: true });
+    const path = join(dir, 'subdomain/findomain/tool.json');
+    const def = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
+    writeFileSync(path, JSON.stringify({ ...def, mode: 'active' }));
+    return loadCatalog(dir);
+  }
+  const counts = async (api: Awaited<ReturnType<typeof setup>>['api']) => ({
+    jobs: body(await api.get('/api/jobs'), 200, jobsResponseSchema).total,
+    log: body(await api.get('/api/scope/log?source=run,check'), 200, scopeLogResponseSchema).total,
+  });
+
+  test('a tool: no confirmActive (or false) is a 428, with no job stored and no scope decision logged', async () => {
+    const { api, rt, domain } = await setup(finds, { tools: withActiveTool() });
+    for (const extra of [{}, { confirmActive: false }]) {
+      const res = body(await api.send('POST', '/api/jobs', { tool: 'findomain', nodeId: domain, ...extra }), 428, jobConfirmRequiredResponseSchema);
+      expect(res.reason).toBe('confirm-required');
+      expect(res.error).toMatch(/^findomain \(active\) would contact example\.com directly/);
+    }
+    expect(await counts(api)).toEqual({ jobs: 0, log: 0 });
+    expect(rt.created).toEqual([]);
+  });
+
+  test('a group with an active tool that takes the node: 428 too; confirmed, every tool is queued', async () => {
+    const { api, orch, domain } = await setup(finds, { tools: withActiveTool() });
+    body(await api.send('POST', '/api/jobs/group', { group: 'subdomain', nodeId: domain }), 428, jobConfirmRequiredResponseSchema);
+    expect(await counts(api)).toEqual({ jobs: 0, log: 0 });
+    body(await api.send('PATCH', '/api/scope/settings', { passiveOnly: false }), 200, z.unknown());
+    const created = body(
+      await api.send('POST', '/api/jobs/group', { group: 'subdomain', nodeId: domain, confirmActive: true }),
+      201,
+      jobsCreatedResponseSchema,
+    );
+    expect(created.jobs.map((j) => [j.tool, j.mode, j.status])).toEqual([
+      ['subfinder', 'passive', 'queued'],
+      ['assetfinder', 'passive', 'queued'],
+      ['findomain', 'active', 'queued'],
+      ['crtsh', 'passive', 'queued'],
+    ]);
+    await orch.idle();
+  });
+
+  test('confirmed while passive-only is on: the scope guard still refuses it (403, logged)', async () => {
+    const { api, domain } = await setup(finds, { tools: withActiveTool() });
+    const refused = body(await api.send('POST', '/api/jobs', { tool: 'findomain', nodeId: domain, confirmActive: true }), 403, jobRefusedResponseSchema);
+    expect(refused.jobs[0]).toMatchObject({ status: 'refused', mode: 'active' });
+    expect(await counts(api)).toEqual({ jobs: 1, log: 1 });
+  });
+
+  test('the image and Docker checks come first (409, 503), then the confirmation', async () => {
+    const { api, rt, domain } = await setup(finds, { tools: withActiveTool(), image: false });
+    error(await api.send('POST', '/api/jobs', { tool: 'findomain', nodeId: domain }), 409, 'run pnpm tools:build subdomain');
+    rt.reachable = false;
+    error(await api.send('POST', '/api/jobs', { tool: 'findomain', nodeId: domain }), 503);
+    expect(await counts(api)).toEqual({ jobs: 0, log: 0 });
+  });
+
+  test('passive tools need no confirmation; confirmActive must be a boolean', async () => {
+    const { api, orch, domain } = await setup();
+    body(await api.send('POST', '/api/jobs', { tool: 'subfinder', nodeId: domain }), 201, jobsCreatedResponseSchema);
+    body(await api.send('POST', '/api/jobs', { tool: 'crtsh', nodeId: domain, confirmActive: true }), 201, jobsCreatedResponseSchema);
+    error(await api.send('POST', '/api/jobs', { tool: 'subfinder', nodeId: domain, confirmActive: 'yes' }), 400);
     await orch.idle();
   });
 });

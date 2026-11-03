@@ -3,11 +3,13 @@
 import { closeSync, existsSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  CONFIRM_REQUIRED,
   JOB_OUTPUT_STREAMS,
   groupJobCreateSchema,
   jobCreateSchema,
   jobsQuerySchema,
   type ImageStatus,
+  type JobConfirmRequiredResponse,
   type Job,
   type RunnerStatus,
   type ToolInfo,
@@ -158,6 +160,10 @@ export function jobRoutes({ app, db }: RouteContext, runner: RunnerContext | nul
       const decision = db.select({ decision: scopeLog.decision }).from(scopeLog).where(eq(scopeLog.id, logId)).get()?.decision ?? 'out';
       return reply.code(403).send({ error: result.error, decision, jobs: result.jobs.map(jobDto) });
     }
+    if (result.code === 'confirm-required') {
+      const answer: JobConfirmRequiredResponse = { error: result.error, reason: CONFIRM_REQUIRED };
+      return reply.code(428).send(answer);
+    }
     const status = result.code === 'wrong-type' ? 400 : 404;
     throw new HttpError(status, result.error);
   }
@@ -168,7 +174,7 @@ export function jobRoutes({ app, db }: RouteContext, runner: RunnerContext | nul
     const def = r.catalog.tool(body.tool);
     if (!def) throw notFound(`tool '${body.tool}'`);
     await preflight(r, [def], body.nodeId);
-    return respond(reply, r.orchestrator.enqueue(body.tool, body.nodeId));
+    return respond(reply, r.orchestrator.enqueue(body.tool, body.nodeId, { confirmActive: body.confirmActive }));
   });
 
   app.post('/api/jobs/group', async (req, reply) => {
@@ -177,7 +183,7 @@ export function jobRoutes({ app, db }: RouteContext, runner: RunnerContext | nul
     const info = r.catalog.info(body.group);
     if (!info) throw notFound(`tool group '${body.group}'`);
     await preflight(r, info.tools, body.nodeId);
-    return respond(reply, r.orchestrator.enqueueGroup(body.group, body.nodeId));
+    return respond(reply, r.orchestrator.enqueueGroup(body.group, body.nodeId, { confirmActive: body.confirmActive }));
   });
 
   app.get('/api/jobs', (req) => {

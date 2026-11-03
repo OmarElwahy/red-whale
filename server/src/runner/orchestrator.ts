@@ -67,8 +67,13 @@ export interface OrchestratorOptions {
   now?: () => Date;
 }
 
+export interface EnqueueOptions {
+  /** The analyst confirmed an active run (the UI's dialog). Without it, a non-passive tool is not queued. */
+  confirmActive?: boolean | undefined;
+}
+
 export type EnqueueError =
-  | { ok: false; code: 'unknown-tool' | 'unknown-group' | 'unknown-node' | 'wrong-type'; error: string }
+  | { ok: false; code: 'unknown-tool' | 'unknown-group' | 'unknown-node' | 'wrong-type' | 'confirm-required'; error: string }
   | { ok: false; code: 'refused'; error: string; jobs: JobRow[] };
 
 export type EnqueueResult = { ok: true; jobs: JobRow[] } | EnqueueError;
@@ -149,27 +154,39 @@ export class Orchestrator {
   // --- queueing --------------------------------------------------------------------------------------
 
   /** Queues one tool against one node. authorize() decides (and logs) now; it decides again before the start. */
-  enqueue(toolName: string, nodeId: string): EnqueueResult {
+  enqueue(toolName: string, nodeId: string, options: EnqueueOptions = {}): EnqueueResult {
     const def = this.catalog.tool(toolName);
     if (!def) return { ok: false, code: 'unknown-tool', error: `unknown tool '${toolName}'` };
-    return this.enqueueTools([def], nodeId);
+    return this.enqueueTools([def], nodeId, options);
   }
 
   /** Queues every tool of a group that accepts the node's type, one job each (each with its own decision). */
-  enqueueGroup(groupName: string, nodeId: string): EnqueueResult {
+  enqueueGroup(groupName: string, nodeId: string, options: EnqueueOptions = {}): EnqueueResult {
     const group = this.catalog.group(groupName);
     if (!group) return { ok: false, code: 'unknown-group', error: `unknown tool group '${groupName}'` };
     const defs = group.tools.flatMap((name) => this.catalog.tool(name) ?? []);
-    return this.enqueueTools(defs, nodeId);
+    return this.enqueueTools(defs, nodeId, options);
   }
 
-  private enqueueTools(defs: readonly ToolDef[], nodeId: string): EnqueueResult {
+  private enqueueTools(defs: readonly ToolDef[], nodeId: string, options: EnqueueOptions): EnqueueResult {
     const node = this.db.select({ id: nodes.id, type: nodes.type, value: nodes.value }).from(nodes).where(eq(nodes.id, nodeId)).get();
     if (!node) return { ok: false, code: 'unknown-node', error: `unknown node '${nodeId}'` };
     const fitting = defs.filter((d) => (d.accepts as readonly string[]).includes(node.type));
     if (fitting.length === 0) {
       const names = defs.map((d) => d.name).join(', ');
       return { ok: false, code: 'wrong-type', error: `${names} can't be run against a ${node.type}` };
+    }
+    // An active (or intrusive) run contacts the target: the analyst must have confirmed it. Checked before
+    // authorize(), like the image and Docker checks: no job row and no scope decision for an unconfirmed run.
+    // Only the tools that would run count (a group's tools that don't take this node's type don't).
+    const active = fitting.filter((d) => d.mode !== 'passive');
+    if (active.length > 0 && options.confirmActive !== true) {
+      const which = active.map((d) => `${d.name} (${d.mode})`).join(', ');
+      return {
+        ok: false,
+        code: 'confirm-required',
+        error: `${which} would contact ${node.value} directly: confirm the active run first (confirmActive: true)`,
+      };
     }
 
     const created: JobRow[] = [];

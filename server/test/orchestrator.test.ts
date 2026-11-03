@@ -137,6 +137,66 @@ describe('scope', () => {
     expect(rt.volumes.size).toBe(0);
   });
 
+  describe('active runs need the analyst’s confirmation', () => {
+    const rowCounts = (db: ReturnType<typeof freshDb>) => ({
+      jobs: db.$client.prepare('SELECT count(*) AS n FROM jobs').get() as { n: number },
+      log: db.$client.prepare('SELECT count(*) AS n FROM scope_log').get() as { n: number },
+    });
+    const activeCatalog = () =>
+      catalog([
+        def('subfinder'),
+        def('prober', { mode: 'active', accepts: ['domain', 'subdomain'] }),
+        def('breaker', { mode: 'intrusive', accepts: ['subdomain'] }),
+      ]);
+
+    test.each(['prober', 'breaker'])('%s without confirmActive: confirm-required, before authorize (no job, no scope log)', async (tool) => {
+      const { db, rt, orch } = setup(undefined, { catalog: activeCatalog() });
+      setSettings(db, { passiveOnly: false });
+      const result = orch.enqueue(tool, SUB);
+      expect(result).toMatchObject({ ok: false, code: 'confirm-required' });
+      if (!result.ok) expect(result.error).toMatch(new RegExp(`^${tool} \\((active|intrusive)\\) would contact a\\.example\\.com directly`));
+      expect(orch.enqueue(tool, SUB, { confirmActive: false })).toMatchObject({ ok: false, code: 'confirm-required' });
+      expect(rowCounts(db)).toEqual({ jobs: { n: 0 }, log: { n: 0 } });
+      await orch.idle();
+      expect(rt.created).toEqual([]);
+    });
+
+    test('confirmed, it is authorized and queued like any job (the scope still decides)', async () => {
+      const { db, orch } = setup(undefined, { catalog: activeCatalog() });
+      addRule(db, { kind: 'wildcard', value: '*.example.com', action: 'include' });
+      // passive-only is on: confirmed, but the scope refuses it (logged, kept as refused)
+      expect(orch.enqueue('prober', SUB, { confirmActive: true })).toMatchObject({ ok: false, code: 'refused' });
+      setSettings(db, { passiveOnly: false });
+      const ok = orch.enqueue('prober', SUB, { confirmActive: true });
+      expect(ok).toMatchObject({ ok: true, jobs: [{ tool: 'prober', mode: 'active', status: 'queued' }] });
+      await orch.idle();
+      expect(orch.get(2)?.status).toBe('succeeded');
+    });
+
+    test('passive tools never need it', async () => {
+      const { orch } = setup(undefined, { catalog: activeCatalog() });
+      expect(orch.enqueue('subfinder', DOMAIN)).toMatchObject({ ok: true });
+      await orch.idle();
+    });
+
+    test('a group needs it when a tool that takes the node is active; tools that don’t take it don’t count', async () => {
+      const { db, orch } = setup(undefined, { catalog: activeCatalog() });
+      setSettings(db, { passiveOnly: false });
+      // on a domain: subfinder (passive) + prober (active) would run; breaker doesn't take domains
+      expect(orch.enqueueGroup('subdomain', DOMAIN)).toMatchObject({ ok: false, code: 'confirm-required' });
+      expect(rowCounts(db).jobs.n).toBe(0);
+      const confirmed = orch.enqueueGroup('subdomain', DOMAIN, { confirmActive: true });
+      expect(confirmed.ok && confirmed.jobs.map((j) => j.tool)).toEqual(['subfinder', 'prober']);
+
+      const passiveOnlyGroup = setup(undefined, {
+        catalog: catalog([def('subfinder'), def('breaker', { mode: 'intrusive', accepts: ['subdomain'] })]),
+      });
+      expect(passiveOnlyGroup.orch.enqueueGroup('subdomain', DOMAIN)).toMatchObject({ ok: true, jobs: [{ tool: 'subfinder' }] });
+      await orch.idle();
+      await passiveOnlyGroup.orch.idle();
+    });
+  });
+
   test('a scope change cancels a queued job that is now out of scope (not the running one)', async () => {
     const { db, orch, other } = setup((name) => (name === 'subfinder' ? { hang: true } : {}), { maxConcurrent: 1 });
     orch.enqueue('subfinder', DOMAIN);
@@ -161,7 +221,7 @@ describe('scope', () => {
     });
     setSettings(db, { passiveOnly: false });
     orch.enqueue('subfinder', DOMAIN);
-    orch.enqueue('probe', DOMAIN);
+    orch.enqueue('probe', DOMAIN, { confirmActive: true });
     expect(orch.get(2)?.status).toBe('queued');
     setSettings(db, { passiveOnly: true });
     expect(orch.onScopeChanged().map((j) => j.id)).toEqual([2]);
