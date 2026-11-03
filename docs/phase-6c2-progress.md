@@ -16,7 +16,7 @@ in docs must work in PowerShell (no `&&`). No DB schema change expected; ask fir
 | 1 | Tools network `redwhale-tools` in the runner (`network.ts`, `ensureNetwork` in runtime/docker/fake, spec uses it) + tests; real-Docker subdomain suite re-run | done |
 | 2 | Lab image (`lab/`) + `pnpm lab:up/down/status` (server CLI through the runtime) + `lab/README.md` + `.test` wipe allowance | done |
 | 3 | Server confirmation gate (428 `confirm-required`) + tests + `shared/` API schema | done |
-| 4 | `http` group + httpx (Dockerfile, tool.json with `contacts`, run.py, `tech_value`, `{targetType}`, lab fixture, `tools:check`) | |
+| 4 | `http` group + httpx (Dockerfile, tool.json with `contacts`, run.py, `tech_value`, `{targetType}`, lab fixture, `tools:check`) | done |
 | 5 | UI: active-run confirmation dialog, Run tool menu wiring, Jobs tab check | |
 | 6 | Real-Docker end-to-end test; docs (architecture §2/§6/§11/§13, team-guide, handoff); manual checklist below | |
 
@@ -70,12 +70,29 @@ in docs must work in PowerShell (no `&&`). No DB schema change expected; ask fir
   target → resolves_to ip → has_port port → serves url → uses_technology technology. `tech_value(name, version)`:
   lowercase, whitespace runs → `-`, `/` in the name → `-`, version whitespace removed, empty version → name only.
   Fixture host `lab.redwhale.test` → `lab.northwind.example`, `172.29.250.10` → `198.18.0.10`.
+- **httpx, as built (step 4).** Final argv (verified against `httpx -h` of v1.12.0, captured in the container):
+  `/usr/local/bin/httpx -u <target> -p http:80,https:443 -nf -j -silent -nc -no-stdin -duc -sc -title -server -td -ip
+  -location -rl 5 -t 5 -timeout 10 -retries 1 -r 127.0.0.11:53`. Not followed: httpx's default (no `-fr`).
+  **`-r` was added** after the first capture showed httpx's resolver list `1.0.0.1, 8.8.8.8, 8.8.4.4, 127.0.0.11,
+  1.1.1.1`: without it the target's name may go to public DNS (an external contact `external: []` would hide).
+  `run.py` reads the nameservers from `/etc/resolv.conf` (in a job: Docker's 127.0.0.11); no file → no `-r`.
+  `-no-stdin` added too. tool.json: `timeoutSec` 300, `contacts` "sends HTTP(S) requests to {target} on ports 80 and
+  443 (GET /, at most 5 per second; redirects are not followed)". URL values are written as the server stores them
+  (WHATWG href: default port dropped, path `/`). Port data `{service: http|https}`; url data `status_code`, `title`,
+  `webserver`, `location`. `failed: true` lines are skipped (not errors). No IP in a line → url hangs off the target.
+- **Fixture:** 2 real lines + 4 edited (duplicate, blank, an IP-less 8443 answer with messy tech names, a failed probe);
+  13 findings. expected.json carries `"target_type": "subdomain"`.
+- **check.py:** reads/keeps `target_type`; a finding's key now includes its parent (nginx under http:// and https://
+  are two findings; before, they collided in the comparison). The Vitest fixture test does the same.
+- **defs.ts:** `{targetType}` (at most once, whole item, not the program); `contacts` (max 300; required unless passive;
+  only `{target}`). `spec.ts` fills `{targetType}` and re-checks it against `TARGETABLE_TYPES`. `toolInfoSchema.contacts`
+  (nullable). Python `main(..., needs_target_type=True)` + `--target-type` (choices = targetable types), exit 2 without it.
+- **Images on this machine:** `redwhale-tools/http:b024501487e6`, `redwhale-tools/subdomain:750752d2440e` (rebuilt:
+  `redwhale_tool.py` changed), `redwhale-lab:664379ba014e`.
 
 ## Next action
 
-Step 4: `defs.ts` (`contacts`: required for active/intrusive, only `{target}`; `{targetType}` argv placeholder,
-optional, at most once, whole item), `spec.ts` fills `{targetType}` (checked against NODE_TYPES), `toolDto` returns
-`contacts` (+ shared `toolInfoSchema`); `redwhale_tool.py` `--target-type` + `tech_value` (+ unit tests);
-`check.py` reads `target_type`; `tools/http/` group (Dockerfile with httpx v1.12.0 + checksum, group.json, README),
-`tools/http/httpx/` (tool.json, run.py), verify flags with `httpx -h` in the built image, capture fixture from the
-lab (`pnpm lab:up` is already built on this machine), anonymize, `pnpm tools:check httpx --update`.
+Step 5 (UI): `web/src/api/runner.ts` (send `confirmActive`, map 428 to a typed error), an `ActiveRunDialog`
+(tool/group, mode, canonical target, `contacts` with `{target}` filled, external, GET /scope/check?mode=active decision
++ rule; Run active scan / Cancel; every time), wire it from the Run tool ▸ items in `web/src/menu/items.ts` + App.tsx
+`runTool`; tests in web/test; Jobs tab check (mode shown for active jobs).

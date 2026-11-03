@@ -5,6 +5,13 @@ import { z } from 'zod';
 
 /** In an argv template, the item that becomes the target. It must be a whole item, never part of one. */
 export const TARGET_PLACEHOLDER = '{target}';
+/**
+ * Optional, at most once, a whole item: becomes the target node's type (`domain`, `subdomain`…). A script that names
+ * the target as a finding's parent needs it: the server knows the type, the script must never guess it (a wrong type
+ * is another node ID, so a duplicate node).
+ */
+export const TARGET_TYPE_PLACEHOLDER = '{targetType}';
+const PLACEHOLDERS: readonly string[] = [TARGET_PLACEHOLDER, TARGET_TYPE_PLACEHOLDER];
 
 const slug = z.string().regex(/^[a-z][a-z0-9-]{0,39}$/, 'lowercase letters, digits and "-", starting with a letter');
 
@@ -23,6 +30,12 @@ export const toolDefSchema = z
     timeoutSec: z.number().int().min(10).max(24 * 3600),
     /** Outside services the tool contacts (shown in the UI as "external"). */
     external: z.array(z.string().min(1)),
+    /**
+     * What a run touches, in plain words, for the active-run confirmation: "sends HTTP(S) requests to {target} on
+     * ports 80/443". Required for active and intrusive tools. Display text only, never part of a command; the only
+     * placeholder is {target}, replaced by the canonical target in the UI.
+     */
+    contacts: z.string().min(1).max(300).optional(),
     /** Directory in the container the script writes raw.txt and result.json into. */
     outputDir: z.string().regex(/^\/[a-z0-9/_-]*$/),
   })
@@ -32,13 +45,31 @@ export const toolDefSchema = z
     if (targets !== 1) {
       ctx.addIssue({ code: 'custom', path: ['argv'], message: `must contain "${TARGET_PLACEHOLDER}" exactly once, as a whole item` });
     }
+    if (def.argv.filter((a) => a === TARGET_TYPE_PLACEHOLDER).length > 1) {
+      ctx.addIssue({ code: 'custom', path: ['argv'], message: `may contain "${TARGET_TYPE_PLACEHOLDER}" at most once, as a whole item` });
+    }
     def.argv.forEach((a, i) => {
-      if (a !== TARGET_PLACEHOLDER && /[{}]/.test(a)) {
-        ctx.addIssue({ code: 'custom', path: ['argv', i], message: `"${TARGET_PLACEHOLDER}" must be a whole argv item; no other braces` });
+      if (!PLACEHOLDERS.includes(a) && /[{}]/.test(a)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['argv', i],
+          message: `"${TARGET_PLACEHOLDER}" and "${TARGET_TYPE_PLACEHOLDER}" must be whole argv items; no other braces`,
+        });
       }
     });
-    if (def.argv[0] === TARGET_PLACEHOLDER) {
-      ctx.addIssue({ code: 'custom', path: ['argv', 0], message: 'the program can not be the target' });
+    if (def.argv[0] !== undefined && PLACEHOLDERS.includes(def.argv[0])) {
+      ctx.addIssue({ code: 'custom', path: ['argv', 0], message: 'the program can not be the target or its type' });
+    }
+    if (def.mode !== 'passive' && def.contacts === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['contacts'],
+        message: `required for ${def.mode} tools: what a run touches, e.g. "sends HTTP(S) requests to {target} on ports 80/443"`,
+      });
+    }
+    const braces = (def.contacts ?? '').replaceAll(TARGET_PLACEHOLDER, '');
+    if (/[{}]/.test(braces)) {
+      ctx.addIssue({ code: 'custom', path: ['contacts'], message: `the only placeholder allowed is "${TARGET_PLACEHOLDER}"` });
     }
   });
 export type ToolDef = z.infer<typeof toolDefSchema>;

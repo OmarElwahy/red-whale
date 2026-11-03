@@ -15,6 +15,8 @@ const python = findPython();
 
 const expectedSchema = z.object({
   target: z.string(),
+  /** Passed as --target-type, for tools whose argv has {targetType} (httpx). */
+  target_type: z.string().optional(),
   status: z.string(),
   errors: z.array(z.string()),
   findings: z.array(z.record(z.string(), z.unknown())),
@@ -31,12 +33,14 @@ const withFixtures = loadCatalog().groups.flatMap((g) =>
   }),
 );
 
+/** The same value under two parents (nginx on http:// and https://) is two findings. */
+const sortKey = (f: Record<string, unknown>) => `${String(f.type)}:${String(f.value)}:${JSON.stringify(f.parent ?? null)}`;
 const sortFindings = (findings: Record<string, unknown>[]) =>
-  [...findings].sort((a, b) => `${String(a.type)}:${String(a.value)}`.localeCompare(`${String(b.type)}:${String(b.value)}`));
+  [...findings].sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
 
 describe.skipIf(!python)('tool parsers against their saved real output', () => {
-  test('the subdomain tools have fixtures', () => {
-    expect(withFixtures.map((t) => t.tool)).toEqual(['subfinder', 'assetfinder', 'findomain', 'crtsh']);
+  test('every repo tool has a fixture', () => {
+    expect(withFixtures.map((t) => t.tool)).toEqual(['httpx', 'subfinder', 'assetfinder', 'findomain', 'crtsh']);
   });
 
   test.each(withFixtures)('$tool', ({ tool, dir, raw, expected }) => {
@@ -44,7 +48,8 @@ describe.skipIf(!python)('tool parsers against their saved real output', () => {
     const want = expectedSchema.parse(JSON.parse(readFileSync(expected, 'utf8')));
     const out = tempDir();
     const [exe = '', ...args] = python ?? [];
-    const r = spawnSync(exe, [...args, '-I', join(dir, 'run.py'), '--target', want.target, '--out', out, '--replay', raw], {
+    const typeArgs = want.target_type === undefined ? [] : ['--target-type', want.target_type];
+    const r = spawnSync(exe, [...args, '-I', join(dir, 'run.py'), '--target', want.target, ...typeArgs, '--out', out, '--replay', raw], {
       encoding: 'utf8',
       env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
       timeout: 60_000,
@@ -85,7 +90,7 @@ describe.skipIf(!python)('tools/check.py (pnpm tools:check)', () => {
   test('every tool in the repo passes', () => {
     const r = check(TOOLS_DIR, ['--all']);
     expect(r.code, r.out).toBe(0);
-    expect(r.out).toContain('✓ all 4 passed');
+    expect(r.out).toContain('✓ all 5 passed');
   });
 
   test('a parser change that loses findings fails, naming them', () => {

@@ -1,7 +1,8 @@
 // Pure: a tool definition + a ScopedTarget → the exact container to create (docs/architecture.md §11).
 // The hardening lives here, as plain Engine API JSON, so every option is unit-tested without Docker.
+import { TARGETABLE_TYPES } from '@redwhale/shared';
 import { assertScoped, type ScopedTarget } from '../scope/authorize';
-import { TARGET_PLACEHOLDER, type ToolDef } from './defs';
+import { TARGET_PLACEHOLDER, TARGET_TYPE_PLACEHOLDER, type ToolDef } from './defs';
 import { TOOLS_NETWORK } from './network';
 import type { ContainerSpec } from './runtime';
 
@@ -56,8 +57,14 @@ export function buildArgv(def: ToolDef, target: ScopedTarget): string[] {
   if (def.argv.filter((a) => a === TARGET_PLACEHOLDER).length !== 1) {
     throw new ArgumentInjection(`the argv template must have "${TARGET_PLACEHOLDER}" exactly once`);
   }
+  if (def.argv.filter((a) => a === TARGET_TYPE_PLACEHOLDER).length > 1) {
+    throw new ArgumentInjection(`the argv template may have "${TARGET_TYPE_PLACEHOLDER}" at most once`);
+  }
   const value = safeArgValue(target.value);
-  return def.argv.map((item) => (item === TARGET_PLACEHOLDER ? value : item));
+  // The type comes from the node-type enum, so it can't carry anything; checked anyway (defence in depth).
+  const type: string = target.type;
+  if (!(TARGETABLE_TYPES as readonly string[]).includes(type)) throw new ArgumentInjection(`not a targetable node type: ${JSON.stringify(type)}`);
+  return def.argv.map((item) => (item === TARGET_PLACEHOLDER ? value : item === TARGET_TYPE_PLACEHOLDER ? type : item));
 }
 
 /** Container and volume name. The workspace prefix keeps two workspaces' job 12 apart. */

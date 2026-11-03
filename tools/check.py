@@ -46,7 +46,9 @@ def tool_dirs():
 
 
 def key(f):
-    return (f.get("type"), f.get("value"))
+    """A finding's identity: the same value under two parents (nginx on http:// and https://) is two findings."""
+    parent = f.get("parent") or {}
+    return (str(f.get("type")), str(f.get("value")), str(parent.get("type", "")), str(parent.get("value", "")))
 
 
 class Report:
@@ -90,11 +92,15 @@ def check(name, folder, update=False):
         r.bad("fixtures/expected.json missing", ["create it with: pnpm tools:check " + name + " --update (then read it!)"])
         return r
     target = (expected or {}).get("target", "northwind.example")
+    # The target node's type, for scripts that take --target-type ({targetType} in tool.json's argv). Set it in
+    # expected.json once (a stub {"target": ..., "target_type": ...} before the first --update); --update keeps it.
+    target_type = (expected or {}).get("target_type")
 
     # 2. replay
     with tempfile.TemporaryDirectory() as out:
+        type_args = ["--target-type", target_type] if target_type else []
         proc = subprocess.run(
-            [sys.executable, "-I", os.path.join(folder, "run.py"), "--target", target, "--out", out, "--replay", raw],
+            [sys.executable, "-I", os.path.join(folder, "run.py"), "--target", target, *type_args, "--out", out, "--replay", raw],
             capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
         )
         result_path = os.path.join(out, "result.json")
@@ -118,8 +124,9 @@ def check(name, folder, update=False):
         r.bad(f"result.json says tool '{doc.get('tool')}', but the folder is '{name}' (TOOL in run.py)")
 
     # 4. expected
-    current = {"target": target, "status": doc.get("status"), "errors": doc.get("errors"),
-               "findings": sorted(doc.get("findings", []), key=lambda f: (str(f.get("type")), str(f.get("value"))))}
+    current = {"target": target, **({"target_type": target_type} if target_type else {}),
+               "status": doc.get("status"), "errors": doc.get("errors"),
+               "findings": sorted(doc.get("findings", []), key=key)}
     if update:
         with open(expected_path, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(json.dumps(current, indent=2, ensure_ascii=False) + "\n")

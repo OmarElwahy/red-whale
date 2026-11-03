@@ -116,7 +116,7 @@ describe('safeHttpUrl', () => {
 describe('run tool submenu', () => {
   const SUBFINDER: ToolInfo = {
     name: 'subfinder', group: 'subdomain', label: 'subfinder', description: null, mode: 'passive',
-    accepts: ['domain'], external: ['crt.sh', 'OTX'], timeoutSec: 600,
+    accepts: ['domain'], external: ['crt.sh', 'OTX'], contacts: null, timeoutSec: 600,
   };
   const CRTSH: ToolInfo = { ...SUBFINDER, name: 'crtsh', label: 'crt.sh', external: ['crt.sh'], timeoutSec: 420 };
   const TOOLS: ToolsResponse = {

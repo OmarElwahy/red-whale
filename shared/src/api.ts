@@ -672,6 +672,11 @@ export const toolInfoSchema = z.strictObject({
   accepts: z.array(z.enum(TARGETABLE_TYPES)),
   /** Outside services it contacts. */
   external: z.array(z.string()),
+  /**
+   * What a run touches, in plain words, with `{target}` where the canonical target goes ("sends HTTP(S) requests to
+   * {target} on ports 80/443"). Always set for active/intrusive tools; display text only.
+   */
+  contacts: z.string().nullable(),
   timeoutSec: z.number().int(),
 });
 export type ToolInfo = z.infer<typeof toolInfoSchema>;

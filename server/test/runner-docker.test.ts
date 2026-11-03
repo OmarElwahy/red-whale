@@ -104,15 +104,20 @@ describe('Docker health check', () => {
 });
 
 describe('tool catalog', () => {
-  test('the repo tools load: the subdomain group with its four tools, in run order', () => {
+  test('the repo tools load: http (httpx) and subdomain (four tools, in run order)', () => {
     const catalog = loadCatalog();
-    expect(catalog.groups.map((g) => g.def.name)).toEqual(['subdomain']);
-    expect(catalog.tools().map((t) => t.name)).toEqual(['subfinder', 'assetfinder', 'findomain', 'crtsh']);
+    expect(catalog.groups.map((g) => g.def.name)).toEqual(['http', 'subdomain']);
+    expect(catalog.tools().map((t) => t.name)).toEqual(['httpx', 'subfinder', 'assetfinder', 'findomain', 'crtsh']);
+    const httpx = catalog.tool('httpx');
+    expect(httpx).toMatchObject({ mode: 'active', accepts: ['domain', 'subdomain'], external: [] });
+    expect(httpx?.contacts).toContain('{target} on ports 80 and 443');
+    expect(httpx?.argv).toEqual(expect.arrayContaining(['--target-type', '{targetType}']));
+    expect(catalog.info('http')?.imageRef).toMatch(/^redwhale-tools\/http:[0-9a-f]{12}$/);
     const info = catalog.info('subdomain');
     expect(info?.imageRef).toMatch(/^redwhale-tools\/subdomain:[0-9a-f]{12}$/);
     expect(info?.contextFiles).toEqual(expect.arrayContaining(['.dockerignore', 'validate_output.py', 'lib/redwhale_tool.py', 'subdomain/Dockerfile']));
     expect(info?.contextFiles.some((f) => /fixtures|test_|README|NOTE/.test(f))).toBe(false);
-    for (const t of catalog.tools()) expect(t.argv).toContain(`/opt/redwhale/subdomain/${t.name}/run.py`);
+    for (const t of catalog.tools()) expect(t.argv).toContain(`/opt/redwhale/${t.group}/${t.name}/run.py`);
   });
 
   test.each([

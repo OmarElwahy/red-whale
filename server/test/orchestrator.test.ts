@@ -27,6 +27,8 @@ function def(name: string, patch: Partial<ToolDef> = {}): ToolDef {
     timeoutSec: 600,
     external: [],
     outputDir: '/out',
+    // active/intrusive tools must say what a run touches
+    ...(patch.mode !== undefined && patch.mode !== 'passive' ? { contacts: 'probes {target}' } : {}),
     ...patch,
   });
 }

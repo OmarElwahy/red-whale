@@ -1,0 +1,147 @@
+{
+  "target": "lab.northwind.example",
+  "target_type": "subdomain",
+  "status": "success",
+  "errors": [],
+  "findings": [
+    {
+      "type": "ip",
+      "value": "198.18.0.10",
+      "parent": {
+        "type": "subdomain",
+        "value": "lab.northwind.example"
+      },
+      "relation": "resolves_to"
+    },
+    {
+      "type": "port",
+      "value": "198.18.0.10:443/tcp",
+      "parent": {
+        "type": "ip",
+        "value": "198.18.0.10"
+      },
+      "relation": "has_port",
+      "data": {
+        "service": "https"
+      }
+    },
+    {
+      "type": "port",
+      "value": "198.18.0.10:80/tcp",
+      "parent": {
+        "type": "ip",
+        "value": "198.18.0.10"
+      },
+      "relation": "has_port",
+      "data": {
+        "service": "http"
+      }
+    },
+    {
+      "type": "technology",
+      "value": "bootstrap/5.3.0",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example:8443/"
+      },
+      "relation": "uses_technology"
+    },
+    {
+      "type": "technology",
+      "value": "iis/10.0",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example:8443/"
+      },
+      "relation": "uses_technology"
+    },
+    {
+      "type": "technology",
+      "value": "microsoft-asp.net",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example:8443/"
+      },
+      "relation": "uses_technology"
+    },
+    {
+      "type": "technology",
+      "value": "nginx/1.30.6",
+      "parent": {
+        "type": "url",
+        "value": "http://lab.northwind.example/"
+      },
+      "relation": "uses_technology"
+    },
+    {
+      "type": "technology",
+      "value": "nginx/1.30.6",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example/"
+      },
+      "relation": "uses_technology"
+    },
+    {
+      "type": "technology",
+      "value": "php/8.3.12",
+      "parent": {
+        "type": "url",
+        "value": "http://lab.northwind.example/"
+      },
+      "relation": "uses_technology"
+    },
+    {
+      "type": "technology",
+      "value": "php/8.3.12",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example/"
+      },
+      "relation": "uses_technology"
+    },
+    {
+      "type": "url",
+      "value": "http://lab.northwind.example/",
+      "parent": {
+        "type": "port",
+        "value": "198.18.0.10:80/tcp"
+      },
+      "relation": "serves",
+      "data": {
+        "status_code": 301,
+        "title": "301 Moved Permanently",
+        "webserver": "nginx/1.30.6",
+        "location": "https://elsewhere.northwind.example/"
+      }
+    },
+    {
+      "type": "url",
+      "value": "https://lab.northwind.example/",
+      "parent": {
+        "type": "port",
+        "value": "198.18.0.10:443/tcp"
+      },
+      "relation": "serves",
+      "data": {
+        "status_code": 200,
+        "title": "Northwind Lab",
+        "webserver": "nginx/1.30.6"
+      }
+    },
+    {
+      "type": "url",
+      "value": "https://lab.northwind.example:8443/",
+      "parent": {
+        "type": "subdomain",
+        "value": "lab.northwind.example"
+      },
+      "relation": "serves",
+      "data": {
+        "status_code": 403,
+        "title": "Forbidden",
+        "webserver": "Microsoft-IIS/10.0"
+      }
+    }
+  ]
+}

@@ -44,6 +44,15 @@ describe('tool definitions', () => {
     [{ name: 'Sub Finder' }, 'name'],
     [{ outputDir: 'out' }, 'outputDir'],
     [{ extra: true }, 'extra'],
+    [{ argv: ['p', '{target}', '{targetType}', '{targetType}'] }, 'at most once'],
+    [{ argv: ['p', '{target}', '--type={targetType}'] }, 'whole argv items'],
+    [{ argv: ['{targetType}', '{target}'] }, 'program'],
+    [{ argv: ['p', '{target}', '{other}'] }, 'no other braces'],
+    [{ mode: 'active' }, 'required for active tools'],
+    [{ mode: 'intrusive' }, 'required for intrusive tools'],
+    [{ mode: 'active', contacts: 'sends requests to {host}' }, 'the only placeholder allowed is'],
+    [{ contacts: 'asks {target} and {targetType}' }, 'the only placeholder allowed is'],
+    [{ contacts: '' }, 'contacts'],
   ])('%j is refused (%s)', (patch, hint) => {
     const result = toolDefSchema.safeParse({ ...base, ...patch });
     expect(result.success).toBe(false);
@@ -51,7 +60,38 @@ describe('tool definitions', () => {
   });
 });
 
+test('contacts: optional for passive tools; {target} is its only placeholder', () => {
+  expect(toolDefSchema.safeParse({ ...DEF, contacts: 'asks crt.sh about {target}' }).success).toBe(true);
+  expect(toolDefSchema.safeParse({ ...DEF, mode: 'active', contacts: 'sends HTTP(S) requests to {target} on ports 80/443' }).success).toBe(true);
+  expect(toolDefSchema.safeParse({ ...DEF, mode: 'active', contacts: 'probes the host' }).success).toBe(true);
+});
+
 describe('argv', () => {
+  const TYPED: ToolDef = toolDefSchema.parse({
+    ...DEF,
+    name: 'httpx',
+    mode: 'active',
+    accepts: ['domain', 'subdomain'],
+    contacts: 'sends HTTP(S) requests to {target}',
+    argv: ['python3', '/opt/run.py', '--target', '{target}', '--target-type', '{targetType}', '--out', '/out'],
+  });
+
+  test('{targetType} becomes the scoped target node type, one whole item', () => {
+    expect(buildArgv(TYPED, scopedTarget('api.example.com', 'subdomain'))).toEqual([
+      'python3', '/opt/run.py', '--target', 'api.example.com', '--target-type', 'subdomain', '--out', '/out',
+    ]);
+    expect(buildArgv(TYPED, scopedTarget('example.com', 'domain'))).toContain('domain');
+  });
+
+  test('{targetType} is optional (the subdomain tools do without)', () => {
+    expect(buildArgv(DEF, scopedTarget()).some((a) => a.includes('{'))).toBe(false);
+  });
+
+  test('a template that skipped the schema (two {targetType}) is refused at build time', () => {
+    const bad = { ...TYPED, argv: [...TYPED.argv, '{targetType}'] };
+    expect(() => buildArgv(bad, scopedTarget('example.com', 'domain'))).toThrow(/at most once/);
+  });
+
   test('the target is one argv item, the canonical value authorize() judged', () => {
     expect(buildArgv(DEF, scopedTarget('Example.COM.'))).toEqual([
       'python3', '-I', '/opt/redwhale/subdomain/subfinder/run.py', '--target', 'example.com', '--out', '/out',

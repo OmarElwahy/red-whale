@@ -57,13 +57,21 @@ async function setup(
 }
 
 describe('GET /api/tools and /api/runner/status', () => {
-  test('lists the group and its four tools, with modes, accepted types, external services and the image', async () => {
+  test('lists the groups and their tools, with modes, accepted types, external services, contacts and the image', async () => {
     const { api } = await setup();
     const tools = body(await api.get('/api/tools'), 200, toolsResponseSchema);
     expect(tools.groups).toEqual([
+      { name: 'http', label: 'HTTP probing', image: catalog.imageRef('http'), imageStatus: 'missing', tools: ['httpx'] },
       { name: 'subdomain', label: 'subdomain enumeration', image: IMAGE, imageStatus: 'built', tools: ['subfinder', 'assetfinder', 'findomain', 'crtsh'] },
     ]);
+    expect(tools.tools.find((t) => t.name === 'httpx')).toMatchObject({
+      mode: 'active',
+      external: [],
+      contacts: 'sends HTTP(S) requests to {target} on ports 80 and 443 (GET /, at most 5 per second; redirects are not followed)',
+    });
+    expect(tools.tools.find((t) => t.name === 'subfinder')?.contacts).toBeNull();
     expect(tools.tools.map((t) => [t.name, t.mode, t.accepts])).toEqual([
+      ['httpx', 'active', ['domain', 'subdomain']],
       ['subfinder', 'passive', ['domain']],
       ['assetfinder', 'passive', ['domain']],
       ['findomain', 'passive', ['domain']],
@@ -74,11 +82,14 @@ describe('GET /api/tools and /api/runner/status', () => {
 
   test('image missing, outdated, and Docker down', async () => {
     const { api, rt } = await setup(finds, { image: false });
-    expect(body(await api.get('/api/tools'), 200, toolsResponseSchema).groups[0]?.imageStatus).toBe('missing');
+    expect(body(await api.get('/api/tools'), 200, toolsResponseSchema).groups.find((g) => g.name === 'subdomain')?.imageStatus).toBe('missing');
     rt.addImage('redwhale-tools/subdomain:000000000000', { 'redwhale.group': 'subdomain' });
     expect(body(await api.get('/api/runner/status'), 200, runnerStatusSchema)).toMatchObject({
       docker: { reachable: true, version: 'fake-27.0', error: null },
-      images: [{ group: 'subdomain', image: IMAGE, status: 'outdated' }],
+      images: [
+        { group: 'http', image: catalog.imageRef('http'), status: 'missing' },
+        { group: 'subdomain', image: IMAGE, status: 'outdated' },
+      ],
       running: 0,
       queued: 0,
       maxConcurrent: 2,
@@ -243,7 +254,7 @@ describe('active runs: 428 confirm-required', () => {
     cpSync(TOOLS_DIR, dir, { recursive: true });
     const path = join(dir, 'subdomain/findomain/tool.json');
     const def = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>;
-    writeFileSync(path, JSON.stringify({ ...def, mode: 'active' }));
+    writeFileSync(path, JSON.stringify({ ...def, mode: 'active', contacts: 'asks {target} itself' }));
     return loadCatalog(dir);
   }
   const counts = async (api: Awaited<ReturnType<typeof setup>>['api']) => ({

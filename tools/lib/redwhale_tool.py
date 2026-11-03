@@ -65,6 +65,25 @@ def port_value(ip, port, protocol="tcp"):
     return f"{host}:{int(port)}/{protocol.lower()}"
 
 
+def tech_value(name, version=None):
+    """
+    A `technology` value, always spelled one way, so two tools (or two runs) land on one node:
+
+        tech_value("Nginx", "1.30.6")            -> "nginx/1.30.6"
+        tech_value("Microsoft ASP.NET", "4.0")   -> "microsoft-asp.net/4.0"
+        tech_value("PHP")                        -> "php"
+
+    The rule: lowercase; in the name, every run of spaces or slashes becomes one "-" (a "/" only ever separates the
+    version); the version loses its spaces ("/" in it becomes "-" too); no version -> the name alone. Returns "" for
+    an empty name (run.add then skips it).
+    """
+    n = re.sub(r"[\s/]+", "-", str(name if name is not None else "").strip().lower()).strip("-")
+    if not n:
+        return ""
+    v = re.sub(r"\s+", "", str(version if version is not None else "")).lower().replace("/", "-").strip("-")
+    return f"{n}/{v}" if v else n
+
+
 def mask_secret(secret, keep=4):
     """Never output a real secret. mask_secret("AKIAABCDEFGHWXYZ") -> "AKIA****WXYZ"."""
     s = str(secret)
@@ -135,6 +154,8 @@ class ToolRun:
     def __init__(self, tool, target, tool_version=None):
         self.tool = tool.lower()
         self.target = target
+        # The target node's type ("domain", "subdomain"...), from --target-type; None if the tool doesn't take it.
+        self.target_type = None
         self.tool_version = tool_version
         self.command = ""
         self.started_at = now()
@@ -335,17 +356,26 @@ def safe_target(value):
 
 # ---------------------------------------------------------------- entry point
 
-def main(tool, parse, command=None, fetch=None, version_command=None, argv=None):
+TARGET_TYPES = ("domain", "subdomain", "ip", "port", "url")
+
+
+def main(tool, parse, command=None, fetch=None, version_command=None, needs_target_type=False, argv=None):
     """
     The whole script. Give it exactly one of:
       command(target) -> list    the tool's command line (run with a timeout; its stdout is the raw output)
       fetch(target, run, timeout) -> str    for tools that are an HTTP API, not a program (e.g. crt.sh);
                                             set run.command to what was requested, report problems with run.error
+
+    needs_target_type=True: the script names the target as a finding's parent, so it must know the target node's
+    type (run.target_type). The server passes it as --target-type ({targetType} in tool.json's argv); without it the
+    script stops with an error instead of guessing (a wrong type would be another node).
     """
     if (command is None) == (fetch is None):
         raise TypeError("main() needs exactly one of command= or fetch=")
     ap = argparse.ArgumentParser(description=f"Run {tool} and write RED WHALE contract-v1 JSON.")
     ap.add_argument("--target", required=True, help="what to run against, e.g. example.com")
+    ap.add_argument("--target-type", choices=TARGET_TYPES,
+                    help="the target node's type (the server passes it; required by tools that need it)")
     ap.add_argument("--out", required=True, help="directory for raw.txt and result.json (in the container: /out)")
     ap.add_argument("--replay", metavar="FILE", help="parse this saved tool output instead of running the tool")
     ap.add_argument("--timeout", type=int, default=int(os.environ.get("REDWHALE_TOOL_TIMEOUT", DEFAULT_TIMEOUT)),
@@ -357,9 +387,14 @@ def main(tool, parse, command=None, fetch=None, version_command=None, argv=None)
     except ValueError as e:
         log(str(e))
         return 2
+    if needs_target_type and not args.target_type:
+        log(f"{tool} needs --target-type ({', '.join(TARGET_TYPES)}): the target node's type, which the server passes "
+            "as {targetType} in tool.json's argv. It is never guessed: a wrong type would make a duplicate node.")
+        return 2
 
     version = None if args.replay or not version_command else tool_version(version_command)
     run = ToolRun(tool, target, tool_version=version)
+    run.target_type = args.target_type
     if args.replay:
         run.command = shlex.join(command(target)) if command else f"{tool} {target} (replayed)"
         log(f"[replay] {args.replay} instead of: {run.command}")

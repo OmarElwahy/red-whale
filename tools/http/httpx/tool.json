@@ -1,0 +1,13 @@
+{
+  "name": "httpx",
+  "group": "http",
+  "label": "httpx",
+  "description": "ProjectDiscovery httpx: which of the host's HTTP(S) ports answer, with status, title, web server and technologies. Never follows redirects.",
+  "mode": "active",
+  "accepts": ["domain", "subdomain"],
+  "argv": ["python3", "-I", "/opt/redwhale/http/httpx/run.py", "--target", "{target}", "--target-type", "{targetType}", "--out", "/out"],
+  "timeoutSec": 300,
+  "external": [],
+  "contacts": "sends HTTP(S) requests to {target} on ports 80 and 443 (GET /, at most 5 per second; redirects are not followed)",
+  "outputDir": "/out"
+}

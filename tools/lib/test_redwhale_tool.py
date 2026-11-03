@@ -131,6 +131,65 @@ class MainTest(unittest.TestCase):
         self.assertEqual(run.run_command(["redwhale-no-such-program-xyz"]), "")
         self.assertIn("not found", run.errors[0])
 
+    def replay_typed(self, extra):
+        path = os.path.join(self.dir.name, "raw.txt")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("x\n")
+        seen = []
+
+        def parse(raw, run, target):
+            seen.append(run.target_type)
+            run.add("ip", "198.18.0.10", parent=(run.target_type, target))
+
+        code = rw.main("demo", parse, command=lambda t: ["demo", t], needs_target_type=True,
+                       argv=["--target", "lab.northwind.example", *extra, "--out", self.out, "--replay", path])
+        return code, seen
+
+    def test_target_type_is_passed_to_the_parser(self):
+        code, seen = self.replay_typed(["--target-type", "subdomain"])
+        self.assertEqual((code, seen), (0, ["subdomain"]))
+        self.assertEqual(self.result()["findings"][0]["parent"], {"type": "subdomain", "value": "lab.northwind.example"})
+
+    def test_a_tool_that_needs_the_target_type_never_guesses_it(self):
+        code, seen = self.replay_typed([])
+        self.assertEqual((code, seen), (2, []))
+        self.assertFalse(os.path.exists(os.path.join(self.out, "result.json")))
+
+    def test_the_target_type_must_be_a_targetable_node_type(self):
+        with self.assertRaises(SystemExit):
+            self.replay_typed(["--target-type", "technology"])
+
+    def test_tools_that_dont_need_it_still_work_without(self):
+        code = self.replay('{"host":"a.example.com"}\n', lambda raw, run, target: run.add_subdomain("a.example.com", target))
+        self.assertEqual(code, 0)
+
+
+class TechValueTest(unittest.TestCase):
+    def test_one_spelling(self):
+        cases = [
+            (("Nginx", "1.30.6"), "nginx/1.30.6"),
+            (("nginx", "1.30.6"), "nginx/1.30.6"),
+            (("Microsoft ASP.NET", "4.0"), "microsoft-asp.net/4.0"),
+            (("  Apache   HTTP Server ", " 2.4.62 "), "apache-http-server/2.4.62"),
+            (("PHP", None), "php"),
+            (("PHP", ""), "php"),
+            (("Twitter Bootstrap", "5.3.0 beta"), "twitter-bootstrap/5.3.0beta"),
+            (("a/b", "1/2"), "a-b/1-2"),
+            (("Go", "V1.22"), "go/v1.22"),
+        ]
+        for (name, version), want in cases:
+            self.assertEqual(rw.tech_value(name, version), want, (name, version))
+
+    def test_empty_name_is_empty(self):
+        self.assertEqual(rw.tech_value("", "1.0"), "")
+        self.assertEqual(rw.tech_value(None), "")
+        self.assertEqual(rw.tech_value(" / ", "1"), "")
+
+    def test_values_pass_the_contract(self):
+        run = rw.ToolRun("demo", "example.com")
+        self.assertTrue(run.add("technology", rw.tech_value("Microsoft ASP.NET", "4.0"),
+                                parent=("url", "https://example.com/")))
+
 
 if __name__ == "__main__":
     unittest.main()

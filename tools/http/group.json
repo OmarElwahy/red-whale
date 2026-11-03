@@ -1,0 +1,6 @@
+{
+  "name": "http",
+  "label": "HTTP probing",
+  "image": "redwhale-tools/http",
+  "tools": ["httpx"]
+}

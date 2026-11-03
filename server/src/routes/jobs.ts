@@ -64,6 +64,7 @@ export function toolDto(def: ToolDef): ToolInfo {
     mode: def.mode,
     accepts: def.accepts,
     external: def.external,
+    contacts: def.contacts ?? null,
     timeoutSec: def.timeoutSec,
   };
 }
