@@ -16,6 +16,9 @@
     "mock:large": "tsx scripts/mock.ts --large",
     "tools:build": "tsx server/src/runner/cli-build.ts",
     "tools:check": "tsx server/src/runner/cli-check.ts",
+    "lab:up": "tsx server/src/cli/lab.ts up",
+    "lab:down": "tsx server/src/cli/lab.ts down",
+    "lab:status": "tsx server/src/cli/lab.ts status",
     "dev": "pnpm run \"/^dev:(server|web)$/\"",
     "dev:server": "tsx watch server/src/cli/run-server.ts",
     "dev:web": "pnpm --filter @redwhale/web dev"

@@ -19,6 +19,8 @@ import type {
   NetworkInfo,
   NetworkSpec,
   RuntimePing,
+  ServiceSpec,
+  BuildOptions,
 } from './runtime';
 import { NetworkError, existingNetworkProblem, networkCreateError } from './network';
 
@@ -132,17 +134,7 @@ export async function readOutputArchive(archive: NodeJS.ReadableStream, limits: 
 /** How long a Docker health check may take before Docker counts as not responding. */
 export const PING_TIMEOUT_MS = 5000;
 
-export interface BuildOptions {
-  /** Directory sent as the build context. */
-  context: string;
-  /** Files of the context to send, relative to it, '/'-separated. Nothing else is sent. */
-  files: string[];
-  /** Dockerfile path inside the context. */
-  dockerfile: string;
-  tag: string;
-  labels: Record<string, string>;
-  onLog?: (line: string) => void;
-}
+export type { BuildOptions } from './runtime';
 
 export class DockerRuntime implements ContainerRuntime {
   private readonly docker: Docker;
@@ -194,13 +186,13 @@ export class DockerRuntime implements ContainerRuntime {
       const n = (await this.docker.getNetwork(name).inspect()) as {
         Driver?: string;
         Internal?: boolean;
-        IPAM?: { Config?: { Subnet?: string }[] | null } | null;
+        IPAM?: { Config?: { Subnet?: string; IPRange?: string }[] | null } | null;
         Labels?: Record<string, string> | null;
       };
       return {
         driver: n.Driver ?? '',
         internal: n.Internal === true,
-        subnets: (n.IPAM?.Config ?? []).map((c) => c.Subnet ?? '').filter(Boolean),
+        pools: (n.IPAM?.Config ?? []).flatMap((c) => (c.Subnet ? [{ subnet: c.Subnet, ipRange: c.IPRange ?? null }] : [])),
         labels: { ...n.Labels },
       };
     } catch (e) {
@@ -226,7 +218,7 @@ export class DockerRuntime implements ContainerRuntime {
         Internal: false,
         CheckDuplicate: true,
         Labels: spec.labels,
-        IPAM: { Driver: 'default', Config: [{ Subnet: spec.subnet }] },
+        IPAM: { Driver: 'default', Config: [{ Subnet: spec.subnet, IPRange: spec.ipRange }] },
       });
     } catch (e) {
       // Two jobs starting at once: the other one created it first.
@@ -241,6 +233,11 @@ export class DockerRuntime implements ContainerRuntime {
 
   async create(spec: ContainerSpec): Promise<string> {
     await this.docker.createVolume({ Name: spec.volume.Name, Labels: spec.volume.Labels });
+    const container = await this.docker.createContainer({ name: spec.name, ...spec.body });
+    return container.id;
+  }
+
+  async createService(spec: ServiceSpec): Promise<string> {
     const container = await this.docker.createContainer({ name: spec.name, ...spec.body });
     return container.id;
   }

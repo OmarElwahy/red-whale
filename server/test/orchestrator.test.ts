@@ -7,6 +7,7 @@ import { scopeLog } from '../src/db/schema';
 import { ingestDocument } from '../src/ingest/ingest';
 import { toolDefSchema, type GroupDef, type ToolDef } from '../src/runner/defs';
 import { Orchestrator, RESTART_ERROR, type OrchestratorOptions, type ToolCatalog } from '../src/runner/orchestrator';
+import { toolsNetwork } from '../src/runner/network';
 import { LABEL_JOB, LABEL_WORKSPACE } from '../src/runner/spec';
 import { addRule, patchRule, setSettings } from '../src/scope/store';
 import { FakeRuntime, type FakeBehavior } from './fakeRuntime';
@@ -120,7 +121,7 @@ describe('scope', () => {
   });
 
   test('the subnet comes from the orchestrator options (REDWHALE_NET_SUBNET in the server)', async () => {
-    const { rt, orch } = setup(undefined, { network: { name: 'redwhale-tools', subnet: '10.77.0.0/16', labels: { 'redwhale.network': 'tools' } } });
+    const { rt, orch } = setup(undefined, { network: toolsNetwork({ REDWHALE_NET_SUBNET: '10.77.0.0/16' }) });
     orch.enqueue('subfinder', DOMAIN);
     await orch.idle();
     expect(rt.networks.get('redwhale-tools')?.subnet).toBe('10.77.0.0/16');

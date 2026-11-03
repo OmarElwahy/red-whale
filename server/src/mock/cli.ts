@@ -52,18 +52,35 @@ export function isMockTarget(target: string): boolean {
   return /(^|\.)example$/i.test(host);
 }
 
+/**
+ * A scan the mock wipe may delete without --force: a mock's (`.example`) or a lab run's (`.test`, also reserved by
+ * RFC 2606: the local lab is lab.redwhale.test). Anything else came from a real target.
+ */
+export function isDisposableTarget(target: string): boolean {
+  if (isMockTarget(target)) return true;
+  let host = target;
+  if (/^https?:\/\//i.test(target)) {
+    try {
+      host = new URL(target).hostname;
+    } catch {
+      return false;
+    }
+  }
+  return /(^|\.)test$/i.test(host);
+}
+
 interface ForeignScan {
   tool: string;
   target: string;
   ingested_at: string;
 }
 
-/** Scans that no mock generator could have made, oldest first. */
+/** Scans that neither a mock generator nor a lab run could have made, oldest first. */
 export function foreignScans(db: Db): ForeignScan[] {
   const rows = db.$client
     .prepare('SELECT tool, target, ingested_at FROM scans ORDER BY ingested_at, tool')
     .all() as ForeignScan[];
-  return rows.filter((r) => !isMockTarget(r.target));
+  return rows.filter((r) => !isDisposableTarget(r.target));
 }
 
 /**
@@ -256,7 +273,7 @@ export function runMockCli(
     if (foreign.length > 0 && !args.force) {
       io.err(
         `${dbPath} holds ${String(foreign.length)} scan(s) that didn't come from a mock generator ` +
-          '(their target is not under .example):',
+          '(their target is not under .example or .test):',
       );
       for (const s of foreign.slice(0, 5)) io.err(`  ${s.tool} → ${s.target} (ingested ${s.ingested_at})`);
       if (foreign.length > 5) io.err(`  … and ${String(foreign.length - 5)} more`);

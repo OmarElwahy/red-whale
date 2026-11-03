@@ -44,6 +44,8 @@ export interface NetworkSpec {
   name: string;
   /** IPv4 CIDR, canonical. */
   subnet: string;
+  /** Where Docker picks dynamic addresses (a CIDR inside `subnet`); the rest stays free for fixed ones. */
+  ipRange: string;
   labels: Record<string, string>;
 }
 
@@ -51,8 +53,60 @@ export interface NetworkSpec {
 export interface NetworkInfo {
   driver: string;
   internal: boolean;
-  subnets: string[];
+  pools: { subnet: string; ipRange: string | null }[];
   labels: Record<string, string>;
+}
+
+/**
+ * A long-running helper container that is not a job (the lab, `pnpm lab:up`): no /out volume, a fixed address on a
+ * network. Built only by lab.ts.
+ */
+export interface ServiceCreateBody {
+  Image: string;
+  User: string;
+  Labels: Record<string, string>;
+  Tty: false;
+  OpenStdin: false;
+  HostConfig: {
+    ReadonlyRootfs: true;
+    CapDrop: ['ALL'];
+    SecurityOpt: string[];
+    Privileged: false;
+    Memory: number;
+    MemorySwap: number;
+    NanoCpus: number;
+    PidsLimit: number;
+    Tmpfs: Record<string, string>;
+    Sysctls: Record<string, string>;
+    NetworkMode: string;
+    /** Nothing is published on the host. */
+    PortBindings: Record<string, never>;
+    PublishAllPorts: false;
+    Init: true;
+    RestartPolicy: { Name: 'no' };
+    LogConfig: { Type: 'json-file'; Config: Record<string, string> };
+  };
+  NetworkingConfig: {
+    EndpointsConfig: Record<string, { Aliases: string[]; IPAMConfig: { IPv4Address: string } }>;
+  };
+}
+
+export interface ServiceSpec {
+  name: string;
+  body: ServiceCreateBody;
+}
+
+/** An image build (pnpm tools:build, pnpm lab:up). */
+export interface BuildOptions {
+  /** Directory sent as the build context. */
+  context: string;
+  /** Files of the context to send, relative to it, '/'-separated. Nothing else is sent. */
+  files: string[];
+  /** Dockerfile path inside the context. */
+  dockerfile: string;
+  tag: string;
+  labels: Record<string, string>;
+  onLog?: (line: string) => void;
 }
 
 export interface ContainerSpec {
@@ -117,6 +171,10 @@ export interface ContainerRuntime {
   ensureNetwork(spec: NetworkSpec): Promise<void>;
   /** Creates the volume, then the container. Returns the container ID. */
   create(spec: ContainerSpec): Promise<string>;
+  /** Creates a helper container (the lab): no volume. Returns the container ID. */
+  createService(spec: ServiceSpec): Promise<string>;
+  /** Builds an image from exactly `files` of `context`. Rejects with the build's error. */
+  build(options: BuildOptions): Promise<void>;
   start(containerId: string): Promise<void>;
   /** Resolves with the exit code once the container stops (for any reason, a kill included). */
   wait(containerId: string): Promise<{ exitCode: number }>;

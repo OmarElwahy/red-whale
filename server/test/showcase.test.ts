@@ -20,7 +20,7 @@ import {
 } from '@redwhale/shared';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { openDb, type Db } from '../src/db/client';
-import { foreignScans, isMockTarget, runMockCli, wipeWorkspace, type MockKind } from '../src/mock/cli';
+import { foreignScans, isDisposableTarget, isMockTarget, runMockCli, wipeWorkspace, type MockKind } from '../src/mock/cli';
 import { mockFileText } from '../src/mock/generate';
 import { findPython } from '../src/mock/python';
 import { SHOWCASE_DOMAIN, SHOWCASE_SCOPE, generateShowcase } from '../src/mock/showcase';
@@ -271,6 +271,37 @@ describe('wiping the workspace', () => {
     expect(isMockTarget(target)).toBe(expected);
   });
 
+  test.each([
+    ['showcase.example', true],
+    ['lab.redwhale.test', true],
+    ['https://lab.redwhale.test/', true],
+    ['LAB.REDWHALE.TEST', true],
+    ['test', true],
+    ['example.com', false],
+    ['latest', false],
+    ['test.com', false],
+    ['172.29.250.10', false],
+  ])('isDisposableTarget(%s) = %s (lab runs need no --force; --domain stays .example)', (target, expected) => {
+    expect(isDisposableTarget(target)).toBe(expected);
+  });
+
+  test('a database holding only a lab run (.test) is wiped without --force', () => {
+    const dir = tempDir();
+    const path = join(dir, 'lab.db');
+    const db = openDb(path);
+    const lab = JSON.parse(exampleText('nmap')) as { target: string };
+    lab.target = 'lab.redwhale.test';
+    expect(ingestText(db, JSON.stringify(lab)).status).toBe('ingested');
+    db.$client.close();
+    const result = run('showcase', ['--out', join(dir, 'out'), '--db', path, '--skip-python']);
+    expect(result.code).toBe(0);
+    const after = openDb(path);
+    const targets = (after.$client.prepare('SELECT target FROM scans').all() as { target: string }[]).map((r) => r.target);
+    expect(targets.length).toBeGreaterThan(0);
+    expect(targets).not.toContain('lab.redwhale.test');
+    after.$client.close();
+  });
+
   test('refuses a database holding a real scan, and leaves it untouched', () => {
     const dir = tempDir();
     const path = join(dir, 'real.db');
@@ -282,7 +313,7 @@ describe('wiping the workspace', () => {
     const result = run('showcase', ['--out', join(dir, 'out'), '--db', path, '--skip-python']);
     expect(result.code).toBe(1);
     expect(result.err).toContain(
-      `${path} holds 1 scan(s) that didn't come from a mock generator (their target is not under .example):`,
+      `${path} holds 1 scan(s) that didn't come from a mock generator (their target is not under .example or .test):`,
     );
     expect(result.err.at(-1)).toMatch(/Pass --force to wipe them too/);
 

@@ -52,14 +52,20 @@ export function hostInSubnet(subnet: string, offset: number): string {
   return intToIp(s.base + offset);
 }
 
+/**
+ * The upper half of the subnet: where Docker picks job containers' addresses, so the lower half stays free for fixed
+ * ones (the lab's .10). Without it Docker hands out .2, .3, … and a busy runner could take the lab's address.
+ */
+export function dynamicRange(subnet: string): string {
+  const s = parseSubnet(subnet);
+  return `${intToIp(s.base + 2 ** (31 - s.prefix))}/${String(s.prefix + 1)}`;
+}
+
 /** The tools network, with the subnet from REDWHALE_NET_SUBNET or the default. Throws NetworkError on a bad value. */
 export function toolsNetwork(env: Record<string, string | undefined> = process.env): NetworkSpec {
   const raw = env[SUBNET_ENV]?.trim();
-  return {
-    name: TOOLS_NETWORK,
-    subnet: parseSubnet(raw === undefined || raw === '' ? DEFAULT_TOOLS_SUBNET : raw).text,
-    labels: { [LABEL_NETWORK]: 'tools' },
-  };
+  const subnet = parseSubnet(raw === undefined || raw === '' ? DEFAULT_TOOLS_SUBNET : raw).text;
+  return { name: TOOLS_NETWORK, subnet, ipRange: dynamicRange(subnet), labels: { [LABEL_NETWORK]: 'tools' } };
 }
 
 const removeHint = (name: string) =>
@@ -71,10 +77,15 @@ export function existingNetworkProblem(spec: NetworkSpec, found: NetworkInfo): s
   if (!ours) return `a Docker network named '${spec.name}' exists but RED WHALE didn't create it; ${removeHint(spec.name)}`;
   if (found.driver !== 'bridge') return `the Docker network '${spec.name}' uses the '${found.driver}' driver, not bridge; ${removeHint(spec.name)}`;
   if (found.internal) return `the Docker network '${spec.name}' is internal (no internet for the tools); ${removeHint(spec.name)}`;
-  if (!found.subnets.includes(spec.subnet)) {
+  const pool = found.pools.find((p) => p.subnet === spec.subnet);
+  if (!pool) {
+    const had = found.pools.map((p) => p.subnet).join(', ') || '(none)';
+    return `the Docker network '${spec.name}' has subnet ${had}, expected ${spec.subnet}; ${removeHint(spec.name)}`;
+  }
+  if (pool.ipRange !== spec.ipRange) {
     return (
-      `the Docker network '${spec.name}' has subnet ${found.subnets.join(', ') || '(none)'}, expected ${spec.subnet}; ` +
-      removeHint(spec.name)
+      `the Docker network '${spec.name}' gives out addresses from ${pool.ipRange ?? 'the whole subnet'}, expected ${spec.ipRange} ` +
+      `(keeps the lab's fixed address free; it was created by an older RED WHALE); ${removeHint(spec.name)}`
     );
   }
   return null;

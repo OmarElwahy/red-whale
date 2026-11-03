@@ -10,6 +10,8 @@ import type {
   LabeledResources,
   NetworkSpec,
   RuntimePing,
+  ServiceSpec,
+  BuildOptions,
 } from '../src/runner/runtime';
 
 export interface FakeBehavior {
@@ -28,7 +30,7 @@ export interface FakeBehavior {
 
 interface FakeContainer {
   id: string;
-  spec: ContainerSpec;
+  spec: ContainerSpec | ServiceSpec;
   behavior: FakeBehavior;
   state: 'created' | 'running' | 'exited';
   exitCode: number | null;
@@ -108,13 +110,43 @@ export class FakeRuntime implements ContainerRuntime {
     if (!this.images.has(spec.body.Image)) throw new Error(`No such image: ${spec.body.Image}`);
     this.volumes.set(spec.volume.Name, spec.volume.Labels);
     this.created.push(spec);
+    return Promise.resolve(this.addContainer(spec, this.behave(spec)));
+  }
+
+  /** Helper containers (the lab) ever created, in order. They run until removed. */
+  readonly services: ServiceSpec[] = [];
+
+  async createService(spec: ServiceSpec): Promise<string> {
+    this.record('createService', spec.name);
+    const network = spec.body.HostConfig.NetworkMode;
+    if (!this.networks.has(network)) throw new Error(`network ${network} not found`);
+    if (!this.images.has(spec.body.Image)) throw new Error(`No such image: ${spec.body.Image}`);
+    if ([...this.containers.values()].some((c) => c.spec.name === spec.name)) throw new Error(`Conflict: name ${spec.name} in use`);
+    this.services.push(spec);
+    return Promise.resolve(this.addContainer(spec, { hang: true }));
+  }
+
+  /** Images built, in order. A build "succeeds" by adding its image (unless buildError is set). */
+  readonly builds: BuildOptions[] = [];
+  buildError: string | null = null;
+
+  async build(options: BuildOptions): Promise<void> {
+    this.record('build', options.tag);
+    this.builds.push(options);
+    if (this.buildError !== null) throw new Error(this.buildError);
+    options.onLog?.('Step 1/1 : fake build');
+    this.addImage(options.tag, options.labels);
+    return Promise.resolve();
+  }
+
+  private addContainer(spec: ContainerSpec | ServiceSpec, behavior: FakeBehavior): string {
     this.next += 1;
     const id = `fake${String(this.next).padStart(8, '0')}`;
     let exit: (code: number) => void = () => undefined;
     const exited = new Promise<number>((resolve) => {
       exit = resolve;
     });
-    const container: FakeContainer = { id, spec, behavior: this.behave(spec), state: 'created', exitCode: null, exited, exit };
+    const container: FakeContainer = { id, spec, behavior, state: 'created', exitCode: null, exited, exit };
     container.exit = (code) => {
       if (container.state === 'exited') return;
       container.state = 'exited';
@@ -122,7 +154,7 @@ export class FakeRuntime implements ContainerRuntime {
       exit(code);
     };
     this.containers.set(id, container);
-    return Promise.resolve(id);
+    return id;
   }
 
   async start(id: string): Promise<void> {

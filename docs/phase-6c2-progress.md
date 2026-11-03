@@ -14,7 +14,7 @@ in docs must work in PowerShell (no `&&`). No DB schema change expected; ask fir
 | # | Step | Status |
 |---|---|---|
 | 1 | Tools network `redwhale-tools` in the runner (`network.ts`, `ensureNetwork` in runtime/docker/fake, spec uses it) + tests; real-Docker subdomain suite re-run | done |
-| 2 | Lab image (`lab/`) + `pnpm lab:up/down/status` (server CLI through the runtime) + `lab/README.md` + `.test` wipe allowance | |
+| 2 | Lab image (`lab/`) + `pnpm lab:up/down/status` (server CLI through the runtime) + `lab/README.md` + `.test` wipe allowance | done |
 | 3 | Server confirmation gate (428 `confirm-required`) + tests + `shared/` API schema | |
 | 4 | `http` group + httpx (Dockerfile, tool.json with `contacts`, run.py, `tech_value`, `{targetType}`, lab fixture, `tools:check`) | |
 | 5 | UI: active-run confirmation dialog, Run tool menu wiring, Jobs tab check | |
@@ -35,6 +35,19 @@ in docs must work in PowerShell (no `&&`). No DB schema change expected; ask fir
   page (title); both send `Server` + `X-Powered-By`; self-signed cert made at build; access log records `$host`.
   Container label `redwhale.lab`, aliases `lab.redwhale.test` + `elsewhere.redwhale.test`, IP = subnet host .10
   (`172.29.250.10`), no host ports. `lab:up` never adds scope rules, it prints them. Mock wipe accepts `.test` too.
+- **Lab, as built (step 2):** nginx `1.30.6-alpine` pinned by index digest; openssl only in a throwaway `cert` stage
+  (the base has no openssl CLI); `ENTRYPOINT nginx -g 'daemon off;'` (skips the image's entrypoint scripts). The
+  container runs as nginx `101:101`, read-only root, cap-drop ALL, no-new-privileges, 128 MB, tmpfs `/tmp` +
+  `/var/cache/nginx`; ports 80/443 via the namespaced sysctl `net.ipv4.ip_unprivileged_port_start=0` (no
+  capability). Image `redwhale-lab:<12 hex of Dockerfile+index.html+nginx.conf>`; container `redwhale-lab`, labels
+  `redwhale.lab=lab` + `redwhale.context=<hash>` (an older build is replaced by `lab:up`). `lab.ts` (pure spec +
+  up/down/status over `ContainerRuntime`), `cli/lab.ts`. Runtime gained `createService(ServiceSpec)` (own strict body
+  type; tool `ContainerCreateBody` unchanged) and `build()` (moved onto the interface; `BuildOptions` in runtime.ts).
+- **Network IP range (added in step 2):** Docker gives dynamic addresses from the start of the pool, so a job could
+  take the lab's .10. The network now has `IPRange` = the subnet's upper half (`172.29.250.128/25`); an existing
+  network without it is refused with the `docker network rm` hint (the step-1 test had made one on this machine; removed).
+- **Wipe guard:** new `isDisposableTarget` (`.example` or `.test`) for `foreignScans`; `isMockTarget` stays `.example`
+  only, because it also validates `--domain`.
 - **Confirmation:** `confirmActive?: boolean` on `POST /jobs` and `/jobs/group`; mode ≠ passive without it → 428
   `{ error, reason: "confirm-required" }`, checked in `orchestrator.enqueue*` before `authorize()` (no job row, no
   scope log). Order: 404 → 400 → 503 → 409 (preflight) → 428 → authorize. For a group, only the tools that accept the
@@ -54,6 +67,6 @@ in docs must work in PowerShell (no `&&`). No DB schema change expected; ask fir
 
 ## Next action
 
-Step 2: `lab/` (Dockerfile pinned nginx alpine digest, nginx.conf, cert at build), `server/src/runner/lab.ts` (pure
-spec, `createService` in runtime), `server/src/cli/lab.ts` + `lab:up/down/status` scripts, `isMockTarget` `.test`,
-`lab/README.md`.
+Step 3: `confirmActive?: boolean` in `jobCreateSchema`/`groupJobCreateSchema` (shared/src/api.ts) + 428 response schema;
+`orchestrator.enqueue*` returns `confirm-required` before `authorize()` (group: only tools that accept the node's
+type); route maps to 428 after preflight; tests (single tool, group, passive needs nothing, no job row/scope log).

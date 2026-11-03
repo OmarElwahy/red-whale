@@ -56,7 +56,8 @@ function walk(root: string, rel: string): string[] {
     .filter(inBuildContext);
 }
 
-function hashFiles(root: string, files: readonly string[]): string {
+/** sha256 over each file's path and content hash, in the given order: a build context's identity. */
+export function hashFiles(root: string, files: readonly string[]): string {
   const h = createHash('sha256');
   for (const f of files) {
     h.update(`${f}\0${createHash('sha256').update(readFileSync(join(root, f))).digest('hex')}\n`);

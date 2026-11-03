@@ -15,7 +15,12 @@ import type { NetworkInfo } from '../src/runner/runtime';
 
 describe('subnet', () => {
   test('default, and the REDWHALE_NET_SUBNET override (canonicalized)', () => {
-    expect(toolsNetwork({})).toEqual({ name: TOOLS_NETWORK, subnet: '172.29.250.0/24', labels: { [LABEL_NETWORK]: 'tools' } });
+    expect(toolsNetwork({})).toEqual({
+      name: TOOLS_NETWORK,
+      subnet: '172.29.250.0/24',
+      ipRange: '172.29.250.128/25',
+      labels: { [LABEL_NETWORK]: 'tools' },
+    });
     expect(toolsNetwork({ REDWHALE_NET_SUBNET: '' }).subnet).toBe(DEFAULT_TOOLS_SUBNET);
     expect(toolsNetwork({ REDWHALE_NET_SUBNET: ' 10.77.0.0/16 ' }).subnet).toBe('10.77.0.0/16');
   });
@@ -34,6 +39,12 @@ describe('subnet', () => {
     expect(() => parseSubnet(value)).toThrow(why);
   });
 
+  test('job containers get addresses from the upper half only (the lab keeps .10)', () => {
+    expect(toolsNetwork({}).ipRange).toBe('172.29.250.128/25');
+    expect(toolsNetwork({ REDWHALE_NET_SUBNET: '10.77.0.0/16' }).ipRange).toBe('10.77.128.0/17');
+    expect(toolsNetwork({ REDWHALE_NET_SUBNET: '192.168.5.16/28' }).ipRange).toBe('192.168.5.24/29');
+  });
+
   test('a host inside the subnet (the lab is .10)', () => {
     expect(hostInSubnet('172.29.250.0/24', 10)).toBe('172.29.250.10');
     expect(hostInSubnet('10.77.0.0/16', 10)).toBe('10.77.0.10');
@@ -44,7 +55,12 @@ describe('subnet', () => {
 
 describe('an existing network', () => {
   const spec = toolsNetwork({});
-  const good: NetworkInfo = { driver: 'bridge', internal: false, subnets: ['172.29.250.0/24'], labels: { [LABEL_NETWORK]: 'tools' } };
+  const good: NetworkInfo = {
+    driver: 'bridge',
+    internal: false,
+    pools: [{ subnet: '172.29.250.0/24', ipRange: '172.29.250.128/25' }],
+    labels: { [LABEL_NETWORK]: 'tools' },
+  };
 
   test('ours, bridge, not internal, same subnet: used as is', () => {
     expect(existingNetworkProblem(spec, good)).toBeNull();
@@ -54,7 +70,9 @@ describe('an existing network', () => {
     [{ labels: {} }, "RED WHALE didn't create it"],
     [{ driver: 'overlay' }, "'overlay' driver"],
     [{ internal: true }, 'internal'],
-    [{ subnets: ['172.30.0.0/24'] }, 'has subnet 172.30.0.0/24, expected 172.29.250.0/24'],
+    [{ pools: [{ subnet: '172.30.0.0/24', ipRange: null }] }, 'has subnet 172.30.0.0/24, expected 172.29.250.0/24'],
+    // made by step 1 of 6C-2, before the lab reserved the lower half
+    [{ pools: [{ subnet: '172.29.250.0/24', ipRange: null }] }, 'from the whole subnet, expected 172.29.250.128/25'],
   ])('%o is refused, with how to fix it', (patch, why) => {
     const problem = existingNetworkProblem(spec, { ...good, ...patch });
     expect(problem).toContain(why);
