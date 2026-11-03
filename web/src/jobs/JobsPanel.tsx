@@ -177,7 +177,17 @@ export function JobsPanel({ className, onPickNode, onShowResults }: JobsPanelPro
                     {job.status}
                   </span>
                 </td>
-                <td className="py-1">{job.tool}</td>
+                <td className="py-1">
+                  {job.tool}
+                  {job.mode !== 'passive' && (
+                    <span
+                      className="ml-1 rounded border border-amber-500/60 px-1 text-[10px] text-amber-400 uppercase"
+                      title="Contacted the target directly (confirmed by the analyst)"
+                    >
+                      {job.mode}
+                    </span>
+                  )}
+                </td>
                 <td className="truncate py-1 pr-2">
                   {job.nodeId === null ? (
                     <span className="font-mono" title="The analyst deleted this node">

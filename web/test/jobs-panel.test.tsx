@@ -37,7 +37,7 @@ function job(over: Partial<Job> = {}): Job {
 }
 
 const JOBS = [
-  job({ id: 3, status: 'running', tool: 'crtsh', finishedAt: null, scanId: null, nodesCreated: null, nodesUpdated: null, exitCode: null }),
+  job({ id: 3, status: 'running', tool: 'httpx', group: 'http', mode: 'active', finishedAt: null, scanId: null, nodesCreated: null, nodesUpdated: null, exitCode: null }),
   job({ id: 2, status: 'failed', tool: 'assetfinder', error: 'result.json does not follow the contract', issues: ['findings[0].value: bad'], scanId: null, nodesCreated: null, nodesUpdated: null }),
   job(),
 ];
@@ -96,6 +96,8 @@ describe('JobsPanel', () => {
     const list = await rows();
     const [running, failed, done] = [at(list, 0), at(list, 1), at(list, 2)];
     expect(within(running).getByText('running')).toBeTruthy();
+    expect(within(running).getByTitle('Contacted the target directly (confirmed by the analyst)').textContent).toBe('active');
+    expect(within(done).queryByTitle(/Contacted the target/)).toBeNull(); // passive jobs get no badge
     expect(within(running).getByRole('button', { name: 'Cancel' })).toBeTruthy();
     expect(within(running).queryByRole('button', { name: 'Show results' })).toBeNull();
     expect(within(failed).getAllByText('result.json does not follow the contract').length).toBeGreaterThan(0);

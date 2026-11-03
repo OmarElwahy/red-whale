@@ -1,4 +1,4 @@
-import type { AggregateNode, GraphNode, GraphResponse, ViewEdge, ViewNode } from '@redwhale/shared';
+import type { AggregateNode, GraphNode, GraphResponse, ToolInfo, ViewEdge, ViewNode } from '@redwhale/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { ApiError, ResponseShapeError } from '@/api/client';
@@ -42,8 +42,9 @@ import { DeleteDialog } from '@/edit/DeleteDialog';
 import { DeletionsPanel } from '@/edit/DeletionsPanel';
 import { forgetDeleted } from '@/api/useLiveUpdates';
 import { HighlightsView } from '@/highlights/HighlightsView';
-import { RunRefused, useRunnerStatus, useStartRun, useTools, type RunRequest } from '@/api/runner';
+import { ConfirmRequired, RunRefused, useRunnerStatus, useStartRun, useTools, type RunRequest } from '@/api/runner';
 import { scopeIsEmpty, useScopeRules, useScopeSettings } from '@/api/scope';
+import { ActiveRunDialog, needsConfirmation, toolsThatRun, type ActiveRunTarget } from '@/jobs/ActiveRunDialog';
 import { JobsPanel } from '@/jobs/JobsPanel';
 import { RunnerIndicator } from '@/jobs/RunnerIndicator';
 import { ScopeBanner, ScopePanel } from '@/scope/ScopePanel';
@@ -261,6 +262,14 @@ export function App() {
   const [adding, setAdding] = useState<{ parent: NodeRef | null; position: { x: number; y: number } | null } | null>(null);
   /** The delete dialog's node or group. */
   const [deleting, setDeleting] = useState<string | null>(null);
+  /** A run that contacts the target, waiting for the analyst's confirmation (asked every time). */
+  const [activeRun, setActiveRun] = useState<{
+    req: RunRequest;
+    label: string;
+    node: ActiveRunTarget;
+    tools: ToolInfo[];
+    group?: { name: string; label: string };
+  } | null>(null);
   useLiveUpdates();
   const liveStatus = useLive((s) => s.status);
   const fresh = useLive((s) => s.fresh);
@@ -409,7 +418,13 @@ export function App() {
         ui.openBottomPanel('jobs');
       },
       onError: (e) => {
-        ui.showNotice(e instanceof RunRefused ? `${label} refused: ${e.message}` : `${label} failed: ${e.message}`);
+        ui.showNotice(
+          e instanceof RunRefused
+            ? `${label} refused: ${e.message}`
+            : e instanceof ConfirmRequired
+              ? `${label} not started: ${e.message}`
+              : `${label} failed: ${e.message}`,
+        );
       },
     });
   };
@@ -470,10 +485,23 @@ export function App() {
       case 'run-tool':
       case 'run-group':
         if (target.type !== 'aggregate' && target.type !== 'more' && name !== undefined) {
-          runTool(
-            action === 'run-tool' ? { kind: 'tool', tool: name, nodeId: target.id } : { kind: 'group', group: name, nodeId: target.id },
-            `${action === 'run-tool' ? name : `group ${name}`} on ${target.label}`,
-          );
+          const req: RunRequest =
+            action === 'run-tool' ? { kind: 'tool', tool: name, nodeId: target.id } : { kind: 'group', group: name, nodeId: target.id };
+          const label = `${action === 'run-tool' ? name : `group ${name}`} on ${target.label}`;
+          const willRun = toolsThatRun(tools.data, req.kind, name, target.type);
+          if (needsConfirmation(willRun)) {
+            // It contacts the target: say exactly what and against what, and wait for "Run active scan".
+            const groupInfo = action === 'run-group' ? tools.data?.groups.find((g) => g.name === name) : undefined;
+            setActiveRun({
+              req,
+              label,
+              node: { id: target.id, type: target.type, value: target.value, label: target.label },
+              tools: willRun,
+              ...(groupInfo ? { group: { name: groupInfo.name, label: groupInfo.label } } : {}),
+            });
+          } else {
+            runTool(req, label);
+          }
         }
         break;
       case 'add-child':
@@ -833,6 +861,20 @@ export function App() {
           }}
           onClose={() => {
             setDeleting(null);
+          }}
+        />
+      )}
+      {activeRun && (
+        <ActiveRunDialog
+          node={activeRun.node}
+          tools={activeRun.tools}
+          {...(activeRun.group ? { group: activeRun.group } : {})}
+          onConfirm={() => {
+            setActiveRun(null);
+            runTool({ ...activeRun.req, confirmActive: true }, activeRun.label);
+          }}
+          onClose={() => {
+            setActiveRun(null);
           }}
         />
       )}

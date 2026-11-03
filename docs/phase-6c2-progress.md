@@ -17,7 +17,7 @@ in docs must work in PowerShell (no `&&`). No DB schema change expected; ask fir
 | 2 | Lab image (`lab/`) + `pnpm lab:up/down/status` (server CLI through the runtime) + `lab/README.md` + `.test` wipe allowance | done |
 | 3 | Server confirmation gate (428 `confirm-required`) + tests + `shared/` API schema | done |
 | 4 | `http` group + httpx (Dockerfile, tool.json with `contacts`, run.py, `tech_value`, `{targetType}`, lab fixture, `tools:check`) | done |
-| 5 | UI: active-run confirmation dialog, Run tool menu wiring, Jobs tab check | |
+| 5 | UI: active-run confirmation dialog, Run tool menu wiring, Jobs tab check | done |
 | 6 | Real-Docker end-to-end test; docs (architecture §2/§6/§11/§13, team-guide, handoff); manual checklist below | |
 
 ## Decisions (approved plan + user's answers)
@@ -87,12 +87,20 @@ in docs must work in PowerShell (no `&&`). No DB schema change expected; ask fir
 - **defs.ts:** `{targetType}` (at most once, whole item, not the program); `contacts` (max 300; required unless passive;
   only `{target}`). `spec.ts` fills `{targetType}` and re-checks it against `TARGETABLE_TYPES`. `toolInfoSchema.contacts`
   (nullable). Python `main(..., needs_target_type=True)` + `--target-type` (choices = targetable types), exit 2 without it.
+- **UI, as built (step 5):** `web/src/jobs/ActiveRunDialog.tsx` (+ pure `toolsThatRun`, `needsConfirmation`,
+  `strongestMode`, `canonicalValue` = shared `canonicalTarget`, `contactsText`). App.tsx: a Run tool ▸ click whose
+  tools-that-would-run include a non-passive one opens the dialog (menu blocking unchanged); **Run active scan** →
+  `startRun({ ...req, confirmActive: true })`; Cancel / Escape / backdrop close. Run is disabled until GET
+  `/api/scope/check?mode=active` (new `useScopeDecision`, key under `['api','scope']` so `scope.changed` refetches)
+  answers `in`; otherwise it says the server would refuse. Cancel has focus. `startRun` sends `confirmActive` only when
+  true and maps 428 → `ConfirmRequired`. Jobs tab: a non-passive job shows a mode badge next to the tool.
 - **Images on this machine:** `redwhale-tools/http:b024501487e6`, `redwhale-tools/subdomain:750752d2440e` (rebuilt:
   `redwhale_tool.py` changed), `redwhale-lab:664379ba014e`.
 
 ## Next action
 
-Step 5 (UI): `web/src/api/runner.ts` (send `confirmActive`, map 428 to a typed error), an `ActiveRunDialog`
-(tool/group, mode, canonical target, `contacts` with `{target}` filled, external, GET /scope/check?mode=active decision
-+ rule; Run active scan / Cancel; every time), wire it from the Run tool ▸ items in `web/src/menu/items.ts` + App.tsx
-`runTool`; tests in web/test; Jobs tab check (mode shown for active jobs).
+Step 6: real-Docker e2e test (`server/test/httpx.e2e.test.ts`, skipped without Docker / the http or lab image):
+lab up → scope rules (domain + ip) + passive-only off → run httpx on a subdomain node `lab.redwhale.test` through the
+orchestrator with ingest (confirmActive) → assert url/technology nodes, the http:// url 301 + location data, and no
+lab log line with host=elsewhere.redwhale.test. Then docs: architecture §2/§6/§11/§13, team-guide ({targetType},
+contacts, tech_value, active tools, lab), CLAUDE.md commands (lab:*), handoff status, manual checklist here.

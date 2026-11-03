@@ -10,6 +10,7 @@ import {
   type ScopeAction,
   type ScopeKind,
   type ScopeMode,
+  type ScopeCheckResponse,
   type ScopeRule,
   type ScopeSettings,
   type ScopeSource,
@@ -93,6 +94,20 @@ export function usePatchScopeSettings() {
 }
 
 /** The "test a target" box, on submit only: POST, so the server logs it (source `check`). */
+/**
+ * What the scope says about a target right now, from GET /scope/check: NOT logged (the active-run dialog asks it
+ * on open; only the real run is logged, by the server). null input: nothing to ask yet.
+ */
+export function useScopeDecision(input: { type: NodeType; value: string; mode: ScopeMode } | null): UseQueryResult<ScopeCheckResponse> {
+  const params = input ? new URLSearchParams({ type: input.type, value: input.value, mode: input.mode }).toString() : '';
+  return useQuery({
+    queryKey: queryKeys.scopeCheck(input?.type ?? '', input?.value ?? '', input?.mode ?? ''),
+    queryFn: ({ signal }) => getJson(`/api/scope/check?${params}`, scopeCheckResponseSchema, { signal }),
+    enabled: input !== null,
+    staleTime: 0,
+  });
+}
+
 export function useCheckTarget() {
   const client = useQueryClient();
   return useMutation({

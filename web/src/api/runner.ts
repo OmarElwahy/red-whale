@@ -2,6 +2,7 @@
 // Every run is decided by the server (authorize() at queueing and again right before the container starts); what
 // the UI shows as disabled is only advice.
 import {
+  jobConfirmRequiredResponseSchema,
   jobDetailResponseSchema,
   jobRefusedResponseSchema,
   jobsCreatedResponseSchema,
@@ -71,13 +72,30 @@ export class RunRefused extends Error {
   }
 }
 
-export type RunRequest = { kind: 'tool'; tool: string; nodeId: string } | { kind: 'group'; group: string; nodeId: string };
+/** The server wants the analyst's confirmation first (428): the run contacts the target. Nothing was stored. */
+export class ConfirmRequired extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ConfirmRequired';
+  }
+}
 
-/** POST /api/jobs or /api/jobs/group. A 403 becomes RunRefused (with the reason); other errors stay ApiError. */
+/** `confirmActive`: the analyst confirmed it in the active-run dialog (needed for any tool that isn't passive). */
+export type RunRequest = ({ kind: 'tool'; tool: string; nodeId: string } | { kind: 'group'; group: string; nodeId: string }) & {
+  confirmActive?: boolean;
+};
+
+/**
+ * POST /api/jobs or /api/jobs/group. A 403 becomes RunRefused (with the reason), a 428 ConfirmRequired; other errors
+ * stay ApiError.
+ */
 export async function startRun(req: RunRequest, options: { fetch?: Fetch } = {}): Promise<Job[]> {
   const doFetch = options.fetch ?? fetch;
+  const confirm = req.confirmActive === true ? { confirmActive: true } : {};
   const [path, payload] =
-    req.kind === 'tool' ? ['/api/jobs', { tool: req.tool, nodeId: req.nodeId }] : ['/api/jobs/group', { group: req.group, nodeId: req.nodeId }];
+    req.kind === 'tool'
+      ? ['/api/jobs', { tool: req.tool, nodeId: req.nodeId, ...confirm }]
+      : ['/api/jobs/group', { group: req.group, nodeId: req.nodeId, ...confirm }];
   const res = await doFetch(path, {
     method: 'POST',
     headers: { accept: 'application/json', 'content-type': 'application/json' },
@@ -86,6 +104,10 @@ export async function startRun(req: RunRequest, options: { fetch?: Fetch } = {})
   if (res.status === 403) {
     const refused = jobRefusedResponseSchema.safeParse(await res.json().catch(() => undefined));
     if (refused.success) throw new RunRefused(refused.data.error, refused.data.jobs);
+  }
+  if (res.status === 428) {
+    const needed = jobConfirmRequiredResponseSchema.safeParse(await res.json().catch(() => undefined));
+    if (needed.success) throw new ConfirmRequired(needed.data.error);
   }
   if (!res.ok) {
     const body = z.object({ error: z.string() }).safeParse(await res.json().catch(() => undefined));
