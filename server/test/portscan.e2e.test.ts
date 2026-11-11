@@ -98,9 +98,9 @@ describe.skipIf(!ready)('dnsx, httpx and naabu against the local lab (real Docke
     expect(naabu?.argv).toEqual(expect.arrayContaining(['--target', ip]));
 
     // 5. the graph
-    const port = (p: number) => nodeId('port', `${ip}:${p}/tcp`);
+    const port = (p: number) => nodeId('port', `${ip}:${String(p)}/tcp`);
     for (const p of LAB_PORTS) {
-      expect(db.$client.prepare('SELECT 1 FROM nodes WHERE id = ?').get(port(p)), `port ${p}`).toBeDefined();
+      expect(db.$client.prepare('SELECT 1 FROM nodes WHERE id = ?').get(port(p)), `port ${String(p)}`).toBeDefined();
     }
     expect(edge(ipNode, 'has_port', port(80))).toMatchObject({ confidence: 'corroborated', sourceCount: 2 });
     expect(edge(ipNode, 'has_port', port(443))).toMatchObject({ confidence: 'corroborated', sourceCount: 2 });

@@ -25,7 +25,7 @@ DNSX = "/usr/local/bin/dnsx"  # absolute: never whatever else is called dnsx on 
 VERSION_COMMAND = [DNSX, "-version"]
 
 
-def build_command(target):
+def build_command(target, target_type=None):  # the type isn't needed here: only the parser uses it
     # -l takes "file or comma separated or stdin" (v1.3.1): a target that is an existing path or holds a comma would
     # make dnsx read a file or resolve several names. Hostnames have neither; refuse anything that does.
     if "," in target or os.path.exists(target):

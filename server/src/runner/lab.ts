@@ -188,7 +188,7 @@ export async function labStatus(runtime: ContainerRuntime, network: NetworkSpec,
     io.out(`container  ${c.name}  ${c.state}${stale}`);
   }
   io.out(`address    ${labIp(network)}  as ${LAB_HOST}, ${LAB_REDIRECT_HOST}  (no host ports)`);
-  io.out(`ports      ${LAB_PORTS.map((p) => `${p}/tcp`).join(', ')}  (tools network only)`);
+  io.out(`ports      ${LAB_PORTS.map((p) => `${String(p)}/tcp`).join(', ')}  (tools network only)`);
   io.out('');
   for (const line of scopeHint(network)) io.out(line);
   return 0;

@@ -24,7 +24,7 @@ VERSION_COMMAND = [HTTPX, "-version"]
 DEFAULT_PORTS = {"http": "80", "https": "443"}
 
 
-def build_command(target):
+def build_command(target, target_type=None):  # the type isn't needed here: only the parser uses it
     # Flags checked against `httpx -h` of v1.12.0 (docs/phase-6c2-progress.md has the final argv).
     #   -u target -p http:80,https:443 -nf   probe exactly http://target:80 and https://target:443, report both
     #   (no -fr)                             never follow a redirect (httpx's default); its Location is kept as data

@@ -1,0 +1,13 @@
+{
+  "name": "nmap",
+  "group": "ports",
+  "label": "nmap",
+  "description": "Nmap service/version detection: what runs on the IP's top 100 TCP ports (or on one port). Connect scan, no host discovery, no OS detection, no scripts beyond -sV's own.",
+  "mode": "active",
+  "accepts": ["ip", "port"],
+  "argv": ["python3", "-I", "/opt/redwhale/ports/nmap/run.py", "--target", "{target}", "--target-type", "{targetType}", "--out", "/out"],
+  "timeoutSec": 600,
+  "external": [],
+  "contacts": "connects to TCP ports of {target} (the top 100, or the one port; at most 50 probes per second, connect scan) and sends service-detection probes, including nmap's built-in version-detection scripts (no other scripts)",
+  "outputDir": "/out"
+}

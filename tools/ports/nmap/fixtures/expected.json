@@ -1,0 +1,106 @@
+{
+  "target": "198.18.0.10",
+  "target_type": "ip",
+  "status": "success",
+  "errors": [],
+  "findings": [
+    {
+      "type": "port",
+      "value": "198.18.0.10:22/tcp",
+      "parent": {
+        "type": "ip",
+        "value": "198.18.0.10"
+      },
+      "relation": "has_port",
+      "data": {
+        "protocol": "tcp",
+        "service": "ssh",
+        "product": "OpenSSH",
+        "version": "9.6p1",
+        "extrainfo": "protocol 2.0"
+      }
+    },
+    {
+      "type": "port",
+      "value": "198.18.0.10:443/tcp",
+      "parent": {
+        "type": "ip",
+        "value": "198.18.0.10"
+      },
+      "relation": "has_port",
+      "data": {
+        "protocol": "tcp",
+        "service": "http",
+        "product": "nginx",
+        "version": "1.30.6",
+        "tunnel": "ssl"
+      }
+    },
+    {
+      "type": "port",
+      "value": "198.18.0.10:80/tcp",
+      "parent": {
+        "type": "ip",
+        "value": "198.18.0.10"
+      },
+      "relation": "has_port",
+      "data": {
+        "protocol": "tcp",
+        "service": "http",
+        "product": "nginx",
+        "version": "1.30.6"
+      }
+    },
+    {
+      "type": "port",
+      "value": "198.18.0.10:8080/tcp",
+      "parent": {
+        "type": "ip",
+        "value": "198.18.0.10"
+      },
+      "relation": "has_port",
+      "data": {
+        "protocol": "tcp",
+        "service": "http",
+        "product": "nginx",
+        "version": "1.30.6"
+      }
+    },
+    {
+      "type": "technology",
+      "value": "nginx/1.30.6",
+      "parent": {
+        "type": "port",
+        "value": "198.18.0.10:443/tcp"
+      },
+      "relation": "uses_technology"
+    },
+    {
+      "type": "technology",
+      "value": "nginx/1.30.6",
+      "parent": {
+        "type": "port",
+        "value": "198.18.0.10:80/tcp"
+      },
+      "relation": "uses_technology"
+    },
+    {
+      "type": "technology",
+      "value": "nginx/1.30.6",
+      "parent": {
+        "type": "port",
+        "value": "198.18.0.10:8080/tcp"
+      },
+      "relation": "uses_technology"
+    },
+    {
+      "type": "technology",
+      "value": "openssh/9.6p1",
+      "parent": {
+        "type": "port",
+        "value": "198.18.0.10:22/tcp"
+      },
+      "relation": "uses_technology"
+    }
+  ]
+}

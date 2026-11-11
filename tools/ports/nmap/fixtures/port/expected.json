@@ -1,0 +1,33 @@
+{
+  "target": "198.18.0.10:22/tcp",
+  "target_type": "port",
+  "status": "success",
+  "errors": [],
+  "findings": [
+    {
+      "type": "port",
+      "value": "198.18.0.10:22/tcp",
+      "parent": {
+        "type": "ip",
+        "value": "198.18.0.10"
+      },
+      "relation": "has_port",
+      "data": {
+        "protocol": "tcp",
+        "service": "ssh",
+        "product": "OpenSSH",
+        "version": "9.6p1",
+        "extrainfo": "protocol 2.0"
+      }
+    },
+    {
+      "type": "technology",
+      "value": "openssh/9.6p1",
+      "parent": {
+        "type": "port",
+        "value": "198.18.0.10:22/tcp"
+      },
+      "relation": "uses_technology"
+    }
+  ]
+}
