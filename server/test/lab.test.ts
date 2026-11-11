@@ -1,11 +1,15 @@
 // The local lab (docs/architecture.md §11, lab/README.md): its container spec (pure) and lab:up/down/status through
 // the fake runtime. The real container is exercised by the httpx end-to-end test (needs Docker).
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { LABEL_CONTEXT } from '../src/runner/catalog';
 import {
   LABEL_LAB,
   LAB_CONTAINER,
+  LAB_DIR,
   LAB_FILES,
+  LAB_PORTS,
   LAB_HOST,
   LAB_REDIRECT_HOST,
   labDown,
@@ -151,5 +155,12 @@ describe('lab:up / lab:down / lab:status', () => {
     expect(after.lines).toContain(`image      ${labImage().ref}  built`);
     expect(after.lines).toContain('container  redwhale-lab  running');
     expect(after.lines).toContain('address    172.29.250.10  as lab.redwhale.test, elsewhere.redwhale.test  (no host ports)');
+    expect(after.lines).toContain('ports      80/tcp, 443/tcp, 8080/tcp  (tools network only)');
+  });
+
+  test('nginx listens on exactly the ports the lab reports', () => {
+    const conf = readFileSync(join(LAB_DIR, 'nginx.conf'), 'utf8');
+    const listens = [...conf.matchAll(/^\s*listen\s+(\d+)/gm)].map((m) => Number(m[1]));
+    expect(listens).toEqual([...LAB_PORTS]);
   });
 });
