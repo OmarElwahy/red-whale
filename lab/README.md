@@ -10,8 +10,12 @@ them**: it publishes no ports on your machine, so you can't open it in your brow
 | `https://lab.redwhale.test/` | `200`, page title `Northwind Lab`, self-signed certificate |
 | `http://lab.redwhale.test:8080/` | `200`, plain text `redwhale lab 8080` (a port only a port scanner like naabu finds; httpx probes 80/443) |
 | all three | `Server: nginx/1.30.6` and `X-Powered-By: PHP/8.3.12` (something for tech detection to find) |
+| `lab.redwhale.test:22` (TCP) | the banner `SSH-2.0-OpenSSH_9.6p1`, then the connection closes (for nmap's service detection) |
 
-So the lab listens on TCP **80, 443 and 8080** (`pnpm lab:status` lists them), on the tools network only.
+Port 22 is **not a real SSH server**: nginx only sends that one line (its `stream` `return`) and hangs up. There is
+no key exchange, no login and nothing behind it; it exists so `nmap -sV` has a service to name.
+
+So the lab listens on TCP **22, 80, 443 and 8080** (`pnpm lab:status` lists them), on the tools network only.
 
 The lab's address is fixed: `172.29.250.10` (host `.10` of the tools subnet, `172.29.250.0/24` by default). Job
 containers get addresses from the upper half of the subnet only, so they never take it. `elsewhere.redwhale.test`
@@ -72,7 +76,8 @@ terminal where you run `pnpm dev`.
 ## Files
 
 - `Dockerfile`: nginx alpine pinned by digest; the certificate is generated at build time (no key in the repo).
-- `nginx.conf`: the three servers above, logging `host=<Host>` for every request.
+- `nginx.conf`: the three web servers above, logging `host=<Host>` for every request, and the port-22 banner
+  (logged as `ssh <address> ...`).
 - `index.html`: the page.
 
 The image is tagged `redwhale-lab:<hash of these three files>`, so editing one makes `lab:up` rebuild it. The

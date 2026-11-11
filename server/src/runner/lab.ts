@@ -20,8 +20,11 @@ export const LAB_HOST = 'lab.redwhale.test';
 export const LAB_REDIRECT_HOST = 'elsewhere.redwhale.test';
 /** The lab's host number in the tools subnet (.10 of the default /24); below the dynamic range. */
 export const LAB_HOST_OFFSET = 10;
-/** The TCP ports nginx listens on (lab/nginx.conf): 80 redirects, 443 the page, 8080 a plain page. */
-export const LAB_PORTS = [80, 443, 8080] as const;
+/**
+ * The TCP ports nginx listens on (lab/nginx.conf): 22 a fake SSH banner (no real SSH), 80 redirects, 443 the page,
+ * 8080 a plain page.
+ */
+export const LAB_PORTS = [22, 80, 443, 8080] as const;
 /** nginx's own user in the image. */
 export const LAB_USER = '101:101';
 
@@ -56,7 +59,7 @@ export function labSpec(image: { ref: string; hash: string }, network: NetworkSp
           '/tmp': 'rw,noexec,nosuid,nodev,size=16m',
           '/var/cache/nginx': 'rw,noexec,nosuid,nodev,size=16m',
         },
-        // Lets nginx (not root) listen on 80/443 (and 8080) inside its own network namespace; no capability needed.
+        // Lets nginx (not root) listen on 22/80/443 (and 8080) inside its own network namespace; no capability needed.
         Sysctls: { 'net.ipv4.ip_unprivileged_port_start': '0' },
         NetworkMode: network.name,
         PortBindings: {},
@@ -139,6 +142,7 @@ export async function labUp(runtime: ContainerRuntime, network: NetworkSpec, io:
   io.out(`  http://${LAB_HOST}/   301 to https://${LAB_REDIRECT_HOST}/ (a redirect tools must not follow)`);
   io.out(`  https://${LAB_HOST}/  the page (self-signed certificate)`);
   io.out(`  http://${LAB_HOST}:8080/  a plain page (a port only a port scan finds)`);
+  io.out(`  ${LAB_HOST}:22         a fake SSH banner, OpenSSH 9.6p1 (no real SSH)`);
   io.out('');
   for (const line of scopeHint(network)) io.out(line);
   return 0;

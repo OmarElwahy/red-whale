@@ -155,7 +155,7 @@ describe('lab:up / lab:down / lab:status', () => {
     expect(after.lines).toContain(`image      ${labImage().ref}  built`);
     expect(after.lines).toContain('container  redwhale-lab  running');
     expect(after.lines).toContain('address    172.29.250.10  as lab.redwhale.test, elsewhere.redwhale.test  (no host ports)');
-    expect(after.lines).toContain('ports      80/tcp, 443/tcp, 8080/tcp  (tools network only)');
+    expect(after.lines).toContain('ports      22/tcp, 80/tcp, 443/tcp, 8080/tcp  (tools network only)');
   });
 
   test('nginx listens on exactly the ports the lab reports', () => {
