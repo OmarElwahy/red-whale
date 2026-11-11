@@ -30,8 +30,8 @@ Dropped: `cytoscape-expand-collapse` (groups are server-side).
 
 ## Status
 
-Main has everything through 6C-2 (5D, 6B, 6C-1, graph editing and 6C-2 were merged together). 6C-3 is on branch
-`phase-6c3` (from main, on GitHub), **not merged** until my manual check (checklist in `docs/phase-6c3-progress.md`).
+Main has everything through 6C-3. 6C-4 is on branch `phase-6c4` (from main, on GitHub), **not merged** until my
+manual check (checklist in `docs/phase-6c4-progress.md`).
 
 | Phase | What | Status |
 |---|---|---|
@@ -45,7 +45,8 @@ Main has everything through 6C-2 (5D, 6B, 6C-1, graph editing and 6C-2 were merg
 | 6C-1 | Orchestrator (hardened containers, SQLite job queue, scope re-check before each start, Jobs tab, Docker chip) + subdomain enumeration group: subfinder, assetfinder, findomain, crt.sh; `pnpm tools:build`, `pnpm tools:check` | ✅ done (on main) |
 | Edit | Graph editing: add nodes by hand (tool `manual`), permanent delete (node / subtree / group) with a "Deleted" log | ✅ done (on main) |
 | 6C-2 | First active tool: tools network `redwhale-tools`, local lab `lab.redwhale.test` (`pnpm lab:up/down/status`), 428 + confirmation dialog for active runs, `http` group with httpx (never follows redirects); `{targetType}`, `contacts`, `tech_value` | ✅ done (on main) |
-| 6C-3 | `dns` group with dnsx (passive: A/AAAA/CNAME through the system resolver, never brute-force) and `ports` group with naabu (active, IPs only: connect scan of the top 100 TCP ports, no capability); lab also on 8080; tools that resolve names refuse to run without a system resolver | ✅ done · manual check pending (checklist in `docs/phase-6c3-progress.md`) |
+| 6C-3 | `dns` group with dnsx (passive: A/AAAA/CNAME through the system resolver, never brute-force) and `ports` group with naabu (active, IPs only: connect scan of the top 100 TCP ports, no capability); lab also on 8080; tools that resolve names refuse to run without a system resolver | ✅ done (on main) |
+| 6C-4 | nmap in the `ports` group (active, an ip or a port: connect scan + `-sV`, no other scripts/OS/UDP; Debian-pinned package); lab answers on TCP 22 with a fake SSH banner; typed command builders `command(target, target_type)` | ✅ done · manual check pending (checklist in `docs/phase-6c4-progress.md`) |
 
 ## How I work with Claude Code
 
@@ -60,7 +61,7 @@ Main has everything through 6C-2 (5D, 6B, 6C-1, graph editing and 6C-2 were merg
 
 ## Next up
 
-1. Tool batches, in order: ~~dnsx → naabu~~ (6C-3) → nmap → katana + gau → nuclei → wafw00f + testssl → the rest (active ones
+1. Tool batches, in order: ~~dnsx → naabu~~ (6C-3) → ~~nmap~~ (6C-4) → katana + gau → nuclei → wafw00f + testssl → the rest (active ones
    use `contacts`, the confirmation and the lab; scripts that name the target as a parent use `{targetType}`).
 2. Redirect following stays out until 6D (httpx keeps the `Location` as data).
 3. **6D** presets + auto-chaining (redirect-following tools re-check scope on every hop) → **6E** scan diffing →
@@ -93,10 +94,15 @@ Main has everything through 6C-2 (5D, 6B, 6C-1, graph editing and 6C-2 were merg
   refuse to run without one (`needs_resolvers=True`; replays skip it). dnsx never reports its target (resolving the
   name you were given isn't discovery): `ip` + `resolves_to`, the CNAME in the ip's data; dangling CNAMEs are a later
   improvement. naabu takes one IP only, connect scan, no host discovery, container hardening unchanged.
+- **nmap (6C-4):** mode from `{targetType}` (builders get `command(target, target_type)` when
+  `needs_target_type=True`); connect scan + `-sV` as user 10001 with no capability; `-sV` runs nmap's 47 `version`
+  scripts and `contacts` says so; never `-sC`/`--script`/`-O`/`-A`/`-sU`. Installed from Debian, exact version
+  pinned (the one exception to checksummed releases; bump `NMAP_VERSION` when Debian replaces it). nmap's and
+  httpx's `nginx/1.30.6` are one node (corroborated).
 
 ## Open items
 
-- **Manual check** for 6C-3 (`docs/phase-6c3-progress.md`), then merge `phase-6c3`.
+- **Manual check** for 6C-4 (`docs/phase-6c4-progress.md`), then merge `phase-6c4`.
 - **Teammates' real scripts** not yet tested end to end (`pnpm tools:check` → run in the group → check the graph).
 - **Technology spelling:** `tech_value()` fixes case/spaces, but different tools still name things differently
   (`iis` vs `microsoft-iis`), so corroboration can silently fail: maybe an alias table later.

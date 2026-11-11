@@ -14,7 +14,7 @@ tools, presets/auto-chaining, schema changes. Commands in docs must work in Powe
 1. ✅ Lab banner on TCP 22 + README/status.
 2. ✅ nmap in the `ports` group (Dockerfile, tool.json with `contacts`, run.py, the library's type-aware command
    builder, fixtures for ip and port mode, unit tests, `tools:check`).
-3. ⬜ Real-Docker e2e test; docs: architecture §11/§13, team-guide (nmap as the XML example, the apt-pin exception,
+3. ✅ Real-Docker e2e test; docs: architecture §11/§13, team-guide (nmap as the XML example, the apt-pin exception,
    the new builder signature), handoff status; manual check list in this file.
 
 ## Decisions (from the user, 2026-11-11)
@@ -101,13 +101,90 @@ tools, presets/auto-chaining, schema changes. Commands in docs must work in Powe
     host timeout; another host; nmap's own error; the port-mode fixture. Server tests that list the repo's tools
     now include nmap (and used `nmap` as their "unknown tool" name: now `no-such-tool`).
   - Lint: fixed three pre-existing `restrict-template-expressions` errors (`LAB_PORTS` in lab.ts and the naabu e2e).
-  - One full `pnpm test` run had `tools-fixtures > every tool in the repo passes` fail (output not captured); it
-    passed alone, in the next full run and in 3 repeated runs. Watch for it.
+  - `tools-fixtures > every tool in the repo passes` failed in some full runs: "Test timed out in 5000ms" (Vitest's
+    default). `check --all` replays 8 tools and runs their unit tests, which under full-suite load (three real-Docker
+    e2e suites in parallel) passes 5 s. Fixed in step 3: that test has a 120 s timeout.
+
+- **Step 3.**
+  - `server/test/nmap.e2e.test.ts` (real Docker; skipped without Docker or the `http`/`ports`/lab images): lab up;
+    seed ip `172.29.250.10` and subdomain `lab.redwhale.test`; the two scope rules; passive-only off. nmap on the ip
+    without `confirmActive` → `confirm-required`; confirmed → succeeds, argv has `--target-type ip`, the scan's
+    command has `-sT -Pn -n -sV --unprivileged` and `--top-ports 100 -oX -`, none of the forbidden flags. Ports 22,
+    80, 443, 8080 (`has_port`, seen by nmap); port 22 data ssh / OpenSSH / 9.6p1; 443 `tunnel: ssl`;
+    `nginx/1.30.6` (on 80/443/8080) and `openssh/9.6p1` technologies, discovered. **Added:** nmap on the port-22
+    node (confirmed): argv `--target-type port`, command `-p 22`. Then httpx on `lab.redwhale.test`: `nginx/1.30.6`
+    is **corroborated** (httpx + nmap): the two tools' spellings match, no alias. Passes (≈ 30 s).
+  - Rebuilt `http` and `dns` (their run.py changed: the builder signature); `portscan.e2e` (naabu, with 22 now in
+    the lab) and `httpx.e2e` still pass.
+  - Docs: architecture §11 (lab port 22, the nmap install exception, typed builders, the `ports` group) and §13
+    (seven rows: lab 22, typed builders, the apt pin + bump rule, the final argv and timing, the 47 version scripts,
+    findings, fixtures); team-guide (nmap row in "copy the closest", typed builder signature, XML parsing, the
+    apt-pin exception in "what to send"); handoff (status: main through 6C-3, 6C-4 on its branch; key decision;
+    open item = this manual check); `tools/ports/README.md` (nmap section).
 
 ## Next action
 
-Step 3: `server/test/nmap.e2e.test.ts` (follow `portscan.e2e.test.ts`): lab up, seed ip 172.29.250.10, scope rules,
-passive-only off; nmap without confirm → confirm-required; confirmed run; ports 22/80/443/8080, port 22 data
-ssh/OpenSSH/9.6p1, nginx technology; then httpx on lab.redwhale.test and `nginx/1.30.6` corroborated (if spellings
-differ: report both values to the user, no alias). Then docs (architecture §11/§13, team-guide, handoff) and the
-manual check list.
+All three steps done. Wait for the user's manual check (below), then they merge `phase-6c4`. Don't start the next
+tool batch (katana + gau) unasked.
+
+## Manual check (PowerShell, from the repo root)
+
+**Setup** (proves: the image builds with the pinned Debian nmap; the lab has its new port; fixtures replay offline):
+
+1. `git switch phase-6c4`, then `pnpm install`.
+2. `pnpm tools:build`: rebuilds `ports` (nmap added), `http` and `dns` (the helper changed: builders get the type).
+   The `ports` log shows apt installing `nmap (7.95+dfsg-3)` and `nmap-common (7.95+dfsg-3)`.
+3. `pnpm lab:up`: rebuilds the lab (nginx.conf changed). Its output now lists `lab.redwhale.test:22  a fake SSH
+   banner, OpenSSH 9.6p1 (no real SSH)`.
+4. `pnpm lab:status`: shows `ports      22/tcp, 80/tcp, 443/tcp, 8080/tcp  (tools network only)`.
+   `docker port redwhale-lab` prints nothing (still no host ports).
+5. `pnpm tools:check --all`: `✓ all 8 passed` (nmap replays its ip fixture and runs `test_nmap.py`, which replays
+   the port fixture; no Docker or network needed).
+6. `pnpm dev`, open http://127.0.0.1:5173.
+
+**nmap on an ip, active** (proves: the confirmation names the version scripts; service detection; no capability):
+
+7. Scope panel: `include domain lab.redwhale.test` and `include ip 172.29.250.10` (add them if they're gone).
+   Passive-only **off**.
+8. Canvas right-click ▸ Add node… ▸ ip `172.29.250.10` (or reuse it). Right-click it ▸ Run tool ▸ **nmap**: the
+   dialog shows ACTIVE, target `ip 172.29.250.10`, "Contacts the target: connects to TCP ports of 172.29.250.10 (the
+   top 100, or the one port; at most 50 probes per second, connect scan) and sends service-detection probes,
+   including nmap's built-in version-detection scripts (no other scripts)", "External services: none", **In scope**.
+9. **Run active scan**: the job succeeds in about 15–20 s. The graph: `:22/tcp`, `:80/tcp`, `:443/tcp`, `:8080/tcp`
+   under the ip. Select `:22/tcp`: data `service ssh`, `product OpenSSH`, `version 9.6p1`, `extrainfo protocol 2.0`.
+   `:443/tcp` has `tunnel ssl`. Technology nodes `openssh/9.6p1` (under 22) and `nginx/1.30.6` (under 80, 443, 8080),
+   both discovered.
+10. The Jobs tab ▸ the nmap job: the scan's command is `/usr/bin/nmap -sT -Pn -n -sV --unprivileged --noninteractive
+    --max-rate 50 --max-retries 1 --host-timeout 480s --top-ports 100 -oX - 172.29.250.10`: no `-sC`, `--script`,
+    `-O`, `-A`, `-sU`.
+11. `docker logs redwhale-lab`: lines `ssh 172.29.250.x 200 23` (nmap read the banner) and the version scripts' HTTP
+    requests (`/HNAP1`, `/evox/about`, `POST /sdk`); **no** `host=elsewhere.redwhale.test` line.
+
+**nmap on a port** (proves: the mode comes from the node type; only that port is scanned):
+
+12. Right-click `172.29.250.10:22/tcp` ▸ Run tool ▸ nmap ▸ Run active scan. The job's command ends
+    `-p 22 -oX - 172.29.250.10`; nothing new in the graph (the Jobs tab says nothing new / updated).
+13. Refusal without nmap (no Docker needed):
+    `py -3 tools/ports/nmap/run.py --target 172.29.250.10 --target-type port --out $env:TEMP\rw-nmap`
+    then `Get-Content $env:TEMP\rw-nmap\result.json`: `"status": "failed"`, the error says a port target must be
+    `ip:port/tcp`; nmap never ran (no "not found" error).
+
+**Corroboration with httpx** (proves: one spelling of a technology across tools):
+
+14. Add (or reuse) subdomain `lab.redwhale.test`, Run tool ▸ **httpx** (confirm). Select `nginx/1.30.6`:
+    **corroborated**, 2 tools (httpx, nmap). `openssh/9.6p1` stays discovered (nmap only).
+
+**Refusals and the gate** (proves: scope and confirmation still decide):
+
+15. Scope panel: remove `include ip 172.29.250.10`. Run tool ▸ nmap on the ip and on `:22/tcp`: disabled (out of
+    scope; a port is judged by its IP). Add the rule back.
+16. Copy the ip node's ID from its side panel, then:
+    `Invoke-WebRequest -Method Post -Uri http://127.0.0.1:4100/api/jobs -ContentType application/json -Body '{"tool":"nmap","nodeId":"<id>"}'`
+    fails with `(428)`; no job, no scope log entry.
+
+**Nothing broken:**
+
+17. naabu on the ip still works and now also finds `:22/tcp` (it's in the top 100); `:22/tcp` becomes corroborated
+    (naabu + nmap).
+18. `pnpm lab:down`, then `pnpm lab:status`: container none, image still built.
+19. `pnpm mock` still runs without `--force` after the lab scans.

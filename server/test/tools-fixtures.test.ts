@@ -87,11 +87,13 @@ describe.skipIf(!python)('tools/check.py (pnpm tools:check)', () => {
     return dir;
   }
 
+  // Replays every tool and runs every tool's unit tests: well past Vitest's 5 s default when the full suite (and the
+  // real-Docker e2e tests) run in parallel.
   test('every tool in the repo passes', () => {
     const r = check(TOOLS_DIR, ['--all']);
     expect(r.code, r.out).toBe(0);
     expect(r.out).toContain('✓ all 8 passed');
-  });
+  }, 120_000);
 
   test('a parser change that loses findings fails, naming them', () => {
     const dir = copy();
