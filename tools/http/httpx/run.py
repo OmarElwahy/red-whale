@@ -12,36 +12,16 @@ Status code, title, web server and a redirect's Location go in the url's data. A
 httpx is run without -fr, so it never follows one, and we never report the other host.
 """
 
-import ipaddress
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
-from redwhale_tool import json_lines, main, port_value, tech_value  # noqa: E402
+from redwhale_tool import json_lines, main, port_value, resolver_args, tech_value  # noqa: E402
 
 TOOL = "httpx"
 HTTPX = "/usr/local/bin/httpx"  # absolute: never whatever else is called httpx on PATH
 VERSION_COMMAND = [HTTPX, "-version"]
 DEFAULT_PORTS = {"http": "80", "https": "443"}
-
-
-def resolvers(path="/etc/resolv.conf"):
-    """The machine's own DNS servers (in a job container: Docker's 127.0.0.11). Without -r, httpx also asks public
-    resolvers (8.8.8.8, 1.1.1.1, ...): outside services the target's name would leak to. [] if there's no file."""
-    found = []
-    try:
-        with open(path, encoding="utf-8") as fh:
-            for line in fh:
-                parts = line.split()
-                if len(parts) >= 2 and parts[0] == "nameserver":
-                    try:
-                        ip = ipaddress.ip_address(parts[1])
-                    except ValueError:
-                        continue
-                    found.append(f"[{ip}]:53" if ip.version == 6 else f"{ip}:53")
-    except OSError:
-        return []
-    return found
 
 
 def build_command(target):
@@ -50,16 +30,14 @@ def build_command(target):
     #   (no -fr)                             never follow a redirect (httpx's default); its Location is kept as data
     #   -j -silent -nc -no-stdin -duc        JSON lines only, no colors, no stdin, no update check (no extra call)
     #   -sc -title -server -td -ip -location status, title, web server, technologies, host IP, redirect target
-    #   -r <own resolvers>                   DNS only through the machine's resolver, never public ones
+    #   -r <own resolvers>                   DNS only through the machine's resolver, never public ones; with none,
+    #                                        main(needs_resolvers=True) refuses to run httpx at all
     #   -rl 5 -t 5 -timeout 10 -retries 1    conservative: at most 5 requests a second
-    cmd = [HTTPX, "-u", target, "-p", "http:80,https:443", "-nf",
-           "-j", "-silent", "-nc", "-no-stdin", "-duc",
-           "-sc", "-title", "-server", "-td", "-ip", "-location",
-           "-rl", "5", "-t", "5", "-timeout", "10", "-retries", "1"]
-    own = resolvers()
-    if own:
-        cmd += ["-r", ",".join(own)]
-    return cmd
+    return [HTTPX, "-u", target, "-p", "http:80,https:443", "-nf",
+            "-j", "-silent", "-nc", "-no-stdin", "-duc",
+            "-sc", "-title", "-server", "-td", "-ip", "-location",
+            "-rl", "5", "-t", "5", "-timeout", "10", "-retries", "1",
+            *resolver_args()]
 
 
 def url_value(scheme, host, port, path):
@@ -110,4 +88,5 @@ def parse(raw, run, target):
 
 
 if __name__ == "__main__":
-    sys.exit(main(TOOL, parse, command=build_command, version_command=VERSION_COMMAND, needs_target_type=True))
+    sys.exit(main(TOOL, parse, command=build_command, version_command=VERSION_COMMAND, needs_target_type=True,
+                  needs_resolvers=True))

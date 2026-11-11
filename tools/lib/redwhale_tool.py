@@ -128,6 +128,44 @@ def clean_value(ntype, value):
     return v
 
 
+# ---------------------------------------------------------------- DNS resolvers
+
+RESOLV_CONF = "/etc/resolv.conf"
+NO_RESOLVER = "no system resolver found; refusing to use public ones"
+
+
+def resolvers(path=None):
+    """
+    The machine's own DNS servers, from /etc/resolv.conf (in a job container: Docker's 127.0.0.11), as "ip:53"
+    ("[v6]:53" for IPv6). [] if there is no file or no usable nameserver line.
+
+    Tools that resolve names themselves (httpx, dnsx, ...) fall back to public resolvers (8.8.8.8, 1.1.1.1, ...)
+    when they aren't given any: outside services the target's name would leak to. Such a tool passes
+    resolver_args() in its command and calls main(..., needs_resolvers=True), which refuses to run it without one.
+    """
+    found = []
+    try:
+        with open(path or RESOLV_CONF, encoding="utf-8") as fh:
+            for line in fh:
+                parts = line.split()
+                if len(parts) >= 2 and parts[0] == "nameserver":
+                    try:
+                        ip = ipaddress.ip_address(parts[1])
+                    except ValueError:
+                        continue
+                    found.append(f"[{ip}]:53" if ip.version == 6 else f"{ip}:53")
+    except OSError:
+        return []
+    return found
+
+
+def resolver_args(flag="-r"):
+    """[flag, "ip:53,..."] with the machine's own resolvers, or [] if there are none. Only [] when replaying a
+    fixture: a real run without resolvers is refused by main(..., needs_resolvers=True) before the command is built."""
+    own = resolvers()
+    return [flag, ",".join(own)] if own else []
+
+
 def find_relation(parent_type, child_type):
     """The only relation allowed between these types, or None if there are zero or several."""
     matches = [r for r, (parents, children) in contract.RELATIONS.items()
@@ -359,7 +397,8 @@ def safe_target(value):
 TARGET_TYPES = ("domain", "subdomain", "ip", "port", "url")
 
 
-def main(tool, parse, command=None, fetch=None, version_command=None, needs_target_type=False, argv=None):
+def main(tool, parse, command=None, fetch=None, version_command=None, needs_target_type=False, needs_resolvers=False,
+         argv=None):
     """
     The whole script. Give it exactly one of:
       command(target) -> list    the tool's command line (run with a timeout; its stdout is the raw output)
@@ -369,6 +408,10 @@ def main(tool, parse, command=None, fetch=None, version_command=None, needs_targ
     needs_target_type=True: the script names the target as a finding's parent, so it must know the target node's
     type (run.target_type). The server passes it as --target-type ({targetType} in tool.json's argv); without it the
     script stops with an error instead of guessing (a wrong type would be another node).
+
+    needs_resolvers=True: the tool resolves names itself and gets resolver_args() in its command. With no nameserver
+    in /etc/resolv.conf the tool is not run at all: the result is `failed` with NO_RESOLVER (without our resolvers it
+    would quietly ask public ones). --replay skips the check: nothing runs, so nothing is resolved.
     """
     if (command is None) == (fetch is None):
         raise TypeError("main() needs exactly one of command= or fetch=")
@@ -400,8 +443,18 @@ def main(tool, parse, command=None, fetch=None, version_command=None, needs_targ
         log(f"[replay] {args.replay} instead of: {run.command}")
         with open(args.replay, encoding="utf-8", errors="replace") as fh:
             raw = fh.read()
+    elif needs_resolvers and not resolvers():
+        run.error(NO_RESOLVER)
+        log(f"✗ {NO_RESOLVER} (no nameserver in {RESOLV_CONF}); {tool} was not run")
+        raw = ""
     elif command:
-        raw = run.run_command(command(target), timeout=args.timeout)
+        try:
+            cmd = command(target)  # a command builder may refuse a target its tool would misread (ValueError)
+        except ValueError as e:
+            run.error(str(e))
+            log(f"✗ {e}; {tool} was not run")
+            cmd = None
+        raw = run.run_command(cmd, timeout=args.timeout) if cmd else ""
     else:
         try:
             raw = fetch(target, run, args.timeout)

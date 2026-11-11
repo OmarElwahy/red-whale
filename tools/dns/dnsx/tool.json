@@ -1,0 +1,12 @@
+{
+  "name": "dnsx",
+  "group": "dns",
+  "label": "dnsx",
+  "description": "ProjectDiscovery dnsx: resolves the name's A, AAAA and CNAME records through the system DNS resolver. No brute-forcing.",
+  "mode": "passive",
+  "accepts": ["domain", "subdomain"],
+  "argv": ["python3", "-I", "/opt/redwhale/dns/dnsx/run.py", "--target", "{target}", "--target-type", "{targetType}", "--out", "/out"],
+  "timeoutSec": 120,
+  "external": ["system DNS resolver"],
+  "outputDir": "/out"
+}

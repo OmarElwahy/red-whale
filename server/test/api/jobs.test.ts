@@ -61,6 +61,7 @@ describe('GET /api/tools and /api/runner/status', () => {
     const { api } = await setup();
     const tools = body(await api.get('/api/tools'), 200, toolsResponseSchema);
     expect(tools.groups).toEqual([
+      { name: 'dns', label: 'DNS resolution', image: catalog.imageRef('dns'), imageStatus: 'missing', tools: ['dnsx'] },
       { name: 'http', label: 'HTTP probing', image: catalog.imageRef('http'), imageStatus: 'missing', tools: ['httpx'] },
       { name: 'subdomain', label: 'subdomain enumeration', image: IMAGE, imageStatus: 'built', tools: ['subfinder', 'assetfinder', 'findomain', 'crtsh'] },
     ]);
@@ -71,6 +72,7 @@ describe('GET /api/tools and /api/runner/status', () => {
     });
     expect(tools.tools.find((t) => t.name === 'subfinder')?.contacts).toBeNull();
     expect(tools.tools.map((t) => [t.name, t.mode, t.accepts])).toEqual([
+      ['dnsx', 'passive', ['domain', 'subdomain']],
       ['httpx', 'active', ['domain', 'subdomain']],
       ['subfinder', 'passive', ['domain']],
       ['assetfinder', 'passive', ['domain']],
@@ -87,6 +89,7 @@ describe('GET /api/tools and /api/runner/status', () => {
     expect(body(await api.get('/api/runner/status'), 200, runnerStatusSchema)).toMatchObject({
       docker: { reachable: true, version: 'fake-27.0', error: null },
       images: [
+        { group: 'dns', image: catalog.imageRef('dns'), status: 'missing' },
         { group: 'http', image: catalog.imageRef('http'), status: 'missing' },
         { group: 'subdomain', image: IMAGE, status: 'outdated' },
       ],

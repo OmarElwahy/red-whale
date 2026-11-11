@@ -104,10 +104,13 @@ describe('Docker health check', () => {
 });
 
 describe('tool catalog', () => {
-  test('the repo tools load: http (httpx) and subdomain (four tools, in run order)', () => {
+  test('the repo tools load: dns (dnsx), http (httpx) and subdomain (four tools, in run order)', () => {
     const catalog = loadCatalog();
-    expect(catalog.groups.map((g) => g.def.name)).toEqual(['http', 'subdomain']);
-    expect(catalog.tools().map((t) => t.name)).toEqual(['httpx', 'subfinder', 'assetfinder', 'findomain', 'crtsh']);
+    expect(catalog.groups.map((g) => g.def.name)).toEqual(['dns', 'http', 'subdomain']);
+    expect(catalog.tools().map((t) => t.name)).toEqual(['dnsx', 'httpx', 'subfinder', 'assetfinder', 'findomain', 'crtsh']);
+    const dnsx = catalog.tool('dnsx');
+    expect(dnsx).toMatchObject({ mode: 'passive', accepts: ['domain', 'subdomain'], external: ['system DNS resolver'] });
+    expect(dnsx?.argv).toEqual(expect.arrayContaining(['--target-type', '{targetType}']));
     const httpx = catalog.tool('httpx');
     expect(httpx).toMatchObject({ mode: 'active', accepts: ['domain', 'subdomain'], external: [] });
     expect(httpx?.contacts).toContain('{target} on ports 80 and 443');

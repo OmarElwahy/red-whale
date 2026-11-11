@@ -15,7 +15,7 @@ const python = findPython();
 
 const expectedSchema = z.object({
   target: z.string(),
-  /** Passed as --target-type, for tools whose argv has {targetType} (httpx). */
+  /** Passed as --target-type, for tools whose argv has {targetType} (httpx, dnsx). */
   target_type: z.string().optional(),
   status: z.string(),
   errors: z.array(z.string()),
@@ -40,7 +40,7 @@ const sortFindings = (findings: Record<string, unknown>[]) =>
 
 describe.skipIf(!python)('tool parsers against their saved real output', () => {
   test('every repo tool has a fixture', () => {
-    expect(withFixtures.map((t) => t.tool)).toEqual(['httpx', 'subfinder', 'assetfinder', 'findomain', 'crtsh']);
+    expect(withFixtures.map((t) => t.tool)).toEqual(['dnsx', 'httpx', 'subfinder', 'assetfinder', 'findomain', 'crtsh']);
   });
 
   test.each(withFixtures)('$tool', ({ tool, dir, raw, expected }) => {
@@ -90,7 +90,7 @@ describe.skipIf(!python)('tools/check.py (pnpm tools:check)', () => {
   test('every tool in the repo passes', () => {
     const r = check(TOOLS_DIR, ['--all']);
     expect(r.code, r.out).toBe(0);
-    expect(r.out).toContain('✓ all 5 passed');
+    expect(r.out).toContain('✓ all 6 passed');
   });
 
   test('a parser change that loses findings fails, naming them', () => {

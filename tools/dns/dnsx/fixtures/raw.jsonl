@@ -1,0 +1,4 @@
+{"host":"lab.northwind.example","ttl":600,"resolver":["127.0.0.11:53"],"a":["198.18.0.10"],"all":["lab.northwind.example.\t600\tIN\tA\t198.18.0.10"],"has_internal_ips":true,"internal_ips":["198.18.0.10"],"status_code":"NXDOMAIN","status_code_raw":3,"timestamp":"2026-11-11T11:26:33.840672948Z","query-time":"134ms"}
+{"host":"lab.northwind.example","ttl":600,"resolver":["127.0.0.11:53"],"a":["198.18.0.10"],"aaaa":["2001:DB8:0:0::10"],"cname":["edge.northwind.example."],"status_code":"NOERROR","status_code_raw":0,"timestamp":"2026-11-11T11:26:33.840672948Z","query-time":"134ms"}
+
+{"host":"lab.northwind.example","ttl":300,"resolver":["127.0.0.11:53"],"cname":["gone.northwind.example"],"status_code":"NOERROR","status_code_raw":0,"timestamp":"2026-11-11T11:26:33.840672948Z","query-time":"12ms"}

@@ -12,7 +12,7 @@ following, schema changes. Commands in docs must work in PowerShell (no `&&`).
 ## Steps
 
 1. ✅ Lab port 8080 + README/status.
-2. ⬜ `dns` group + dnsx (Dockerfile, tool.json, run.py, the shared resolver helper, fixture, `tools:check`).
+2. ✅ `dns` group + dnsx (Dockerfile, tool.json, run.py, the shared resolver helper, fixture, `tools:check`).
 3. ⬜ `ports` group + naabu (Dockerfile, tool.json with `contacts`, run.py, fixture, `tools:check`).
 4. ⬜ Real-Docker e2e test (`server/test/portscan.e2e.test.ts`); docs: architecture §9 (later improvements), §11, §13,
    team-guide (dnsx and naabu as examples, the resolver helper), handoff status; manual check list in this file.
@@ -41,6 +41,12 @@ following, schema changes. Commands in docs must work in PowerShell (no `&&`).
   Top-100 in v2.7.0 (`pkg/runner/ports.go` NmapTop100) includes 80, 443, 8080. Findings: `port` via `port_value()`,
   `has_port` from the IP, `data.protocol`. Final argv goes in §13.
 - `tools:check` doesn't compare `command`, so a replayed command without `-r` (no resolv.conf) doesn't matter.
+- **Mine (small, inside the spec):** `data.cname` is a string for one CNAME, the chain as a list (dnsx's order) for
+  several. A command builder may raise `ValueError` to refuse a target (helper: error recorded, nothing runs,
+  status `failed`); dnsx uses it for the comma/path guard. dnsx `timeoutSec` 120.
+- **dnsx final argv** (v1.3.1, every flag in its `-h`; for §13):
+  `/usr/local/bin/dnsx -l <target> -a -aaaa -cname -j -silent -nc -duc -rl 10 -t 5 -retry 2 -r <resolv.conf servers>`.
+  `-hf` (hosts file) is off by default and not passed.
 
 ## Done
 
@@ -51,9 +57,22 @@ following, schema changes. Commands in docs must work in PowerShell (no `&&`).
   rebuilt (`redwhale-lab:9ee3350a0b4a`), `http://lab.redwhale.test:8080/` from a tools-network container → 200,
   `nginx/1.30.6`, `PHP/8.3.12`; `docker port redwhale-lab` empty. Architecture §11 lab paragraph is updated in step 4.
 
+- **Step 2:** helper (`tools/lib/redwhale_tool.py`): `RESOLV_CONF`, `NO_RESOLVER`, `resolvers(path=None)` (moved
+  from httpx), `resolver_args(flag="-r")`, `main(..., needs_resolvers=False)` (real run with no resolver → error, tool
+  not run, `failed`; `--replay` skips it), `command()` may raise `ValueError` → refused. httpx: `*resolver_args()` +
+  `needs_resolvers=True` (same argv as before when a resolver exists). `ResolverTest` (7 tests) in
+  `test_redwhale_tool.py`. New `tools/dns/{group.json, Dockerfile, README.md}`, `tools/dns/dnsx/{tool.json, run.py,
+  test_dnsx.py, fixtures/{raw.jsonl, NOTE.md, expected.json}}` (2 ips, both with `cname`; dangling line → nothing).
+  Server tests updated for the new group (`runner-docker`, `api/jobs`, `tools-fixtures`: 6 tools). Images:
+  `redwhale-tools/dns:a20f13d7faec`, `redwhale-tools/http:8e766cfbbf2b` (rebuilt: helper changed); the httpx e2e ran
+  green on it. Real capture: 1 line (A only; Docker DNS has no AAAA/CNAME).
+- **Flake seen once:** in one full `pnpm test` run, `tools-fixtures.test.ts › every tool in the repo passes` failed
+  (output not captured); it passed alone and in the next 3 full runs. If it comes back, capture `r.out`.
+
 ## Next action
 
-Step 2: `dns` group + dnsx. Download dnsx v1.3.1 linux_amd64 + checksums, verify flags with `dnsx -h` inside the
-built image, move `resolvers()` + the refusal into the helper (`main(..., needs_resolvers=True)`; skipped on
-`--replay`), unit tests in `tools/lib/test_redwhale_tool.py`, httpx uses it, capture the fixture against the lab,
-anonymize (`lab.northwind.example`, `198.18.0.10`), add edited AAAA/CNAME lines (marked in NOTE.md).
+Step 3: `ports` group + naabu v2.7.0 (`naabu_2.7.0_linux_amd64.zip`, sha256
+`0cc77c0ca32d2f519ffbaa7665bb0e7c88c40753ab22f03551d453a1a823e9f0` from `naabu-checksums.txt`). Build, check `ldd`
+(libpcap?) and `naabu -h` in the image, check it runs a connect scan as 10001 with `cap-drop ALL`, capture against
+`172.29.250.10` (anonymize to `198.18.0.10`), fixture + `tools:check`, update the group lists in `runner-docker`,
+`api/jobs`, `tools-fixtures` tests.

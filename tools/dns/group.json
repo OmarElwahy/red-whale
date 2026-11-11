@@ -1,0 +1,6 @@
+{
+  "name": "dns",
+  "label": "DNS resolution",
+  "image": "redwhale-tools/dns",
+  "tools": ["dnsx"]
+}

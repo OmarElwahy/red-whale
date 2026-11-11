@@ -1,0 +1,32 @@
+{
+  "target": "lab.northwind.example",
+  "target_type": "subdomain",
+  "status": "success",
+  "errors": [],
+  "findings": [
+    {
+      "type": "ip",
+      "value": "198.18.0.10",
+      "parent": {
+        "type": "subdomain",
+        "value": "lab.northwind.example"
+      },
+      "relation": "resolves_to",
+      "data": {
+        "cname": "edge.northwind.example"
+      }
+    },
+    {
+      "type": "ip",
+      "value": "2001:db8::10",
+      "parent": {
+        "type": "subdomain",
+        "value": "lab.northwind.example"
+      },
+      "relation": "resolves_to",
+      "data": {
+        "cname": "edge.northwind.example"
+      }
+    }
+  ]
+}
