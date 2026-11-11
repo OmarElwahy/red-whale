@@ -557,6 +557,8 @@ Reports · CVE monitoring · local LLM scoring · JS analysis agent.
   workspace totals.
 - Scope rules and settings in `GET /export` (today the export has each node's `inScope`, not the rules behind it).
 - A `scope.logged` WS event, so other tabs' log panels refresh when a run is authorized (6C).
+- Dangling CNAME detection (subdomain takeover): a CNAME with no A/AAAA answer. dnsx sees it today but reports no
+  finding (only its log and `raw.txt`); it needs its own node/relation design first (6C-3).
 
 ## 10. Scope guard
 
@@ -670,7 +672,8 @@ internal, on the same subnet and range, else the job fails with what to do (`doc
 by digest; self-signed certificate made at build) on the tools network as `lab.redwhale.test` and
 `elsewhere.redwhale.test`, at host `.10` of the subnet (`172.29.250.10`), **no host ports**. `http://` `/` answers
 301 to `https://elsewhere.redwhale.test/` (another host: tools must not follow it; the same container, whose access
-log records the `Host`, so a followed redirect would show); `https://` serves the page; both send `Server` and
+log records the `Host`, so a followed redirect would show); `https://` serves the page; `http://…:8080/` a plain
+page (6C-3: a port only a port scan finds, `LAB_PORTS`, listed by `lab:status`); all send `Server` and
 `X-Powered-By`. Hardened like a job (nginx's own user 101, read-only root, no capabilities, ports 80/443 via the
 container's `ip_unprivileged_port_start` sysctl, 128 MB), label `redwhale.lab`, image `redwhale-lab:<hash of lab/>`.
 `lab:up` builds/replaces as needed and **never adds scope rules**: it prints them (domain `lab.redwhale.test`, ip
@@ -711,12 +714,20 @@ tools report become `corroborated`. A result whose `status` is `failed` fails th
 (`/out` in the container) and `--replay <saved output>`, and is only a command (or, for an HTTP API like crt.sh, a
 `fetch`) plus a parser; `main()` does the rest (refuses option-like targets, runs the tool with a timeout, keeps
 `raw.txt` capped, cleans values, skips wildcards/the apex/other domains, merges duplicates, fills in relations,
-survives parser crashes, validates with `validate_output.py`, writes `result.json`). Each tool keeps a saved real
+survives parser crashes, validates with `validate_output.py`, writes `result.json`; a `command()` that raises
+`ValueError` refuses the target: `failed`, nothing runs). Tools that resolve names themselves pass `resolver_args()`
+(`-r` + the nameservers of `/etc/resolv.conf`) and call `main(..., needs_resolvers=True)`: with no nameserver the
+run is **refused** (`failed`, "no system resolver found; refusing to use public ones"), never sent to a tool's
+public defaults; `--replay` skips the check. Each tool keeps a saved real
 output, anonymized to `northwind.example`, with `expected.json` and a `NOTE.md`; `pnpm tools:check` (and `pnpm test`)
 replays it. How to add a tool: `docs/team-guide.md`.
 
-**Groups:** `subdomain` (subfinder, assetfinder, findomain, crt.sh; passive) and `http` (httpx; **active**: probes
-80/443, never follows redirects, DNS only through the container's resolver; `tools/http/README.md`). Scripts that need
+**Groups:** `subdomain` (subfinder, assetfinder, findomain, crt.sh; passive), `http` (httpx; **active**: probes
+80/443, never follows redirects, DNS only through the container's resolver; `tools/http/README.md`), `dns` (dnsx;
+passive: A/AAAA/CNAME of the one name through the system resolver, never brute-force; `ip` findings with
+`resolves_to`, the CNAME in their data, the target itself never a finding; `tools/dns/README.md`) and `ports` (naabu;
+**active**, IPs only: connect scan of the top 100 TCP ports, ≤ 50/s, no host discovery, no capability;
+`port` findings with `has_port`; `tools/ports/README.md`). Scripts that need
 the target's type call `main(..., needs_target_type=True)` and get `--target-type` (`{targetType}`); `tech_value(name,
 version)` spells technologies one way (lowercase, spaces → `-`, `name/version`).
 
@@ -903,3 +914,8 @@ delete is one transaction with a record.
 | 2026-11-03 | **`contacts`** in tool.json: required for active/intrusive tools, optional for passive; only `{target}` as placeholder (catalog rejects others); returned by `GET /tools`; display text only. Why: the confirmation must say what will be touched, and the tool definition is the one place that knows it |
 | 2026-11-03 | **httpx** (group `http`, v1.12.0, checksum-pinned): `-u <t> -p http:80,https:443 -nf -j -silent -nc -no-stdin -duc -sc -title -server -td -ip -location -rl 5 -t 5 -timeout 10 -retries 1 -r <own resolvers>`. No `-fr`: redirects are never followed; `Location` is url data, the other host is not a finding (6D). `-r` from `/etc/resolv.conf` (Docker's 127.0.0.11 in a job) because httpx otherwise also asks public resolvers. Findings: target → ip → `ip:port/tcp` → url (WHATWG href) → technology |
 | 2026-11-03 | **`tech_value(name, version)`** in `redwhale_tool.py`: lowercase; runs of spaces or `/` in the name → one `-`; version without spaces (`/` → `-`); `name/version`, or the name alone. `check.py` and the fixture test now key findings by type, value **and parent** (the same technology under http:// and https:// is two findings) |
+| 2026-11-11 | **6C-3 lab port 8080**: nginx also listens on 8080 (plain page "redwhale lab 8080", same headers), still no host ports; `LAB_PORTS = [80, 443, 8080]`, printed by `lab:status`. Why: a port only a port scanner finds, so the e2e can tell one tool's evidence (`discovered`) from two (`corroborated`) |
+| 2026-11-11 | **Resolvers are the system's or none.** `resolvers()`/`resolver_args()` moved from httpx into `redwhale_tool.py`; `main(..., needs_resolvers=True)` (httpx, dnsx) refuses a real run when `/etc/resolv.conf` has no nameserver: `failed`, "no system resolver found; refusing to use public ones", the tool never starts. `--replay` skips the check (fixtures replay on Windows). Why: without `-r` these tools silently ask public resolvers, an undeclared outside contact; httpx used to run without `-r` on a laptop |
+| 2026-11-11 | **dnsx** (group `dns`, v1.3.1, checksum-pinned, passive, `external: ["system DNS resolver"]`): `-l <t> -a -aaaa -cname -j -silent -nc -duc -rl 10 -t 5 -retry 2 -r <own resolvers>`. Never `-d`/`-w` (no brute-force). `-l` also reads a file or a comma list, so a target holding `,` or naming an existing path is refused (`ValueError` from `build_command`) |
+| 2026-11-11 | **dnsx never reports its target as a finding.** Findings are `ip` with `resolves_to` from `({targetType}, target)`; the CNAME goes in each ip's data (`cname`: a string, or the chain as a list in dnsx's order). A dangling CNAME (no A/AAAA) gives no finding in 6C-3, only a log line (later improvement, §9). Why: corroboration means two tools independently discovered something; resolving the name you were given isn't discovery (httpx doesn't report its target either). Reporting the target only with a CNAME would make corroboration depend on DNS shape; always reporting it would make almost every name corroborated. dnsx's evidence is the `resolves_to` edge and the ip |
+| 2026-11-11 | **naabu** (group `ports`, v2.7.0, checksum-pinned, active, accepts `ip` only, `external: []`): `-host <ip> -s c -Pn -tp 100 -rate 50 -c 10 -timeout 2s -retries 1 -j -silent -nc -duc -no-stdin`. Connect scan, no host discovery (ICMP needs raw sockets): the container hardening is unchanged (no `NET_RAW`); the glibc release binary needs no libpcap for it (`ldd`), and a `--network none` run shows no outside calls. `build_command` refuses anything but one IP literal (no DNS, no second host). Findings: `port` (`port_value()`) with `has_port` from the ip, `data.protocol` |

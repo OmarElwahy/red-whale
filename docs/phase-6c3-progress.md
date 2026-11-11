@@ -14,7 +14,7 @@ following, schema changes. Commands in docs must work in PowerShell (no `&&`).
 1. ✅ Lab port 8080 + README/status.
 2. ✅ `dns` group + dnsx (Dockerfile, tool.json, run.py, the shared resolver helper, fixture, `tools:check`).
 3. ✅ `ports` group + naabu (Dockerfile, tool.json with `contacts`, run.py, fixture, `tools:check`).
-4. ⬜ Real-Docker e2e test (`server/test/portscan.e2e.test.ts`); docs: architecture §9 (later improvements), §11, §13,
+4. ✅ Real-Docker e2e test (`server/test/portscan.e2e.test.ts`); docs: architecture §9 (later improvements), §11, §13,
    team-guide (dnsx and naabu as examples, the resolver helper), handoff status; manual check list in this file.
 
 ## Decisions (from the user, 2026-11-11)
@@ -82,14 +82,78 @@ following, schema changes. Commands in docs must work in PowerShell (no `&&`).
   Server tests: group/tool lists (`runner-docker`, `api/jobs`, `tools-fixtures`: 7 tools); `api/jobs` used `ports` as
   "an unknown group": now `no-such-group` → 404, and `ports` on a domain → 400 "naabu can't be run against a domain".
 
+- **Step 4:** `server/test/portscan.e2e.test.ts` (skipped unless Docker + images `dns`, `http`, `ports` and the lab
+  image): seed → dnsx (passive, no confirmation; `resolves_to` discovered, 1 source; the seeded subdomain gains no
+  dnsx finding) → httpx confirmed → naabu unconfirmed = `confirm-required`, then confirmed → ports 80/443/8080 exist;
+  `has_port` 80/443 corroborated (2 sources), 8080 discovered (naabu only); `resolves_to` corroborated; the ip seen by
+  dnsx + httpx; no containers/volumes left. Green against the real lab. Docs: architecture §9 (dangling CNAME later
+  improvement), §11 (lab 8080, `ValueError` refusal, `resolver_args`/`needs_resolvers`, groups `dns`/`ports`), §13
+  (5 rows); team-guide (dnsx/naabu in the "copy" table, resolver + refusal sections, helper row, lab ports and IP
+  targets for fixtures); handoff (main = through 6C-2, 6C-3 row, decisions, open items); `tools/http/README.md`
+  (the refusal). CLAUDE.md: no command changed.
+
 ## Next action
 
-Step 4: `server/test/portscan.e2e.test.ts` (copy the shape of `httpx.e2e.test.ts`; ready = Docker + images `dns`,
-`http`, `ports` + lab image): seed subdomain `lab.redwhale.test`, the two scope rules, passive-only off; dnsx with no
-confirmation → ip + `resolves_to`; httpx confirmed; naabu on the ip node without `confirmActive` →
-`confirm-required`, then confirmed; assert ports 80/443/8080, `has_port` 80/443 `corroborated`, 8080 `discovered`,
-`resolves_to` `corroborated` (edge confidence: check how edges expose it, `edge_observations` / `GET /edges/:id`).
-Then docs: architecture §9 later improvements (dangling CNAME detection), §11 (lab 8080, groups `dns`/`ports`,
-`needs_resolvers`, command may refuse with ValueError), §13 rows (pins + final argvs, resolver refusal, dnsx never
-reports its target / cname in ip data), team-guide (dnsx + naabu examples, `resolver_args`/`needs_resolvers`),
-handoff status (and its stale "main has only 6A"), CLAUDE.md if commands changed (they didn't), manual check list here.
+All four steps are done and pushed. Waiting for the user's manual check (below); the user merges. Nothing else to do
+on this branch unless the check finds something.
+
+## Manual check (PowerShell, from the repo root)
+
+**Setup** (proves the new images build from the pinned, checksum-verified releases and the lab has its new port):
+
+1. `git switch phase-6c3`, then `pnpm install`.
+2. `pnpm tools:build`: builds `dns` and `ports` (new) and rebuilds `http` (the helper changed).
+3. `pnpm lab:up`: rebuilds the lab (nginx.conf changed). Its output now lists `http://lab.redwhale.test:8080/`.
+4. `pnpm lab:status`: shows `ports      80/tcp, 443/tcp, 8080/tcp  (tools network only)`.
+   `docker port redwhale-lab` prints nothing (still no host ports).
+5. `pnpm tools:check --all`: `✓ all 7 passed` (dnsx and naabu replay their fixtures; no Docker or network needed).
+6. `pnpm dev`, open http://127.0.0.1:5173.
+
+**dnsx, passive** (proves: no dialog for a passive tool, `ip` + `resolves_to`, the target not reported):
+
+7. Scope panel: add `include domain lab.redwhale.test` and `include ip 172.29.250.10`. Leave passive-only **on**.
+8. Canvas right-click ▸ Add node… ▸ subdomain `lab.redwhale.test`. Right-click it ▸ Run tool ▸: **dnsx** is enabled
+   (passive), httpx is disabled (passive-only). naabu isn't listed (it takes IPs only).
+9. Click **dnsx**: no dialog, "queued 1 job"; the Jobs tab shows it succeed. The graph: `lab.redwhale.test` →
+   `172.29.250.10`. Select the edge: 1 source (dnsx), discovered. Select `lab.redwhale.test`: its provenance has no
+   dnsx entry as a finding (only as the parent of the ip).
+
+**naabu, active** (proves: confirmation for an IP target, connect scan finds 8080, no extra capabilities):
+
+10. Right-click `172.29.250.10` ▸ Run tool ▸ **naabu**: disabled, "Passive-only mode is on". Turn passive-only
+    **off**. Click naabu: the dialog shows ACTIVE, target `ip 172.29.250.10`, "Contacts the target: connects to TCP
+    ports of 172.29.250.10 (top 100 ports, at most 50 connections per second; connect scan, no raw packets)",
+    "External services: none", **In scope** with `include ip 172.29.250.10 #N`.
+11. **Cancel**: no job. Again ▸ **Run active scan**: the job succeeds in a few seconds. The graph: `172.29.250.10` →
+    `:80/tcp`, `:443/tcp`, `:8080/tcp`; each port's data has `protocol tcp`.
+12. While it runs (or from the job's argv in the Jobs tab): the container has no added capability. Optional:
+    `docker inspect` on a running naabu job container shows `CapDrop [ALL]` and no `CapAdd`.
+
+**Corroboration** (proves: two tools on one edge = corroborated, one = discovered):
+
+13. Run **httpx** on `lab.redwhale.test` (confirm). Then select the `172.29.250.10 → :80/tcp` edge: corroborated,
+    2 sources (httpx, naabu); same for `:443/tcp`; `:8080/tcp` stays discovered (naabu). The
+    `lab.redwhale.test → 172.29.250.10` edge is now corroborated (dnsx, httpx).
+
+**Refusals** (proves: scope still decides; IP rules only):
+
+14. Scope panel: remove `include ip 172.29.250.10`. Run tool ▸ naabu on the ip: disabled (out of scope; a domain in
+    scope never puts its IPs in scope). Add it back.
+15. Server gate (PowerShell 5.1 shows the 428 as an error, which is the point). Copy the ip node's ID from its side
+    panel, then:
+    `Invoke-WebRequest -Method Post -Uri http://127.0.0.1:4100/api/jobs -ContentType application/json -Body '{"tool":"naabu","nodeId":"<id>"}'`
+    fails with `(428)`; no job, no scope log entry.
+
+**Resolver refusal** (proves: no silent public resolvers; replays still work without one). On Windows there is no
+`/etc/resolv.conf`:
+
+16. `py -3 tools/dns/dnsx/run.py --target lab.redwhale.test --target-type subdomain --out $env:TEMP\rw-dnsx`
+    exits without running dnsx; `Get-Content $env:TEMP\rw-dnsx\result.json` shows `"status": "failed"` and
+    `"no system resolver found; refusing to use public ones"`, `"command": ""`.
+17. The same with `--replay tools/dns/dnsx/fixtures/raw.jsonl` added (and `--target lab.northwind.example`):
+    `"status": "success"`, 2 findings.
+
+**Nothing broken:**
+
+18. `pnpm lab:down`, then `pnpm lab:status`: container none, image still built.
+19. `pnpm mock` still runs without `--force` after the lab scans (`.test` is disposable).

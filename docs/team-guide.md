@@ -20,6 +20,8 @@ Pick the example closest to your tool:
 | plain text, one item per line (only if it has no JSON mode) | `tools/subdomain/assetfinder/` |
 | nothing: it's a web API you call | `tools/subdomain/crtsh/` |
 | JSON lines, and it **talks to the target** (an active tool) | `tools/http/httpx/` |
+| JSON lines, and it **resolves names** itself (DNS), passive | `tools/dns/dnsx/` |
+| JSON lines, active, and it takes **only an IP** (e.g. a port scanner) | `tools/ports/naabu/` |
 
 Your tool goes in its **group's** folder (ask the team leader which group, e.g. `ports`, `http`, `vulns`). If the group
 doesn't exist yet, the team leader creates it (`group.json` + `Dockerfile`).
@@ -97,7 +99,29 @@ if __name__ == "__main__":
     sys.exit(main(TOOL, parse, command=build_command, version_command=VERSION_COMMAND, needs_target_type=True))
 ```
 
-A real one to read: `tools/http/httpx/run.py` (target → ip → port → url → technology).
+Real ones to read: `tools/http/httpx/run.py` (target → ip → port → url → technology), `tools/dns/dnsx/run.py`
+(target → ip, the CNAME as data; never reports the target itself) and `tools/ports/naabu/run.py` (ip → port).
+
+**If your tool resolves names itself** (httpx, dnsx, anything with a "resolvers" option): pass the machine's own
+resolvers and let `main()` refuse to run without them, so the tool never quietly asks its public defaults (8.8.8.8,
+1.1.1.1…):
+
+```python
+from redwhale_tool import main, resolver_args
+
+def build_command(target):
+    return ["/usr/local/bin/mytool", "-l", target, "-json", *resolver_args()]   # adds -r 127.0.0.11:53 in a job
+
+if __name__ == "__main__":
+    sys.exit(main(TOOL, parse, command=build_command, version_command=VERSION_COMMAND, needs_resolvers=True))
+```
+
+With no `nameserver` in `/etc/resolv.conf` the run is `failed` with "no system resolver found; refusing to use public
+ones" and the tool never starts. `--replay` skips that check, so your fixture replays fine on Windows.
+
+**If your tool would misread a target** (e.g. it also accepts a file name or a comma list, or it must get exactly one
+IP), raise `ValueError("refusing target …: why")` in `build_command`: the run is `failed` with your message and the
+tool never starts (`dnsx` and `naabu` do this).
 
 The helper calls you'll use:
 
@@ -110,6 +134,7 @@ The helper calls you'll use:
 | `port_value(ip, port, "tcp")`, `mask_secret(s)` | Build a `port` value; mask a secret (never output a real one) |
 | `tech_value(name, version)` | A `technology` value, always spelled one way: lowercase, spaces → `-`, then `/version` if there is one. `tech_value("Microsoft ASP.NET", "4.0")` → `microsoft-asp.net/4.0`, `tech_value("Nginx", "1.30.6")` → `nginx/1.30.6`, `tech_value("PHP")` → `php`. Always use it for technologies, so two tools land on one node |
 | `run.target_type` | The target node's type (`domain`, `subdomain`…), when tool.json passes `--target-type {targetType}` and `main(..., needs_target_type=True)`; use it for the target's `parent=(run.target_type, target)` |
+| `resolver_args("-r")` + `main(..., needs_resolvers=True)` | The machine's own DNS resolvers as `[flag, "ip:53,…"]`; without one a real run is refused (see above) |
 
 You never write `result.json` yourself, never create IDs, and never put raw terminal text into findings.
 
@@ -135,7 +160,9 @@ docker run --rm --network redwhale-tools redwhale-tools/<group>:<tag> python3 -I
 
 and copy `/tmp/out/raw.txt` out (e.g. add `; cat /tmp/out/raw.txt` inside `sh -c '…'`, as `tools/http/httpx/fixtures/NOTE.md`
 describes). Anonymize the lab like any host: `lab.redwhale.test` → `lab.northwind.example`, `172.29.250.10` →
-`198.18.0.10`.
+`198.18.0.10`. A tool that takes an IP runs against `--target 172.29.250.10` (no `--target-type`). The lab listens on
+TCP 80, 443 and 8080. Docker's DNS only answers A records for it: AAAA/CNAME cases go in as edited lines, marked in
+`NOTE.md` (as `tools/dns/dnsx/fixtures/NOTE.md` does).
 
 If your tool uses `{targetType}`, `pnpm tools:check` must know the fixture target's type: before the first `--update`,
 create `fixtures/expected.json` with just `{"target": "lab.northwind.example", "target_type": "subdomain"}`; `--update`

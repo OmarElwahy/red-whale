@@ -30,22 +30,22 @@ Dropped: `cytoscape-expand-collapse` (groups are server-side).
 
 ## Status
 
-Main has everything through 6A. 5D, 6B, 6C-1, graph editing and 6C-2 are stacked branches
-(`phase-5d-icons-groups` → `phase-6b` → `phase-6c1` → `graph-editing` → `phase-6c2`; each contains the ones before it,
-and all but the 5D branch are on GitHub), **not merged** until my manual check. Merging `phase-6c2` brings in all five.
+Main has everything through 6C-2 (5D, 6B, 6C-1, graph editing and 6C-2 were merged together). 6C-3 is on branch
+`phase-6c3` (from main, on GitHub), **not merged** until my manual check (checklist in `docs/phase-6c3-progress.md`).
 
 | Phase | What | Status |
 |---|---|---|
 | 1–4 | Monorepo + contract + IDs; SQLite + idempotent ingest + confidence; mock data + API + server-side aggregation; graph UI, side panel, provenance, tags/notes | ✅ done |
 | 5A | Filters, search, URL state, N-hop focus, mute low-risk | ✅ done |
-| 5B | Synced table, WebSocket live updates, Highlights, JSON/PNG export | ✅ done · manual check pending |
-| 5C | Graph polish: edges/labels, momentum, smooth zoom, Force/Tree layouts, showcase mock (`pnpm mock`) | ✅ done (on main) · manual check pending |
-| 6A | Scope guard: rules, `authorize()`, scope API + log, Scope panel, out-of-scope hatch | ✅ done (on main) · manual check pending |
-| 5D | Icons per node type + collapsible groups (`POST /graph/view`, `GET /graph/path`) | ✅ done · manual check pending |
-| 6B | Edge provenance: `edge_observations`, edge confidence, edge side panel, thicker corroborated edges | ✅ done · manual check pending |
-| 6C-1 | Orchestrator (hardened containers, SQLite job queue, scope re-check before each start, Jobs tab, Docker chip) + subdomain enumeration group: subfinder, assetfinder, findomain, crt.sh; `pnpm tools:build`, `pnpm tools:check` | ✅ done · manual check pending |
-| Edit | Graph editing: add nodes by hand (tool `manual`), permanent delete (node / subtree / group) with a "Deleted" log | ✅ done · manual check pending |
-| 6C-2 | First active tool: tools network `redwhale-tools`, local lab `lab.redwhale.test` (`pnpm lab:up/down/status`), 428 + confirmation dialog for active runs, `http` group with httpx (never follows redirects); `{targetType}`, `contacts`, `tech_value` | ✅ done · manual check pending (checklist in `docs/phase-6c2-progress.md`) |
+| 5B | Synced table, WebSocket live updates, Highlights, JSON/PNG export | ✅ done (on main) |
+| 5C | Graph polish: edges/labels, momentum, smooth zoom, Force/Tree layouts, showcase mock (`pnpm mock`) | ✅ done (on main) |
+| 6A | Scope guard: rules, `authorize()`, scope API + log, Scope panel, out-of-scope hatch | ✅ done (on main) |
+| 5D | Icons per node type + collapsible groups (`POST /graph/view`, `GET /graph/path`) | ✅ done (on main) |
+| 6B | Edge provenance: `edge_observations`, edge confidence, edge side panel, thicker corroborated edges | ✅ done (on main) |
+| 6C-1 | Orchestrator (hardened containers, SQLite job queue, scope re-check before each start, Jobs tab, Docker chip) + subdomain enumeration group: subfinder, assetfinder, findomain, crt.sh; `pnpm tools:build`, `pnpm tools:check` | ✅ done (on main) |
+| Edit | Graph editing: add nodes by hand (tool `manual`), permanent delete (node / subtree / group) with a "Deleted" log | ✅ done (on main) |
+| 6C-2 | First active tool: tools network `redwhale-tools`, local lab `lab.redwhale.test` (`pnpm lab:up/down/status`), 428 + confirmation dialog for active runs, `http` group with httpx (never follows redirects); `{targetType}`, `contacts`, `tech_value` | ✅ done (on main) |
+| 6C-3 | `dns` group with dnsx (passive: A/AAAA/CNAME through the system resolver, never brute-force) and `ports` group with naabu (active, IPs only: connect scan of the top 100 TCP ports, no capability); lab also on 8080; tools that resolve names refuse to run without a system resolver | ✅ done · manual check pending (checklist in `docs/phase-6c3-progress.md`) |
 
 ## How I work with Claude Code
 
@@ -60,7 +60,7 @@ and all but the 5D branch are on GitHub), **not merged** until my manual check. 
 
 ## Next up
 
-1. Tool batches, in order: dnsx → naabu + nmap → katana + gau → nuclei → wafw00f + testssl → the rest (active ones
+1. Tool batches, in order: ~~dnsx → naabu~~ (6C-3) → nmap → katana + gau → nuclei → wafw00f + testssl → the rest (active ones
    use `contacts`, the confirmation and the lab; scripts that name the target as a parent use `{targetType}`).
 2. Redirect following stays out until 6D (httpx keeps the `Location` as data).
 3. **6D** presets + auto-chaining (redirect-following tools re-check scope on every hop) → **6E** scan diffing →
@@ -89,10 +89,14 @@ and all but the 5D branch are on GitHub), **not merged** until my manual check. 
   tools, and `lab:up` never touches the scope. Active runs need `confirmActive` (428 otherwise, before `authorize()`);
   the UI asks every time. Tool definitions: `{targetType}` (the server passes the node type; scripts never guess it)
   and `contacts` (required for active tools). httpx never follows redirects; technologies via `tech_value()`.
+- **DNS and ports (6C-3):** tools that resolve names use only `/etc/resolv.conf`'s servers (`resolver_args()`) and
+  refuse to run without one (`needs_resolvers=True`; replays skip it). dnsx never reports its target (resolving the
+  name you were given isn't discovery): `ip` + `resolves_to`, the CNAME in the ip's data; dangling CNAMEs are a later
+  improvement. naabu takes one IP only, connect scan, no host discovery, container hardening unchanged.
 
 ## Open items
 
-- **Manual checks** for 5B–6C-2 (steps in each `docs/phase-*-progress.md` / `docs/graph-editing-progress.md`), then merge.
+- **Manual check** for 6C-3 (`docs/phase-6c3-progress.md`), then merge `phase-6c3`.
 - **Teammates' real scripts** not yet tested end to end (`pnpm tools:check` → run in the group → check the graph).
 - **Technology spelling:** `tech_value()` fixes case/spaces, but different tools still name things differently
   (`iis` vs `microsoft-iis`), so corroboration can silently fail: maybe an alias table later.

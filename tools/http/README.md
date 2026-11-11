@@ -20,7 +20,9 @@ Command (flags checked against `httpx -h` of v1.12.0), as `run.py` builds it:
 - **Never follows redirects** (no `-fr`): a `301` is reported with its `Location` in the url's data, and the other
   host is not contacted or reported (following redirects is phase 6D).
 - `-r`: DNS only through the machine's resolver (in a job container, Docker's `127.0.0.11`). Without it httpx also
-  asks public resolvers (8.8.8.8, 1.1.1.1…), which would learn the target's name.
+  asks public resolvers (8.8.8.8, 1.1.1.1…), which would learn the target's name. With no nameserver in
+  `/etc/resolv.conf` the run is refused before httpx starts ("no system resolver found; refusing to use public
+  ones"; since 6C-3, shared with dnsx in the helper).
 - `-duc`: no update check (no call to ProjectDiscovery).
 
 Findings, per answering port: target →`resolves_to` ip →`has_port` `ip:port/tcp` →`serves` url →`uses_technology`
