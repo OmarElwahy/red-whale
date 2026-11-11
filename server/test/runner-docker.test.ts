@@ -104,10 +104,14 @@ describe('Docker health check', () => {
 });
 
 describe('tool catalog', () => {
-  test('the repo tools load: dns (dnsx), http (httpx) and subdomain (four tools, in run order)', () => {
+  test('the repo tools load: dns (dnsx), http (httpx), ports (naabu) and subdomain (four tools, in run order)', () => {
     const catalog = loadCatalog();
-    expect(catalog.groups.map((g) => g.def.name)).toEqual(['dns', 'http', 'subdomain']);
-    expect(catalog.tools().map((t) => t.name)).toEqual(['dnsx', 'httpx', 'subfinder', 'assetfinder', 'findomain', 'crtsh']);
+    expect(catalog.groups.map((g) => g.def.name)).toEqual(['dns', 'http', 'ports', 'subdomain']);
+    expect(catalog.tools().map((t) => t.name)).toEqual(['dnsx', 'httpx', 'naabu', 'subfinder', 'assetfinder', 'findomain', 'crtsh']);
+    const naabu = catalog.tool('naabu');
+    expect(naabu).toMatchObject({ mode: 'active', accepts: ['ip'], external: [] });
+    expect(naabu?.contacts).toBe('connects to TCP ports of {target} (top 100 ports, at most 50 connections per second; connect scan, no raw packets)');
+    expect(naabu?.argv).not.toContain('{targetType}');
     const dnsx = catalog.tool('dnsx');
     expect(dnsx).toMatchObject({ mode: 'passive', accepts: ['domain', 'subdomain'], external: ['system DNS resolver'] });
     expect(dnsx?.argv).toEqual(expect.arrayContaining(['--target-type', '{targetType}']));

@@ -13,7 +13,7 @@ following, schema changes. Commands in docs must work in PowerShell (no `&&`).
 
 1. ✅ Lab port 8080 + README/status.
 2. ✅ `dns` group + dnsx (Dockerfile, tool.json, run.py, the shared resolver helper, fixture, `tools:check`).
-3. ⬜ `ports` group + naabu (Dockerfile, tool.json with `contacts`, run.py, fixture, `tools:check`).
+3. ✅ `ports` group + naabu (Dockerfile, tool.json with `contacts`, run.py, fixture, `tools:check`).
 4. ⬜ Real-Docker e2e test (`server/test/portscan.e2e.test.ts`); docs: architecture §9 (later improvements), §11, §13,
    team-guide (dnsx and naabu as examples, the resolver helper), handoff status; manual check list in this file.
 
@@ -47,6 +47,13 @@ following, schema changes. Commands in docs must work in PowerShell (no `&&`).
 - **dnsx final argv** (v1.3.1, every flag in its `-h`; for §13):
   `/usr/local/bin/dnsx -l <target> -a -aaaa -cname -j -silent -nc -duc -rl 10 -t 5 -retry 2 -r <resolv.conf servers>`.
   `-hf` (hosts file) is off by default and not passed.
+- **naabu final argv** (v2.7.0, every flag in its `-h`; for §13):
+  `/usr/local/bin/naabu -host <ip> -s c -Pn -tp 100 -rate 50 -c 10 -timeout 2s -retries 1 -j -silent -nc -duc -no-stdin`.
+  **No libpcap**: `ldd` shows only libc/libdl/libpthread, and the connect scan runs as 10001 with `--cap-drop ALL`
+  ("Running CONNECT scan with non root privileges"). No outside calls: with `--network none` against 127.0.0.1 it
+  finishes in 3 s with no network errors (the only warning: "UI Dashboard is disabled"). `run.py` refuses any
+  target that isn't exactly one IP (`ValueError` → `failed`, naabu not run). `contacts` unchanged from the spec.
+  `timeoutSec` 300.
 
 ## Done
 
@@ -69,10 +76,20 @@ following, schema changes. Commands in docs must work in PowerShell (no `&&`).
 - **Flake seen once:** in one full `pnpm test` run, `tools-fixtures.test.ts › every tool in the repo passes` failed
   (output not captured); it passed alone and in the next 3 full runs. If it comes back, capture `r.out`.
 
+- **Step 3:** `tools/ports/{group.json ("port scanning"), Dockerfile (no libpcap), README.md}`,
+  `tools/ports/naabu/{tool.json, run.py, test_naabu.py, fixtures/{raw.jsonl, NOTE.md, expected.json}}` (3 real lines
+  80/443/8080 anonymized to `198.18.0.10`, + a duplicate and a blank line). Image `redwhale-tools/ports:989aa81a243f`.
+  Server tests: group/tool lists (`runner-docker`, `api/jobs`, `tools-fixtures`: 7 tools); `api/jobs` used `ports` as
+  "an unknown group": now `no-such-group` → 404, and `ports` on a domain → 400 "naabu can't be run against a domain".
+
 ## Next action
 
-Step 3: `ports` group + naabu v2.7.0 (`naabu_2.7.0_linux_amd64.zip`, sha256
-`0cc77c0ca32d2f519ffbaa7665bb0e7c88c40753ab22f03551d453a1a823e9f0` from `naabu-checksums.txt`). Build, check `ldd`
-(libpcap?) and `naabu -h` in the image, check it runs a connect scan as 10001 with `cap-drop ALL`, capture against
-`172.29.250.10` (anonymize to `198.18.0.10`), fixture + `tools:check`, update the group lists in `runner-docker`,
-`api/jobs`, `tools-fixtures` tests.
+Step 4: `server/test/portscan.e2e.test.ts` (copy the shape of `httpx.e2e.test.ts`; ready = Docker + images `dns`,
+`http`, `ports` + lab image): seed subdomain `lab.redwhale.test`, the two scope rules, passive-only off; dnsx with no
+confirmation → ip + `resolves_to`; httpx confirmed; naabu on the ip node without `confirmActive` →
+`confirm-required`, then confirmed; assert ports 80/443/8080, `has_port` 80/443 `corroborated`, 8080 `discovered`,
+`resolves_to` `corroborated` (edge confidence: check how edges expose it, `edge_observations` / `GET /edges/:id`).
+Then docs: architecture §9 later improvements (dangling CNAME detection), §11 (lab 8080, groups `dns`/`ports`,
+`needs_resolvers`, command may refuse with ValueError), §13 rows (pins + final argvs, resolver refusal, dnsx never
+reports its target / cname in ip data), team-guide (dnsx + naabu examples, `resolver_args`/`needs_resolvers`),
+handoff status (and its stale "main has only 6A"), CLAUDE.md if commands changed (they didn't), manual check list here.

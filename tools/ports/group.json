@@ -1,0 +1,6 @@
+{
+  "name": "ports",
+  "label": "port scanning",
+  "image": "redwhale-tools/ports",
+  "tools": ["naabu"]
+}

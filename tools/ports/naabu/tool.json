@@ -1,0 +1,13 @@
+{
+  "name": "naabu",
+  "group": "ports",
+  "label": "naabu",
+  "description": "ProjectDiscovery naabu: which of the IP's top 100 TCP ports are open. Connect scan, no raw packets, no host discovery.",
+  "mode": "active",
+  "accepts": ["ip"],
+  "argv": ["python3", "-I", "/opt/redwhale/ports/naabu/run.py", "--target", "{target}", "--out", "/out"],
+  "timeoutSec": 300,
+  "external": [],
+  "contacts": "connects to TCP ports of {target} (top 100 ports, at most 50 connections per second; connect scan, no raw packets)",
+  "outputDir": "/out"
+}
