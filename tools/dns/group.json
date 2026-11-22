@@ -1,6 +1,6 @@
 {
   "name": "dns",
-  "label": "DNS resolution",
+  "label": "DNS",
   "image": "redwhale-tools/dns",
-  "tools": ["dnsx"]
+  "tools": ["dnsx", "takeover-check"]
 }

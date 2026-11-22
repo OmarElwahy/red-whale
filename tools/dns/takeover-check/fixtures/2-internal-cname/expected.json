@@ -1,0 +1,74 @@
+{
+  "target": "ftp.northwind.example",
+  "target_type": "subdomain",
+  "status": "success",
+  "errors": [],
+  "findings": [
+    {
+      "type": "subdomain",
+      "value": "prod1ftp.northwind.example",
+      "parent": {
+        "type": "subdomain",
+        "value": "ftp.northwind.example"
+      },
+      "relation": "cname_to",
+      "data": {
+        "rcode": "NOERROR"
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "prod1ftp.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "subdomain",
+      "value": "prod1ftp-lb.northwind-servers.example",
+      "parent": {
+        "type": "subdomain",
+        "value": "prod1ftp.northwind.example"
+      },
+      "relation": "cname_to",
+      "data": {
+        "rcode": "NOERROR"
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "prod1ftp-lb.northwind-servers.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind-servers.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "domain",
+      "value": "northwind.example",
+      "data": {
+        "registered": true,
+        "expires_at": "2027-03-14T09:30:00Z",
+        "registrar": "Example Registrar, Inc.",
+        "created_at": "2004-03-14T09:30:00Z",
+        "source": "rdap",
+        "checked_at": "2026-11-22T22:41:37Z"
+      }
+    },
+    {
+      "type": "domain",
+      "value": "northwind-servers.example",
+      "data": {
+        "registered": true,
+        "expires_at": "2028-02-02T10:00:00Z",
+        "registrar": "Example Registrar, Inc.",
+        "created_at": "2026-02-02T10:00:00Z",
+        "source": "rdap",
+        "checked_at": "2026-11-22T22:41:38Z"
+      }
+    }
+  ]
+}

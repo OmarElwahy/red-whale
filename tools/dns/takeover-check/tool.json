@@ -1,0 +1,12 @@
+{
+  "name": "takeover-check",
+  "group": "dns",
+  "label": "Takeover check",
+  "description": "Follows the subdomain's CNAME chain through the system DNS resolver, looks up the registration of each registrable domain in it (RDAP, WHOIS for TLDs without RDAP), and reports unregistered domains and dangling CNAMEs. Never contacts the names themselves.",
+  "mode": "passive",
+  "accepts": ["subdomain"],
+  "argv": ["python3", "-I", "/opt/redwhale/dns/takeover-check/run.py", "--target", "{target}", "--target-type", "{targetType}", "--out", "/out"],
+  "timeoutSec": 300,
+  "external": ["system DNS resolver", "RDAP servers (IANA bootstrap)", "WHOIS servers (fallback)"],
+  "outputDir": "/out"
+}

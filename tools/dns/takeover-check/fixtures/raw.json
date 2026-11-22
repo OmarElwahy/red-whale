@@ -1,0 +1,283 @@
+{
+ "transcript": 1,
+ "tool": "takeover-check",
+ "target": "autodiscover.northwind.example",
+ "target_type": "subdomain",
+ "data": {
+  "psl_sha256": "017501d3fa7911c60ac7e0f68df4122b07216c585c15dc30e0f0c74b8d13a2b9",
+  "psl_version": "2026-11-21_04-33-45_UTC",
+  "rdap_bootstrap_sha256": "85c09e5c0ddeb09fe657aefc122d48ddb66ca20dc30ea7f6035d4dee849bd49d",
+  "rdap_bootstrap_publication": "2026-11-20T23:00:03Z"
+ },
+ "bootstrap": {
+  "northwind.example": {
+   "entry": "example",
+   "servers": [
+    "https://rdap.verisign.com/com/v1/"
+   ]
+  },
+  "outlook.com": {
+   "entry": "com",
+   "servers": [
+    "https://rdap.verisign.com/com/v1/"
+   ]
+  },
+  "cloud.microsoft": {
+   "entry": "microsoft",
+   "servers": [
+    "https://rdap.nominet.uk/microsoft/"
+   ]
+  },
+  "office.com": {
+   "entry": "com",
+   "servers": [
+    "https://rdap.verisign.com/com/v1/"
+   ]
+  }
+ },
+ "exchanges": [
+  {
+   "kind": "dns",
+   "query": "cname",
+   "name": "autodiscover.northwind.example",
+   "argv": [
+    "/usr/local/bin/dnsx",
+    "-l",
+    "autodiscover.northwind.example",
+    "-cname",
+    "-j",
+    "-silent",
+    "-nc",
+    "-duc",
+    "-or",
+    "-retry",
+    "2",
+    "-timeout",
+    "5s",
+    "-t",
+    "1",
+    "-rl",
+    "10",
+    "-r",
+    "127.0.0.11:53"
+   ],
+   "at": "2026-11-22T22:41:40Z",
+   "exit": 0,
+   "stdout": "{\"host\":\"autodiscover.northwind.example\",\"ttl\":3576,\"resolver\":[\"127.0.0.11:53\"],\"cname\":[\"autodiscover.outlook.com\"],\"status_code\":\"NOERROR\",\"timestamp\":\"2026-11-22T22:41:40.199075363Z\",\"query-time\":\"2ms\"}\n",
+   "stderr": "",
+   "error": null
+  },
+  {
+   "kind": "dns",
+   "query": "cname",
+   "name": "autodiscover.outlook.com",
+   "argv": [
+    "/usr/local/bin/dnsx",
+    "-l",
+    "autodiscover.outlook.com",
+    "-cname",
+    "-j",
+    "-silent",
+    "-nc",
+    "-duc",
+    "-or",
+    "-retry",
+    "2",
+    "-timeout",
+    "5s",
+    "-t",
+    "1",
+    "-rl",
+    "10",
+    "-r",
+    "127.0.0.11:53"
+   ],
+   "at": "2026-11-22T22:41:40Z",
+   "exit": 0,
+   "stdout": "{\"host\":\"autodiscover.outlook.com\",\"ttl\":49,\"resolver\":[\"127.0.0.11:53\"],\"cname\":[\"autodiscover.outlook.cloud.microsoft\"],\"status_code\":\"NOERROR\",\"timestamp\":\"2026-11-22T22:41:40.257186784Z\",\"query-time\":\"13ms\"}\n",
+   "stderr": "",
+   "error": null
+  },
+  {
+   "kind": "dns",
+   "query": "cname",
+   "name": "autodiscover.outlook.cloud.microsoft",
+   "argv": [
+    "/usr/local/bin/dnsx",
+    "-l",
+    "autodiscover.outlook.cloud.microsoft",
+    "-cname",
+    "-j",
+    "-silent",
+    "-nc",
+    "-duc",
+    "-or",
+    "-retry",
+    "2",
+    "-timeout",
+    "5s",
+    "-t",
+    "1",
+    "-rl",
+    "10",
+    "-r",
+    "127.0.0.11:53"
+   ],
+   "at": "2026-11-22T22:41:40Z",
+   "exit": 0,
+   "stdout": "{\"host\":\"autodiscover.outlook.cloud.microsoft\",\"ttl\":115,\"resolver\":[\"127.0.0.11:53\"],\"cname\":[\"acdcatm.autodiscover.mira.tm.svc.cloud.microsoft\"],\"status_code\":\"NOERROR\",\"timestamp\":\"2026-11-22T22:41:40.315865985Z\",\"query-time\":\"13ms\"}\n",
+   "stderr": "",
+   "error": null
+  },
+  {
+   "kind": "dns",
+   "query": "cname",
+   "name": "acdcatm.autodiscover.mira.tm.svc.cloud.microsoft",
+   "argv": [
+    "/usr/local/bin/dnsx",
+    "-l",
+    "acdcatm.autodiscover.mira.tm.svc.cloud.microsoft",
+    "-cname",
+    "-j",
+    "-silent",
+    "-nc",
+    "-duc",
+    "-or",
+    "-retry",
+    "2",
+    "-timeout",
+    "5s",
+    "-t",
+    "1",
+    "-rl",
+    "10",
+    "-r",
+    "127.0.0.11:53"
+   ],
+   "at": "2026-11-22T22:41:40Z",
+   "exit": 0,
+   "stdout": "{\"host\":\"acdcatm.autodiscover.mira.tm.svc.cloud.microsoft\",\"ttl\":60,\"resolver\":[\"127.0.0.11:53\"],\"cname\":[\"autod.ms-acdc-autod.office.com\"],\"status_code\":\"NOERROR\",\"timestamp\":\"2026-11-22T22:41:40.423740547Z\",\"query-time\":\"64ms\"}\n",
+   "stderr": "",
+   "error": null
+  },
+  {
+   "kind": "dns",
+   "query": "cname",
+   "name": "autod.ms-acdc-autod.office.com",
+   "argv": [
+    "/usr/local/bin/dnsx",
+    "-l",
+    "autod.ms-acdc-autod.office.com",
+    "-cname",
+    "-j",
+    "-silent",
+    "-nc",
+    "-duc",
+    "-or",
+    "-retry",
+    "2",
+    "-timeout",
+    "5s",
+    "-t",
+    "1",
+    "-rl",
+    "10",
+    "-r",
+    "127.0.0.11:53"
+   ],
+   "at": "2026-11-22T22:41:40Z",
+   "exit": 0,
+   "stdout": "",
+   "stderr": "",
+   "error": null
+  },
+  {
+   "kind": "dns",
+   "query": "rcode",
+   "name": "autod.ms-acdc-autod.office.com",
+   "argv": [
+    "/usr/local/bin/dnsx",
+    "-l",
+    "autod.ms-acdc-autod.office.com",
+    "-rcode",
+    "noerror,nxdomain,servfail,refused",
+    "-j",
+    "-silent",
+    "-nc",
+    "-duc",
+    "-or",
+    "-retry",
+    "2",
+    "-timeout",
+    "5s",
+    "-t",
+    "1",
+    "-rl",
+    "10",
+    "-r",
+    "127.0.0.11:53"
+   ],
+   "at": "2026-11-22T22:41:40Z",
+   "exit": 0,
+   "stdout": "{\"host\":\"autod.ms-acdc-autod.office.com\",\"ttl\":3,\"resolver\":[\"127.0.0.11:53\"],\"a\":[\"198.18.0.13\",\"198.18.0.14\",\"198.18.0.15\",\"198.18.0.16\"],\"status_code\":\"NOERROR\",\"timestamp\":\"2026-11-22T22:41:40.625770044Z\",\"query-time\":\"5ms\"}\n",
+   "stderr": "",
+   "error": null
+  },
+  {
+   "kind": "rdap",
+   "domain": "northwind.example",
+   "url": "https://rdap.verisign.com/com/v1/domain/northwind.example",
+   "attempts": [
+    {
+     "at": "2026-11-22T22:41:40Z",
+     "status": 200,
+     "error": null
+    }
+   ],
+   "status": 200,
+   "body": "{\"objectClassName\":\"domain\",\"handle\":\"1000001_DOMAIN_EXAMPLE-VRSN\",\"ldhName\":\"NORTHWIND.EXAMPLE\",\"links\":[{\"value\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/northwind.example\",\"rel\":\"self\",\"href\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/northwind.example\",\"type\":\"application\\/rdap+json\"},{\"value\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/northwind.example\",\"rel\":\"related\",\"href\":\"https:\\/\\/rdap.northwind.example\\/rdap\\/domain\\/NORTHWIND.EXAMPLE\",\"type\":\"application\\/rdap+json\"}],\"status\":[\"client transfer prohibited\"],\"entities\":[{\"objectClassName\":\"entity\",\"handle\":\"9999\",\"roles\":[\"registrar\"],\"links\":[{\"href\":\"https:\\/\\/registrar.example\",\"type\":\"text\\/html\",\"value\":\"https:\\/\\/rdap.northwind.example\\/rdap\\/\",\"rel\":\"about\"}],\"publicIds\":[{\"type\":\"IANA Registrar ID\",\"identifier\":\"9999\"}],\"vcardArray\":[\"vcard\",[[\"version\",{},\"text\",\"4.0\"],[\"fn\",{},\"text\",\"Example Registrar, Inc.\"]]],\"entities\":[{\"objectClassName\":\"entity\",\"roles\":[\"abuse\"],\"vcardArray\":[\"vcard\",[[\"version\",{},\"text\",\"4.0\"],[\"fn\",{},\"text\",\"\"],[\"tel\",{\"type\":\"voice\"},\"uri\",\"tel:+1.5550100\"],[\"email\",{},\"text\",\"abuse@registrar.example\"]]]}]}],\"events\":[{\"eventAction\":\"registration\",\"eventDate\":\"2004-03-14T09:30:00Z\"},{\"eventAction\":\"expiration\",\"eventDate\":\"2027-03-14T09:30:00Z\"},{\"eventAction\":\"last changed\",\"eventDate\":\"2026-05-01T00:00:00Z\"},{\"eventAction\":\"last update of RDAP database\",\"eventDate\":\"2026-11-22T22:41:28Z\"}],\"secureDNS\":{\"delegationSigned\":false},\"nameservers\":[{\"objectClassName\":\"nameserver\",\"ldhName\":\"NS1.NORTHWIND.EXAMPLE\"},{\"objectClassName\":\"nameserver\",\"ldhName\":\"NS2.NORTHWIND.EXAMPLE\"}],\"rdapConformance\":[\"rdap_level_0\",\"icann_rdap_technical_implementation_guide_1\",\"icann_rdap_response_profile_1\"],\"notices\":[{\"title\":\"Terms of Service\",\"description\":[\"Service subject to Terms of Use.\"],\"links\":[{\"href\":\"https:\\/\\/www.verisign.com\\/domain-names\\/registration-data-access-protocol\\/terms-service\\/index.xhtml\",\"type\":\"text\\/html\",\"value\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/northwind.example\",\"rel\":\"terms-of-service\"}]},{\"title\":\"Status Codes\",\"description\":[\"For more information on domain status codes, please visit https:\\/\\/icann.org\\/epp\"],\"links\":[{\"href\":\"https:\\/\\/icann.org\\/epp\",\"type\":\"text\\/html\",\"value\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/northwind.example\",\"rel\":\"glossary\"}]},{\"title\":\"RDDS Inaccuracy Complaint Form\",\"description\":[\"URL of the ICANN RDDS Inaccuracy Complaint Form: https:\\/\\/icann.org\\/wicf\"],\"links\":[{\"href\":\"https:\\/\\/icann.org\\/wicf\",\"type\":\"text\\/html\",\"value\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/northwind.example\",\"rel\":\"help\"}]}]}"
+  },
+  {
+   "kind": "rdap",
+   "domain": "outlook.com",
+   "url": "https://rdap.verisign.com/com/v1/domain/outlook.com",
+   "attempts": [
+    {
+     "at": "2026-11-22T22:41:41Z",
+     "status": 200,
+     "error": null
+    }
+   ],
+   "status": 200,
+   "body": "{\"objectClassName\":\"domain\",\"handle\":\"2019401_DOMAIN_COM-VRSN\",\"ldhName\":\"OUTLOOK.COM\",\"links\":[{\"value\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/outlook.com\",\"rel\":\"self\",\"href\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/outlook.com\",\"type\":\"application\\/rdap+json\"},{\"value\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/outlook.com\",\"rel\":\"related\",\"href\":\"https:\\/\\/rdap.markmonitor.com\\/rdap\\/domain\\/OUTLOOK.COM\",\"type\":\"application\\/rdap+json\"}],\"status\":[\"client delete prohibited\",\"client transfer prohibited\",\"client update prohibited\",\"server delete prohibited\",\"server transfer prohibited\",\"server update prohibited\"],\"entities\":[{\"objectClassName\":\"entity\",\"handle\":\"292\",\"roles\":[\"registrar\"],\"links\":[{\"href\":\"http:\\/\\/www.markmonitor.com\",\"type\":\"text\\/html\",\"value\":\"https:\\/\\/rdap.markmonitor.com\\/rdap\\/\",\"rel\":\"about\"}],\"publicIds\":[{\"type\":\"IANA Registrar ID\",\"identifier\":\"292\"}],\"vcardArray\":[\"vcard\",[[\"version\",{},\"text\",\"4.0\"],[\"fn\",{},\"text\",\"MarkMonitor Inc.\"]]],\"entities\":[{\"objectClassName\":\"entity\",\"roles\":[\"abuse\"],\"vcardArray\":[\"vcard\",[[\"version\",{},\"text\",\"4.0\"],[\"fn\",{},\"text\",\"\"],[\"tel\",{\"type\":\"voice\"},\"uri\",\"tel:+1.2086851750\"],[\"email\",{},\"text\",\"abusecomplaints@markmonitor.com\"]]]}]}],\"events\":[{\"eventAction\":\"registration\",\"eventDate\":\"1994-08-18T04:00:00Z\"},{\"eventAction\":\"expiration\",\"eventDate\":\"2027-08-17T04:00:00Z\"},{\"eventAction\":\"last changed\",\"eventDate\":\"2026-07-16T12:06:40Z\"},{\"eventAction\":\"last update of RDAP database\",\"eventDate\":\"2026-11-22T22:41:28Z\"}],\"secureDNS\":{\"delegationSigned\":true,\"dsData\":[{\"keyTag\":43591,\"algorithm\":13,\"digestType\":2,\"digest\":\"FA9F603CBEA04A591272708CC3D5940D871681417D7D9A2DA8742E4AC78FFA23\"}]},\"nameservers\":[{\"objectClassName\":\"nameserver\",\"ldhName\":\"NS1-05.AZURE-DNS.COM\"},{\"objectClassName\":\"nameserver\",\"ldhName\":\"NS2-05.AZURE-DNS.NET\"},{\"objectClassName\":\"nameserver\",\"ldhName\":\"NS3-05.AZURE-DNS.ORG\"},{\"objectClassName\":\"nameserver\",\"ldhName\":\"NS4-05.AZURE-DNS.INFO\"}],\"rdapConformance\":[\"rdap_level_0\",\"icann_rdap_technical_implementation_guide_1\",\"icann_rdap_response_profile_1\"],\"notices\":[{\"title\":\"Terms of Service\",\"description\":[\"Service subject to Terms of Use.\"],\"links\":[{\"href\":\"https:\\/\\/www.verisign.com\\/domain-names\\/registration-data-access-protocol\\/terms-service\\/index.xhtml\",\"type\":\"text\\/html\",\"value\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/outlook.com\",\"rel\":\"terms-of-service\"}]},{\"title\":\"Status Codes\",\"description\":[\"For more information on domain status codes, please visit https:\\/\\/icann.org\\/epp\"],\"links\":[{\"href\":\"https:\\/\\/icann.org\\/epp\",\"type\":\"text\\/html\",\"value\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/outlook.com\",\"rel\":\"glossary\"}]},{\"title\":\"RDDS Inaccuracy Complaint Form\",\"description\":[\"URL of the ICANN RDDS Inaccuracy Complaint Form: https:\\/\\/icann.org\\/wicf\"],\"links\":[{\"href\":\"https:\\/\\/icann.org\\/wicf\",\"type\":\"text\\/html\",\"value\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/outlook.com\",\"rel\":\"help\"}]}]}"
+  },
+  {
+   "kind": "rdap",
+   "domain": "cloud.microsoft",
+   "url": "https://rdap.nominet.uk/microsoft/domain/cloud.microsoft",
+   "attempts": [
+    {
+     "at": "2026-11-22T22:41:42Z",
+     "status": 200,
+     "error": null
+    }
+   ],
+   "status": 200,
+   "body": "{\"rdapConformance\":[\"redacted\",\"rdap_level_0\",\"icann_rdap_technical_implementation_guide_1\",\"icann_rdap_response_profile_1\"],\"objectClassName\":\"domain\",\"links\":[{\"value\":\"https://rdap.nominet.uk/microsoft/domain/cloud.microsoft\",\"rel\":\"self\",\"href\":\"https://rdap.nominet.uk/microsoft/domain/cloud.microsoft\",\"type\":\"application/rdap+json\"},{\"value\":\"https://rdap.nominet.uk/microsoft/domain/cloud.microsoft\",\"rel\":\"related\",\"href\":\"https://rdap.markmonitor.com/rdap/domain/cloud.microsoft\",\"type\":\"application/rdap+json\"}],\"notices\":[{\"title\":\"Terms of Service\",\"description\":[\"The Registration Data Access Protocol (RDAP) service provides access to the records in the RDAP database for information purposes only, to assist you in obtaining information about the registration records of existing domain names. The stored information in the RDAP database is provided as is. We do not guarantee its accuracy or completeness, and cannot be held liable if the stored information in the RDAP database is wrong, incomplete, or inaccurate in any way. By querying the RDAP database in any way, you agree that you will not use this data: (i) to allow, enable or otherwise support the transmission of unsolicited, commercial advertising or other solicitations in any form or by any means; (ii) to enable high volume, automated, electronic processes that query or send data to the Registry Operator or registrar or registrant; (iii) for target advertising; (iv) to cause nuisance to registrants by sending (by any means) messages to or contacting them; (v) to violate any law, rule, regulation or statute; and/or (vi) in violation of applicable data and privacy protection acts. You are explicitly prohibited from extracting, copying and/or using or re-using in any form and by any means (electronically or not) all or part (quantitatively or qualitatively) of the contents of the RDAP database without prior and explicit permission from the RDAP server owner. Any copying or transmission of data for commercial purposes violates this prohibition. You agree that we can take measures to limit the use of the RDAP service to protect the privacy of registrants or the integrity of the database. We reserve the right to make changes to this website, the RDAP service, and these Terms and Conditions at any time without prior notice to you. You should review these Terms and Conditions each time you access or use the RDAP database and the RDAP service to learn of any changes. If you do not agree to the changes we have made, your only remedy is to stop your use of the RDAP database and the RDAP service. By executing a query, in any means whatsoever, you agree to these Terms of Service.\"],\"links\":[{\"value\":\"https://rdap.nominet.uk/microsoft/domain/cloud.microsoft\",\"rel\":\"terms-of-service\",\"href\":\"https://nominet.uk/rdap-tos\",\"type\":\"text/html\"}]},{\"title\":\"Status Codes\",\"description\":[\"For more information on domain status codes, please visit https://icann.org/epp\"],\"links\":[{\"value\":\"https://rdap.nominet.uk/microsoft/domain/cloud.microsoft\",\"rel\":\"glossary\",\"href\":\"https://icann.org/epp\",\"type\":\"text/html\"}]},{\"title\":\"RDDS Inaccuracy Complaint Form\",\"description\":[\"URL of the ICANN RDDS Inaccuracy Complaint Form: https://icann.org/wicf\"],\"links\":[{\"value\":\"https://rdap.nominet.uk/microsoft/domain/cloud.microsoft\",\"rel\":\"help\",\"href\":\"https://icann.org/wicf\",\"type\":\"text/html\"}]}],\"events\":[{\"eventAction\":\"registration\",\"eventActor\":\"292\",\"eventDate\":\"2015-09-25T21:35:19Z\"},{\"eventAction\":\"last changed\",\"eventActor\":\"292\",\"eventDate\":\"2026-08-24T12:16:33Z\"},{\"eventAction\":\"expiration\",\"eventDate\":\"2027-09-25T21:35:19Z\"},{\"eventAction\":\"transfer\",\"eventDate\":\"2024-09-25T21:35:19Z\"},{\"eventAction\":\"last update of RDAP database\",\"eventDate\":\"2026-11-22T22:41:42.211693198Z\"}],\"status\":[\"client transfer prohibited\",\"client update prohibited\",\"client delete prohibited\",\"server transfer prohibited\",\"server update prohibited\",\"server delete prohibited\"],\"handle\":\"115146175_DOMAIN-MSFT\",\"ldhName\":\"cloud.microsoft\",\"unicodeName\":\"cloud.microsoft\",\"nameservers\":[{\"objectClassName\":\"nameserver\",\"links\":[{\"value\":\"https://rdap.nominet.uk/microsoft/nameserver/ns1-33.azure-dns.com\",\"rel\":\"self\",\"href\":\"https://rdap.nominet.uk/microsoft/nameserver/ns1-33.azure-dns.com\",\"type\":\"application/rdap+json\"}],\"events\":[{\"eventAction\":\"registration\",\"eventActor\":\"292\",\"eventDate\":\"2021-07-14T20:32:51Z\"},{\"eventAction\":\"last changed\",\"eventActor\":\"292\",\"eventDate\":\"2021-07-14T20:32:51Z\"}],\"status\":[\"active\",\"associated\"],\"handle\":\"84365619_HOST-MSFT\",\"ldhName\":\"ns1-33.azure-dns.com\",\"unicodeName\":\"ns1-33.azure-dns.com\"},{\"objectClassName\":\"nameserver\",\"links\":[{\"value\":\"https://rdap.nominet.uk/microsoft/nameserver/ns2-33.azure-dns.net\",\"rel\":\"self\",\"href\":\"https://rdap.nominet.uk/microsoft/nameserver/ns2-33.azure-dns.net\",\"type\":\"application/rdap+json\"}],\"events\":[{\"eventAction\":\"registration\",\"eventActor\":\"292\",\"eventDate\":\"2021-07-14T20:32:50Z\"},{\"eventAction\":\"last changed\",\"eventActor\":\"292\",\"eventDate\":\"2021-07-14T20:32:50Z\"}],\"status\":[\"active\",\"associated\"],\"handle\":\"84365607_HOST-MSFT\",\"ldhName\":\"ns2-33.azure-dns.net\",\"unicodeName\":\"ns2-33.azure-dns.net\"},{\"objectClassName\":\"nameserver\",\"links\":[{\"value\":\"https://rdap.nominet.uk/microsoft/nameserver/ns3-33.azure-dns.org\",\"rel\":\"self\",\"href\":\"https://rdap.nominet.uk/microsoft/nameserver/ns3-33.azure-dns.org\",\"type\":\"application/rdap+json\"}],\"events\":[{\"eventAction\":\"registration\",\"eventActor\":\"292\",\"eventDate\":\"2021-07-14T20:32:50Z\"},{\"eventAction\":\"last changed\",\"eventActor\":\"292\",\"eventDate\":\"2021-07-14T20:32:50Z\"}],\"status\":[\"active\",\"associated\"],\"handle\":\"84365611_HOST-MSFT\",\"ldhName\":\"ns3-33.azure-dns.org\",\"unicodeName\":\"ns3-33.azure-dns.org\"},{\"objectClassName\":\"nameserver\",\"links\":[{\"value\":\"https://rdap.nominet.uk/microsoft/nameserver/ns4-33.azure-dns.info\",\"rel\":\"self\",\"href\":\"https://rdap.nominet.uk/microsoft/nameserver/ns4-33.azure-dns.info\",\"type\":\"application/rdap+json\"}],\"events\":[{\"eventAction\":\"registration\",\"eventActor\":\"292\",\"eventDate\":\"2021-07-14T20:32:51Z\"},{\"eventAction\":\"last changed\",\"eventActor\":\"292\",\"eventDate\":\"2021-07-14T20:32:51Z\"}],\"status\":[\"active\",\"associated\"],\"handle\":\"84365615_HOST-MSFT\",\"ldhName\":\"ns4-33.azure-dns.info\",\"unicodeName\":\"ns4-33.azure-dns.info\"}],\"secureDNS\":{\"delegationSigned\":true,\"maxSigLife\":3024000,\"dsData\":[{\"keyTag\":61899,\"algorithm\":13,\"digest\":\"3669D6E0BA4221859F38E90C598CD669A834BD99EE6478C2217C90D2C509D3ED\",\"digestType\":2}]},\"entities\":[{\"objectClassName\":\"entity\",\"links\":[{\"value\":\"https://rdap.nominet.uk/microsoft/entity/292\",\"rel\":\"self\",\"href\":\"https://rdap.nominet.uk/microsoft/entity/292\",\"type\":\"application/rdap+json\"},{\"value\":\"https://rdap.nominet.uk/microsoft/domain/cloud.microsoft\",\"rel\":\"about\",\"href\":\"https://rdap.markmonitor.com/rdap/\",\"type\":\"text/html\"}],\"handle\":\"292\",\"vcardArray\":[\"vcard\",[[\"version\",{},\"text\",\"4.0\"],[\"fn\",{},\"text\",\"MarkMonitor Inc.\"],[\"url\",{},\"uri\",\"http://www.markmonitor.com\"]]],\"roles\":[\"registrar\"],\"publicIds\":[{\"type\":\"IANA Registrar ID\",\"identifier\":\"292\"}],\"entities\":[{\"objectClassName\":\"entity\",\"vcardArray\":[\"vcard\",[[\"version\",{},\"text\",\"4.0\"],[\"fn\",{},\"text\",\"Abuse contact\"],[\"tel\",{\"type\":\"voice\"},\"text\",\"\"],[\"email\",{},\"text\",\"\"]]],\"roles\":[\"abuse\"]}]},{\"objectClassName\":\"entity\",\"remarks\":[{\"title\":\"REDACTED FOR PRIVACY\",\"type\":\"object redacted due to authorization\",\"description\":[\"Some of the data in this object has been removed\"]},{\"title\":\"EMAIL REDACTED FOR PRIVACY\",\"type\":\"object redacted due to authorization\",\"description\":[\"Please query the RDDS service of the Registrar of Record identified in this output for information on how to contact the Registrant of the queried domain name.\"]}],\"events\":[{\"eventAction\":\"registration\",\"eventActor\":\"292\",\"eventDate\":\"2015-09-25T21:35:16Z\"},{\"eventAction\":\"last changed\",\"eventActor\":\"292\",\"eventDate\":\"2026-07-22T08:06:44.315Z\"}],\"vcardArray\":[\"vcard\",[[\"version\",{},\"text\",\"4.0\"],[\"fn\",{},\"text\",\"Domain Administrator\"],[\"adr\",{\"cc\":\"US\"},\"text\",[\"\",\"\",\"One Microsoft Way\",\"Redmond\",\"WA\",\"98052\",\"\"]],[\"org\",{},\"text\",\"Microsoft Corporation\"],[\"tel\",{\"type\":\"voice\"},\"uri\",\"tel:+1.4258828080\"],[\"tel\",{\"type\":\"fax\"},\"uri\",\"tel:+1.4259367329\"],[\"email\",{},\"text\",\"redacted@nominet.uk\"]]],\"roles\":[\"registrant\"]},{\"objectClassName\":\"entity\",\"remarks\":[{\"title\":\"REDACTED FOR PRIVACY\",\"type\":\"object redacted due to authorization\",\"description\":[\"Some of the data in this object has been removed\"]},{\"title\":\"EMAIL REDACTED FOR PRIVACY\",\"type\":\"object redacted due to authorization\",\"description\":[\"Please query the RDDS service of the Registrar of Record identified in this output for information on how to contact the Registrant of the queried domain name.\"]}],\"events\":[{\"eventAction\":\"registration\",\"eventActor\":\"292\",\"eventDate\":\"2015-09-25T21:35:16Z\"},{\"eventAction\":\"last changed\",\"eventActor\":\"292\",\"eventDate\":\"2026-07-22T08:06:44.315Z\"}],\"vcardArray\":[\"vcard\",[[\"version\",{},\"text\",\"4.0\"],[\"fn\",{},\"text\",\"Domain Administrator\"],[\"adr\",{\"cc\":\"US\"},\"text\",[\"\",\"\",\"One Microsoft Way\",\"Redmond\",\"WA\",\"98052\",\"\"]],[\"org\",{},\"text\",\"Microsoft Corporation\"],[\"tel\",{\"type\":\"voice\"},\"uri\",\"tel:+1.4258828080\"],[\"tel\",{\"type\":\"fax\"},\"uri\",\"tel:+1.4259367329\"],[\"email\",{},\"text\",\"redacted@nominet.uk\"]]],\"roles\":[\"administrative\"]},{\"objectClassName\":\"entity\",\"remarks\":[{\"title\":\"REDACTED FOR PRIVACY\",\"type\":\"object redacted due to authorization\",\"description\":[\"Some of the data in this object has been removed\"]},{\"title\":\"EMAIL REDACTED FOR PRIVACY\",\"type\":\"object redacted due to authorization\",\"description\":[\"Please query the RDDS service of the Registrar of Record identified in this output for information on how to contact the Registrant of the queried domain name.\"]}],\"events\":[{\"eventAction\":\"registration\",\"eventActor\":\"292\",\"eventDate\":\"2015-09-25T21:35:16Z\"},{\"eventAction\":\"last changed\",\"eventActor\":\"292\",\"eventDate\":\"2026-07-22T08:06:44.311Z\"}],\"vcardArray\":[\"vcard\",[[\"version\",{},\"text\",\"4.0\"],[\"fn\",{},\"text\",\"MSN Hostmaster\"],[\"adr\",{\"cc\":\"US\"},\"text\",[\"\",\"\",\"One Microsoft Way\",\"Redmond\",\"WA\",\"98052\",\"\"]],[\"org\",{},\"text\",\"Microsoft Corporation\"],[\"tel\",{\"type\":\"voice\"},\"uri\",\"tel:+1.4258828080\"],[\"tel\",{\"type\":\"fax\"},\"uri\",\"tel:+1.4259367329\"],[\"email\",{},\"text\",\"redacted@nominet.uk\"]]],\"roles\":[\"technical\"]},{\"objectClassName\":\"entity\",\"remarks\":[{\"title\":\"REDACTED FOR PRIVACY\",\"type\":\"object redacted due to authorization\",\"description\":[\"Some of the data in this object has been removed\"]},{\"title\":\"EMAIL REDACTED FOR PRIVACY\",\"type\":\"object redacted due to authorization\",\"description\":[\"Please query the RDDS service of the Registrar of Record identified in this output for information on how to contact the Registrant of the queried domain name.\"]}],\"events\":[{\"eventAction\":\"registration\",\"eventActor\":\"292\",\"eventDate\":\"2015-09-25T21:35:16Z\"},{\"eventAction\":\"last changed\",\"eventActor\":\"292\",\"eventDate\":\"2026-07-22T08:06:44.315Z\"}],\"vcardArray\":[\"vcard\",[[\"version\",{},\"text\",\"4.0\"],[\"fn\",{},\"text\",\"Domain Administrator\"],[\"adr\",{\"cc\":\"US\"},\"text\",[\"\",\"\",\"One Microsoft Way\",\"Redmond\",\"WA\",\"98052\",\"\"]],[\"org\",{},\"text\",\"Microsoft Corporation\"],[\"tel\",{\"type\":\"voice\"},\"uri\",\"tel:+1.4258828080\"],[\"tel\",{\"type\":\"fax\"},\"uri\",\"tel:+1.4259367329\"],[\"email\",{},\"text\",\"redacted@nominet.uk\"]]],\"roles\":[\"billing\"]}],\"publicIds\":[{\"type\":\"Registry Identifier\",\"identifier\":\"115146175_DOMAIN-MSFT\"}],\"redacted\":[{\"method\":\"removal\",\"name\":{\"type\":\"Registry Registrant ID\"},\"pathLang\":\"jsonpath\",\"prePath\":\"$.entities[?(@.roles[0]=='registrant')].handle\",\"reason\":{\"description\":\"Server policy\"}},{\"method\":\"replacementValue\",\"name\":{\"type\":\"Registrant Email\"},\"pathLang\":\"jsonpath\",\"prePath\":\"$.entities[?(@.roles[0]=='registrant')].vcardArray[1][?(@[0]=='email')]\",\"reason\":{\"description\":\"Server policy\"},\"replacementPath\":\"$.entities[?(@.roles[0]=='registrant')].vcardArray[1][?(@[0]=='email')][3]\"},{\"method\":\"removal\",\"name\":{\"description\":\"Administrative Roid\"},\"reason\":{\"description\":\"Server policy\"}},{\"method\":\"replacementValue\",\"name\":{\"description\":\"Administrative Email\"},\"reason\":{\"description\":\"Server policy\"}},{\"method\":\"removal\",\"name\":{\"type\":\"Registry Tech ID\"},\"pathLang\":\"jsonpath\",\"prePath\":\"$.entities[?(@.roles[0]=='technical')].handle\",\"reason\":{\"description\":\"Server policy\"}},{\"method\":\"replacementValue\",\"name\":{\"type\":\"Tech Email\"},\"pathLang\":\"jsonpath\",\"prePath\":\"$.entities[?(@.roles[0]=='technical')].vcardArray[1][?(@[0]=='email')]\",\"reason\":{\"description\":\"Server policy\"},\"replacementPath\":\"$.entities[?(@.roles[0]=='technical')].vcardArray[1][?(@[0]=='email')][3]\"},{\"method\":\"removal\",\"name\":{\"description\":\"Billing Roid\"},\"reason\":{\"description\":\"Server policy\"}},{\"method\":\"replacementValue\",\"name\":{\"description\":\"Billing Email\"},\"reason\":{\"description\":\"Server policy\"}}]}"
+  },
+  {
+   "kind": "rdap",
+   "domain": "office.com",
+   "url": "https://rdap.verisign.com/com/v1/domain/office.com",
+   "attempts": [
+    {
+     "at": "2026-11-22T22:41:42Z",
+     "status": 200,
+     "error": null
+    }
+   ],
+   "status": 200,
+   "body": "{\"objectClassName\":\"domain\",\"handle\":\"5514748_DOMAIN_COM-VRSN\",\"ldhName\":\"OFFICE.COM\",\"links\":[{\"value\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/office.com\",\"rel\":\"self\",\"href\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/office.com\",\"type\":\"application\\/rdap+json\"},{\"value\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/office.com\",\"rel\":\"related\",\"href\":\"https:\\/\\/rdap.markmonitor.com\\/rdap\\/domain\\/OFFICE.COM\",\"type\":\"application\\/rdap+json\"}],\"status\":[\"client delete prohibited\",\"client transfer prohibited\",\"client update prohibited\",\"server delete prohibited\",\"server transfer prohibited\",\"server update prohibited\"],\"entities\":[{\"objectClassName\":\"entity\",\"handle\":\"292\",\"roles\":[\"registrar\"],\"links\":[{\"href\":\"http:\\/\\/www.markmonitor.com\",\"type\":\"text\\/html\",\"value\":\"https:\\/\\/rdap.markmonitor.com\\/rdap\\/\",\"rel\":\"about\"}],\"publicIds\":[{\"type\":\"IANA Registrar ID\",\"identifier\":\"292\"}],\"vcardArray\":[\"vcard\",[[\"version\",{},\"text\",\"4.0\"],[\"fn\",{},\"text\",\"MarkMonitor Inc.\"]]],\"entities\":[{\"objectClassName\":\"entity\",\"roles\":[\"abuse\"],\"vcardArray\":[\"vcard\",[[\"version\",{},\"text\",\"4.0\"],[\"fn\",{},\"text\",\"\"],[\"tel\",{\"type\":\"voice\"},\"uri\",\"tel:+1.2086851750\"],[\"email\",{},\"text\",\"abusecomplaints@markmonitor.com\"]]]}]}],\"events\":[{\"eventAction\":\"registration\",\"eventDate\":\"1999-04-20T04:00:00Z\"},{\"eventAction\":\"expiration\",\"eventDate\":\"2027-04-20T04:00:00Z\"},{\"eventAction\":\"last changed\",\"eventDate\":\"2026-05-13T21:30:09Z\"},{\"eventAction\":\"last update of RDAP database\",\"eventDate\":\"2026-11-22T22:41:28Z\"}],\"secureDNS\":{\"delegationSigned\":true,\"dsData\":[{\"keyTag\":50487,\"algorithm\":13,\"digestType\":2,\"digest\":\"4B04A8582193780E99EED4E685F7221EC016D30002ACCF96AF134A5B42BFF594\"}]},\"nameservers\":[{\"objectClassName\":\"nameserver\",\"ldhName\":\"NS1-05.AZURE-DNS.COM\"},{\"objectClassName\":\"nameserver\",\"ldhName\":\"NS2-05.AZURE-DNS.NET\"},{\"objectClassName\":\"nameserver\",\"ldhName\":\"NS3-05.AZURE-DNS.ORG\"},{\"objectClassName\":\"nameserver\",\"ldhName\":\"NS4-05.AZURE-DNS.INFO\"}],\"rdapConformance\":[\"rdap_level_0\",\"icann_rdap_technical_implementation_guide_1\",\"icann_rdap_response_profile_1\"],\"notices\":[{\"title\":\"Terms of Service\",\"description\":[\"Service subject to Terms of Use.\"],\"links\":[{\"href\":\"https:\\/\\/www.verisign.com\\/domain-names\\/registration-data-access-protocol\\/terms-service\\/index.xhtml\",\"type\":\"text\\/html\",\"value\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/office.com\",\"rel\":\"terms-of-service\"}]},{\"title\":\"Status Codes\",\"description\":[\"For more information on domain status codes, please visit https:\\/\\/icann.org\\/epp\"],\"links\":[{\"href\":\"https:\\/\\/icann.org\\/epp\",\"type\":\"text\\/html\",\"value\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/office.com\",\"rel\":\"glossary\"}]},{\"title\":\"RDDS Inaccuracy Complaint Form\",\"description\":[\"URL of the ICANN RDDS Inaccuracy Complaint Form: https:\\/\\/icann.org\\/wicf\"],\"links\":[{\"href\":\"https:\\/\\/icann.org\\/wicf\",\"type\":\"text\\/html\",\"value\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/office.com\",\"rel\":\"help\"}]}]}"
+  }
+ ]
+}
