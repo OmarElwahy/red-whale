@@ -15,7 +15,7 @@ fingerprints of cloud services, TLS expiry, any active probing.
 | 1 | Contract `cname_to` everywhere + tests (+ migration 0006) | done |
 | 2 | Bundled PSL + RDAP bootstrap + `pnpm tools:refresh-data` + `psl.py` + parity vectors | done |
 | 3 | `takeover-check`: Dockerfile (pinned `whois`), tool.json, run.py, transcript replay, fixtures, unit tests | done |
-| 4 | Docs (contract changelog, architecture §11/§13, team-guide, handoff) + manual checklist here | next |
+| 4 | Docs (contract changelog, architecture §11/§13, team-guide, handoff) + manual checklist here | done |
 
 ## Decisions (from the plan review)
 
@@ -117,11 +117,76 @@ fingerprints of cloud services, TLS expiry, any active probing.
   Raw captures and the assembler stay in the session scratchpad only.
 - Server tests updated for the new tool (catalog, `/api/tools`, fixtures list, `tools:check` count 9).
 
+## Step 4 (done)
+
+- contract.md: §4 relation + §7 changelog (step 1). architecture.md: §4 (migrations run with foreign keys off,
+  0006), §9 (dangling CNAME → done in TW-1; TW-2 list), §11 (dns group + a takeover-check section: chain,
+  registrations, private suffixes, findings, transcript replay, bundled data), §13 (12 rows dated 2026-11-24).
+- `tools/dns/README.md` (group renamed "DNS", takeover-check section), team-guide (copy-table row; "If your tool
+  makes several requests": investigate/LiveNet/ReplayNet, transcript, politeness, assembled fixtures), handoff
+  (status, TW-1 row, key decision, open items incl. the decision to confirm and TW-2).
+
+## Manual check (PowerShell, from the repo root)
+
+**Setup** (proves: the image builds with the pinned Debian whois and the bundled data; fixtures replay offline;
+your existing database migrates with its data):
+
+1. `git switch phase-tw1`, then `pnpm install`.
+2. `pnpm tools:build dns`: the log shows apt installing `whois (5.6.3)`; the tag changes (new script, data, psl.py).
+   (`pnpm tools:build` also rebuilds the other groups: `lib/` changed.)
+3. `pnpm tools:check --all`: `✓ all 9 passed` (takeover-check replays its main fixture and runs
+   `test_takeover_check.py`, which replays the 7 case folders; no Docker or network).
+4. `pnpm dev` on your current `data/redwhale.db`: no "Database is from an older schema" message, and the graph,
+   jobs and edges you had are all still there (migration 0006 rebuilt `edges` and kept every row).
+5. Optional, on a scratch database: `pnpm mock -- --db data/tw1-mock.db`, then start the API on it
+   (`$env:REDWHALE_DB = "data/tw1-mock.db"`, `pnpm dev`): `api.showcase.example —cname_to→ app.showcase.example`
+   is drawn; select the edge: relation `cname_to`, tool dnsx. Remove the variable afterwards
+   (`Remove-Item Env:REDWHALE_DB`).
+
+**The relation in the UI** (proves: the contract change reached the Add node dialog):
+
+6. Right-click a subdomain ▸ Add child node…: the type list starts `domain, subdomain, ip, …`; pick `subdomain` or
+   `domain`: Relation shows `cname_to`. Cancel.
+
+**A real run on a subdomain you are authorized to test** (proves: passive, scope-checked, a real chain and real
+registrations end to end, through the normal ingest):
+
+7. Scope panel: include your domain's wildcard (`*.<your domain>`) or the subdomain itself. Passive-only can stay
+   **on** (the tool is passive).
+8. Pick a subdomain with a CNAME to a third-party service (an `autodiscover.` → Microsoft 365, a CDN, a SaaS
+   status page…). Right-click it ▸ Run tool ▸ **Takeover check**: **no** confirmation dialog (passive). The job
+   succeeds in about 5–30 s (each RDAP server is asked at most once a second).
+9. What to look for in the graph:
+   - each CNAME hop under the previous name with a `cname_to` edge, in order; each hop's data has `rcode`
+     (`NOERROR` normally), and `service` if it is under a cloud suffix (e.g. `azurewebsites.net`, `herokuapp.com`);
+   - each hop subdomain also under its registrable domain (`has_subdomain`); names outside your scope are hatched;
+   - one `domain` per registrable domain looked up, **without a parent**: your own domain and each external one, with
+     `registered: true`, `expires_at`, `registrar`, `created_at`, `source: rdap` (or `whois` for e.g. `.io`/`.de`),
+     `checked_at`; an unknown one has `registered: null` and a `reason` (the job is then `partial`);
+   - the subdomain itself is **not** a new finding; normally no vulnerability (a healthy chain).
+   - If your own domain was already found by a subdomain tool, it is now **corroborated** (2 tools): the RDAP record
+     counts as evidence (the decided exception to the 6C-3 rule).
+10. Jobs tab ▸ the job: the command is the first dnsx line (`/usr/local/bin/dnsx -l <subdomain> -cname -j -silent
+    -nc -duc -or -retry 2 -timeout 5s -t 1 -rl 10 -r 127.0.0.11:53  (+ N more DNS/RDAP/WHOIS exchanges, in raw.txt)`).
+    Open `data\jobs\<id>\raw.txt` (the transcript): every `rdap` exchange's `url` is `https://` on a server from
+    `bootstrap`, no exchange went to the subdomain itself, and there is no `-d`/`-w` in any dnsx argv.
+11. Replay it offline (proves: the transcript alone reproduces the findings):
+    `py -3 tools/dns/takeover-check/run.py --target <subdomain> --target-type subdomain --out $env:TEMP\rw-tc --replay data\jobs\<id>\raw.txt`
+    then `Get-Content $env:TEMP\rw-tc\result.json`: the same findings as the job.
+12. Run it again on the same subdomain: no duplicate nodes or edges (the hop and domain nodes get a second
+    observation; still `discovered`, one tool).
+13. Run it on a subdomain **without** a CNAME: one finding, your own domain.
+14. Right-click your **domain** node ▸ Run tool: Takeover check is not offered (it accepts subdomains only).
+
+**Refusal without a resolver** (no Docker needed; proves: it never falls back to public resolvers):
+
+15. `py -3 tools/dns/takeover-check/run.py --target www.northwind.example --target-type subdomain --out $env:TEMP\rw-tc2`
+    then `Get-Content $env:TEMP\rw-tc2\result.json`: `"status": "failed"`, "no system resolver found; refusing to
+    use public ones" (Windows has no `/etc/resolv.conf`); nothing ran.
+
+**To decide at the check:** `takeover-dangling-cname` skips NXDOMAIN names inside the target's own domain (§13).
+
 ## Next action
 
-Step 4: docs. contract.md already has the relation and the changelog (step 1). Write architecture §11 (dns group:
-takeover-check, transcript replay; migration 0006 mention under §4 if needed) and §13 (decisions: cname_to + node
-type by PSL; 0006 + foreign keys off while migrating; bundled data + refresh; psl.py parity; takeover-check
-command/flags; whois pin; the target's own domain as a finding = exception to the 6C-3 rule; no RDAP redirects;
-WHOIS never false; dangling skips own domain), `tools/dns/README.md`, team-guide (several-requests tools, transcript
-replay, new copy-row), handoff status, and the manual checklist in this file.
+All four steps are done and pushed. Waiting for the user's manual check (above), after 6C-4's; the user merges
+`phase-6c4`, then `phase-tw1`. TW-2 is not started.
