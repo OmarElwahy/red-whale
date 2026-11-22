@@ -13,8 +13,8 @@ fingerprints of cloud services, TLS expiry, any active probing.
 | # | Step | State |
 |---|---|---|
 | 1 | Contract `cname_to` everywhere + tests (+ migration 0006) | done |
-| 2 | Bundled PSL + RDAP bootstrap + `pnpm tools:refresh-data` + `psl.py` + parity vectors | next |
-| 3 | `takeover-check`: Dockerfile (pinned `whois`), tool.json, run.py, transcript replay, fixtures, unit tests | |
+| 2 | Bundled PSL + RDAP bootstrap + `pnpm tools:refresh-data` + `psl.py` + parity vectors | done |
+| 3 | `takeover-check`: Dockerfile (pinned `whois`), tool.json, run.py, transcript replay, fixtures, unit tests | next |
 | 4 | Docs (contract changelog, architecture §11/§13, team-guide, handoff) + manual checklist here | |
 
 ## Decisions (from the plan review)
@@ -54,9 +54,29 @@ fingerprints of cloud services, TLS expiry, any active probing.
   `relationsBetween`/`parentTypesOf`/`childTypesOf`; dialog pre-fill under a subdomain; a populated 0005 database
   migrates with edges, edge observations and indexes intact and accepts `cname_to` (`db.test.ts`).
 
+## Step 2 (done)
+
+- `pnpm tools:refresh-data` (`scripts/refresh-tool-data.ts`, Node `fetch`, `redirect: 'error'`): downloads both
+  files, checks them (PSL section markers; bootstrap `services` array), writes both only if both are good, rewrites
+  `tools/dns/data/README.md` (source, date, version line, sha256). First fetch 2026-11-24: PSL `VERSION
+  2026-11-21_04-33-45_UTC`, bootstrap `publication 2026-11-20T23:00:03Z` (592 services); sha256s in the README.
+- `.gitattributes`: `tools/dns/data/*.dat` and `*.json` are `-text` (bytes kept, so the README sha256 holds on every
+  OS). README.md is outside every build context; the two data files are inside the dns group's (a refresh changes
+  its tag). A `data/` folder has no tool.json, so the catalog ignores it.
+- `tools/lib/psl.py`: ICANN and PRIVATE kept apart; normal, wildcard, exception rules; default `*`; Unicode rules →
+  punycode per label; `registrable()` (ICANN only), `private_suffix()` (strictly below a PRIVATE rule),
+  `public_suffix()`. Lines outside both sections are ignored.
+- 25 parity vectors in `tools/lib/fixtures/psl_vectors.json` (outside every build context): co.uk, com.eg, `*.ck` /
+  `!www.ck`, `*.kawasaki.jp` / `!city.kawasaki.jp`, IDN TLD and IDN rule as punycode, github.io, herokuapp.com,
+  s3.amazonaws.com, blogspot.com, unlisted TLDs (`northwind.example`), bare suffixes. psl.py and tldts 7.4.18 agree on
+  all 25 (`tools/lib/test_psl.py`, run by `server/test/tools-python.test.ts`; `shared/test/psl-parity.test.ts`).
+- TLDs with no RDAP in this bootstrap (WHOIS fallback candidates): io, de, jp, co, me, eg, ru, cn, sh.
+
 ## Next action
 
-Step 2: download `public_suffix_list.dat` and IANA `dns.json` into `tools/dns/data/` via a new
-`scripts/refresh-tool-data.ts` (`pnpm tools:refresh-data`), write `tools/dns/data/README.md` (URL, date, sha256),
-then `tools/lib/psl.py` + `tools/lib/fixtures/psl_vectors.json`, checked by `tools/lib/test_psl.py` and
-`shared/test/psl-parity.test.ts` (tldts 7.4.18).
+Step 3: verify dnsx v1.3.1's `-h` in the dns image for CNAME + rcode output (`-cname`, `-rcode`, JSON
+`status_code`); find the whois package version (`apt-cache policy whois` in the base image) and pin it in
+`tools/dns/Dockerfile` with nmap's bump message; copy `lib/psl.py` and `dns/data/` into the image. Then
+`tools/dns/takeover-check/` (tool.json, run.py with `investigate(target, net)`, LiveNet/ReplayNet, transcript),
+unit tests, the 8 fixtures (raw captures in the scratchpad only, anonymized; edited cases 4, 6, 7, 8 in NOTE.md),
+`pnpm tools:check takeover-check`.

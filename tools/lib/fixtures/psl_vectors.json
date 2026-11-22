@@ -1,0 +1,30 @@
+{
+  "about": "Public Suffix List parity vectors: name -> ICANN registrable domain (null if the name is a public suffix itself) and the PRIVATE-section suffix the name sits strictly below (null if none). Checked against tools/lib/psl.py (test_psl.py) and the server's tldts (shared/test/psl-parity.test.ts). Names are lowercase ASCII, as tools pass them.",
+  "vectors": [
+    { "name": "api.example.com", "registrable": "example.com", "private_suffix": null, "why": "plain" },
+    { "name": "example.com", "registrable": "example.com", "private_suffix": null, "why": "the registrable name itself" },
+    { "name": "com", "registrable": null, "private_suffix": null, "why": "a bare TLD" },
+    { "name": "www.example.co.uk", "registrable": "example.co.uk", "private_suffix": null, "why": "two-label suffix" },
+    { "name": "co.uk", "registrable": null, "private_suffix": null, "why": "a suffix itself" },
+    { "name": "shop.example.com.eg", "registrable": "example.com.eg", "private_suffix": null, "why": "com.eg" },
+    { "name": "example.eg", "registrable": "example.eg", "private_suffix": null, "why": "the TLD rule under com.eg" },
+    { "name": "a.b.foo.ck", "registrable": "b.foo.ck", "private_suffix": null, "why": "wildcard *.ck" },
+    { "name": "foo.ck", "registrable": null, "private_suffix": null, "why": "wildcard *.ck: foo.ck is a suffix" },
+    { "name": "www.ck", "registrable": "www.ck", "private_suffix": null, "why": "exception !www.ck" },
+    { "name": "a.www.ck", "registrable": "www.ck", "private_suffix": null, "why": "below the exception" },
+    { "name": "a.b.kawasaki.jp", "registrable": "a.b.kawasaki.jp", "private_suffix": null, "why": "wildcard *.kawasaki.jp" },
+    { "name": "city.kawasaki.jp", "registrable": "city.kawasaki.jp", "private_suffix": null, "why": "exception !city.kawasaki.jp" },
+    { "name": "www.city.kawasaki.jp", "registrable": "city.kawasaki.jp", "private_suffix": null, "why": "below the exception" },
+    { "name": "www.xn--e1afmkfd.xn--p1ai", "registrable": "xn--e1afmkfd.xn--p1ai", "private_suffix": null, "why": "IDN TLD (рф) as punycode" },
+    { "name": "mail.example.xn--55qx5d.cn", "registrable": "example.xn--55qx5d.cn", "private_suffix": null, "why": "IDN rule (公司.cn) as punycode" },
+    { "name": "user.github.io", "registrable": "github.io", "private_suffix": "github.io", "why": "private: GitHub Pages" },
+    { "name": "github.io", "registrable": "github.io", "private_suffix": null, "why": "the private suffix itself is not below it" },
+    { "name": "app.herokuapp.com", "registrable": "herokuapp.com", "private_suffix": "herokuapp.com", "why": "private: Heroku" },
+    { "name": "a.b.herokuapp.com", "registrable": "herokuapp.com", "private_suffix": "herokuapp.com", "why": "deeper below a private suffix" },
+    { "name": "bucket.s3.amazonaws.com", "registrable": "amazonaws.com", "private_suffix": "s3.amazonaws.com", "why": "private: S3" },
+    { "name": "www.amazonaws.com", "registrable": "amazonaws.com", "private_suffix": null, "why": "amazonaws.com outside its private rules" },
+    { "name": "foo.blogspot.com", "registrable": "blogspot.com", "private_suffix": "blogspot.com", "why": "private: Blogger" },
+    { "name": "www.northwind.example", "registrable": "northwind.example", "private_suffix": null, "why": "unlisted TLD: the default rule *" },
+    { "name": "a.b.c.zzzz", "registrable": "c.zzzz", "private_suffix": null, "why": "unlisted TLD, deeper" }
+  ]
+}
