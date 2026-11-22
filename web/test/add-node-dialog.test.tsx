@@ -189,7 +189,25 @@ describe('parent and relation', () => {
       },
     ]);
     const search = api.fetch.mock.calls.map(([url]) => url).find((u) => u.startsWith('/api/nodes?'));
-    expect(new URLSearchParams(search?.split('?')[1]).get('types')).toBe('domain');
+    expect(new URLSearchParams(search?.split('?')[1]).get('types')).toBe('domain,subdomain');
+  });
+
+  test('under a subdomain, a subdomain or a domain child pre-fills cname_to', () => {
+    open({ parent: SUB });
+    fireEvent.click(screen.getByRole('button', { name: 'Type' }));
+    expect(within(screen.getByRole('listbox')).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'domain',
+      'subdomain',
+      'ip',
+      'url',
+      'vulnerability',
+      'email',
+      'certificate',
+    ]);
+    fireEvent.click(screen.getByRole('option', { name: 'subdomain' }));
+    expect(screen.getByLabelText<HTMLSelectElement>('Relation').value).toBe('cname_to');
+    chooseType('domain');
+    expect(screen.getByLabelText<HTMLSelectElement>('Relation').value).toBe('cname_to');
   });
 
   test('no position (Tree mode, or a child): no x/y is sent', async () => {
@@ -205,9 +223,9 @@ describe('parent and relation', () => {
     expect(api.posts).toEqual([{ type: 'domain', value: 'target.example', ifExists: 'return' }]);
   });
 
-  test('a domain has no parent type', () => {
+  test("a domain's only parent type is a subdomain (a CNAME target)", () => {
     open();
-    expect(screen.getByText('A domain has no parent type: it is a root.')).toBeTruthy();
+    expect(screen.getByLabelText<HTMLInputElement>('Search for a parent').placeholder).toBe('Search subdomain…');
   });
 
   test('Escape and Cancel close it', () => {

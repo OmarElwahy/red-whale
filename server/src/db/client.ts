@@ -60,10 +60,21 @@ export function openDb(path: string = DEFAULT_DB_PATH) {
     throw e;
   }
   sqlite.pragma('journal_mode = WAL');
-  sqlite.pragma('foreign_keys = ON');
   sqlite.pragma('busy_timeout = 5000');
   const db = drizzle(sqlite, { schema });
-  migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+  // Foreign keys stay off while migrating: a table rebuild (0006 recreates `edges` to change its CHECK) drops a table
+  // other tables reference, and `PRAGMA foreign_keys=OFF` inside a migration file is a no-op in migrate()'s
+  // transaction. SQLite's documented procedure: rebuild with them off, then foreign_key_check, then turn them on.
+  sqlite.pragma('foreign_keys = OFF');
+  try {
+    migrate(db, { migrationsFolder: MIGRATIONS_DIR });
+    const broken = sqlite.pragma('foreign_key_check') as unknown[];
+    if (broken.length > 0) throw new Error(`migrating ${path} left ${String(broken.length)} broken foreign key(s)`);
+  } catch (e) {
+    sqlite.close();
+    throw e;
+  }
+  sqlite.pragma('foreign_keys = ON');
   return db;
 }
 

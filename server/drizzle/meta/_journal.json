@@ -43,6 +43,13 @@
       "when": 1793656067192,
       "tag": "0005_graph_editing",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1795386091896,
+      "tag": "0006_cname_to",
+      "breakpoints": true
     }
   ]
 }

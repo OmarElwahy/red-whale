@@ -1,6 +1,7 @@
 // shared/src/manual.ts: what the "Add node" dialog checks live, and the file POST /api/nodes ingests.
 import { describe, expect, test } from 'vitest';
 import {
+  NODE_TYPES,
   RELATIONS,
   RELATION_TYPES,
   childTypesOf,
@@ -38,9 +39,17 @@ describe('relations between types', () => {
     expect(relationsBetween('domain', 'subdomain')).toEqual(['has_subdomain']);
     expect(relationsBetween('subdomain', 'ip')).toEqual(['resolves_to']);
     expect(relationsBetween('ip', 'domain')).toEqual([]);
-    expect(parentTypesOf('domain')).toEqual([]);
     expect(parentTypesOf('url')).toEqual(['domain', 'subdomain', 'port', 'url']);
     expect(childTypesOf('email')).toEqual(['leak']);
+    // cname_to (TW-1): a subdomain can point at a subdomain or a domain; a domain still hangs under nothing else
+    expect(relationsBetween('subdomain', 'subdomain')).toEqual(['cname_to']);
+    expect(relationsBetween('subdomain', 'domain')).toEqual(['cname_to']);
+    expect(relationsBetween('domain', 'domain')).toEqual([]);
+    expect(parentTypesOf('domain')).toEqual(['subdomain']);
+    expect(parentTypesOf('subdomain')).toEqual(['domain', 'subdomain']);
+    expect(childTypesOf('subdomain')).toEqual(['domain', 'subdomain', 'ip', 'url', 'vulnerability', 'email', 'certificate']);
+    // still at most one relation per pair, so the Add node dialog can pre-fill it
+    for (const p of NODE_TYPES) for (const c of NODE_TYPES) expect(relationsBetween(p, c).length).toBeLessThanOrEqual(1);
     for (const r of RELATION_TYPES) {
       for (const p of RELATIONS[r].parents) for (const c of RELATIONS[r].children) expect(relationsBetween(p, c)).toContain(r);
     }

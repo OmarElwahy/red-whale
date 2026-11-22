@@ -22,19 +22,21 @@ NODE_TYPES = {
     "vulnerability", "email", "secret", "certificate", "leak",
 }
 
-# relation -> (allowed parent types, allowed child types)
+# relation -> (allowed parent types, allowed child types), in shared/src/enums.ts's order, so the
+# "can't link" message is word for word Zod's
 RELATIONS = {
-    "has_subdomain":     ({"domain"}, {"subdomain"}),
-    "resolves_to":       ({"domain", "subdomain"}, {"ip"}),
-    "has_port":          ({"ip"}, {"port"}),
-    "serves":            ({"port", "subdomain", "domain"}, {"url"}),
-    "has_url":           ({"url"}, {"url"}),
-    "uses_technology":   ({"url", "port"}, {"technology"}),
-    "has_vulnerability": ({"url", "port", "technology", "subdomain", "ip"}, {"vulnerability"}),
-    "has_certificate":   ({"port", "subdomain"}, {"certificate"}),
-    "has_email":         ({"domain", "subdomain", "url"}, {"email"}),
-    "has_secret":        ({"url"}, {"secret"}),
-    "found_in_leak":     ({"email"}, {"leak"}),
+    "has_subdomain":     (("domain",), ("subdomain",)),
+    "resolves_to":       (("domain", "subdomain"), ("ip",)),
+    "has_port":          (("ip",), ("port",)),
+    "serves":            (("port", "subdomain", "domain"), ("url",)),
+    "has_url":           (("url",), ("url",)),
+    "uses_technology":   (("url", "port"), ("technology",)),
+    "has_vulnerability": (("url", "port", "technology", "subdomain", "ip"), ("vulnerability",)),
+    "has_certificate":   (("port", "subdomain"), ("certificate",)),
+    "has_email":         (("domain", "subdomain", "url"), ("email",)),
+    "has_secret":        (("url",), ("secret",)),
+    "found_in_leak":     (("email",), ("leak",)),
+    "cname_to":          (("subdomain",), ("subdomain", "domain")),
 }
 
 SEVERITIES = {"info", "low", "medium", "high", "critical"}
@@ -274,7 +276,7 @@ def validate(doc):
             if ptype not in ok_parents or ntype not in ok_children:
                 errors.append(
                     f"{where}: '{relation}' can't link {ptype} -> {ntype} "
-                    f"(allowed: {sorted(ok_parents)} -> {sorted(ok_children)})"
+                    f"(allowed: {', '.join(ok_parents)} -> {', '.join(ok_children)})"
                 )
 
     if not findings and doc.get("status") == "success":

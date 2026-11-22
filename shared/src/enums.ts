@@ -44,6 +44,7 @@ export const RELATION_TYPES = [
   'has_email',
   'has_secret',
   'found_in_leak',
+  'cname_to',
 ] as const;
 export type Relation = (typeof RELATION_TYPES)[number];
 
@@ -60,6 +61,7 @@ export const RELATIONS: Record<Relation, { parents: readonly NodeType[]; childre
   has_email: { parents: ['domain', 'subdomain', 'url'], children: ['email'] },
   has_secret: { parents: ['url'], children: ['secret'] },
   found_in_leak: { parents: ['email'], children: ['leak'] },
+  cname_to: { parents: ['subdomain'], children: ['subdomain', 'domain'] },
 };
 
 /** Ordered from lowest to highest. */

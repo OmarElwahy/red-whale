@@ -101,6 +101,41 @@ describe.skipIf(!python)('parity with tools/validate_output.py', () => {
       expect(zodAccepts(path)).toBe(pythonAccepts(path));
     });
 
+    // cname_to (TW-1): subdomain -> subdomain | domain only, refused elsewhere with the same words in both.
+    const SAMPLE: Record<string, string> = {
+      domain: 'example.com',
+      subdomain: 'api.example.com',
+      ip: '93.184.216.34',
+    };
+    const cnameCases: [string, string, boolean][] = [
+      ['subdomain', 'subdomain', true],
+      ['subdomain', 'domain', true],
+      ['domain', 'subdomain', false],
+      ['domain', 'domain', false],
+      ['subdomain', 'ip', false],
+      ['ip', 'subdomain', false],
+    ];
+    test.each(cnameCases)('cname_to %s -> %s: accepted = %s by both, same message', (ptype, ctype, accepted) => {
+      const doc = baseDoc();
+      const child = ctype === ptype ? 'cdn.example.com' : (SAMPLE[ctype] ?? '');
+      doc.findings = [
+        { type: ctype, value: child, parent: { type: ptype, value: SAMPLE[ptype] ?? '' }, relation: 'cname_to' },
+      ];
+      const path = join(dir, `cname-${ptype}-${ctype}.json`);
+      writeFileSync(path, JSON.stringify(doc));
+      expect({ python: pythonAccepts(path), zod: zodAccepts(path) }).toEqual({ python: accepted, zod: accepted });
+      if (accepted) return;
+      const message = `'cname_to' can't link ${ptype} -> ${ctype} (allowed: subdomain -> subdomain, domain)`;
+      const [exe = '', ...args] = python ?? [];
+      const out = spawnSync(exe, [...args, VALIDATOR, path], {
+        encoding: 'utf8',
+        env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
+      }).stdout;
+      expect(out).toContain(`findings[0]: ${message}`);
+      const zod = validateContract(doc);
+      expect(zod.ok ? [] : zod.errors).toContain(`findings[0].relation: ${message}`);
+    });
+
     // URL hosts: Python's url_host_parses() must accept exactly what WHATWG `new URL()` accepts.
     const BS = '\\';
     const urls: [string, boolean][] = [
