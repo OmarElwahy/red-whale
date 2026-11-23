@@ -18,12 +18,15 @@ import type { ToolDef } from './runner/defs';
 import { ingestFinish } from './runner/finish';
 import { Orchestrator } from './runner/orchestrator';
 import type { ContainerRuntime, NetworkSpec } from './runner/runtime';
+import { TakeoverScheduler } from './takeover/scheduler';
 import { Broadcaster } from './ws';
 
 declare module 'fastify' {
   interface FastifyInstance {
     /** The job queue (null when the server runs without the tool runner). */
     orchestrator: Orchestrator | null;
+    /** Automatic takeover checks (TW-2; null without the tool runner). Idle until start(). */
+    takeoverScheduler: TakeoverScheduler | null;
   }
 }
 
@@ -52,6 +55,8 @@ export interface RunnerOptions {
   timeoutMs?: (def: ToolDef) => number;
   /** The network jobs join (default: the tools network). */
   network?: NetworkSpec;
+  /** Auto takeover-check jobs queued at once at most (REDWHALE_AUTO_MAX_QUEUED, default 10). */
+  autoMaxQueued?: number;
 }
 
 /**
@@ -101,8 +106,9 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   const broadcaster = new Broadcaster();
   const db = options.db;
   let runner: RunnerContext | null = null;
+  let scheduler: TakeoverScheduler | null = null;
   if (options.runner) {
-    const { runtime, catalog, jobsDir, maxJobs, timeoutMs, network } = options.runner;
+    const { runtime, catalog, jobsDir, maxJobs, timeoutMs, network, autoMaxQueued } = options.runner;
     const orchestrator = new Orchestrator({
       db,
       runtime,
@@ -126,12 +132,20 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
       },
     });
     runner = { orchestrator, catalog, jobsDir };
+    // It reacts to what the app broadcasts (ingests, auto jobs finishing, Docker back, scope or settings changed).
+    const takeover = new TakeoverScheduler({ db, orchestrator, ...(autoMaxQueued === undefined ? {} : { maxQueued: autoMaxQueued }) });
+    broadcaster.listen((event) => {
+      takeover.onEvent(event);
+    });
+    scheduler = takeover;
     app.addHook('onClose', (_instance, done) => {
+      takeover.stop();
       orchestrator.stop();
       done();
     });
   }
   app.decorate('orchestrator', runner?.orchestrator ?? null);
+  app.decorate('takeoverScheduler', scheduler);
 
   const ctx: RouteContext = {
     app,

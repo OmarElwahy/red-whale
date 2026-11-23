@@ -12,8 +12,8 @@ takeover-check runs. Not in scope: HTTP fingerprints, TLS expiry, other automati
 | # | Step | State |
 |---|---|---|
 | 1 | Migration 0007 + the watch query and `GET /api/takeover/watch` + tests | done |
-| 2 | The auto-check scheduler + tests (fake runtime) | next |
-| 3 | The Takeover watch tab + the "Auto takeover checks" setting + the Jobs trigger badge | |
+| 2 | The auto-check scheduler + tests (fake runtime) | done |
+| 3 | The Takeover watch tab + the "Auto takeover checks" setting + the Jobs trigger badge | next |
 | 4 | Docs + manual checklist | |
 
 ## Decisions (from the plan review)
@@ -58,10 +58,34 @@ takeover-check runs. Not in scope: HTTP fingerprints, TLS expiry, other automati
   from the latest scan only, private-suffix service, out of scope, ignored vuln, a later clean check closes it,
   lastFailure/pending, paging/counts, the API against Zod); settings API test; db migration test.
 
+## Step 2 (done)
+
+- `server/src/takeover/scheduler.ts`, `TakeoverScheduler`:
+  - `tick()`: setting off → cancels the queued auto jobs (`auto takeover checks were turned off`) and stops. Else, only
+    with takeover-check in the catalog, Docker reachable (last ping) and its image built (`inspectImage`): no job row
+    and no scope decision otherwise, like a manual run. Then queues `due()` subdomains until `maxQueued` auto jobs are
+    queued, each through `enqueue(..., { trigger: 'auto' })` (authorize() + log, and again at the start).
+  - `due()`: subdomains in scope by an unlogged `compileScope` pre-check (like `onScopeChanged`), without a
+    takeover-check scan finished in the last 24 h, a queued/running takeover-check job (any trigger), or an auto job
+    created in the last 24 h (any outcome, failed included: retried after 24 h). Auto jobs cancelled by turning the
+    setting off don't count, so turning it on again queues them at once. Order: never checked, then oldest check.
+  - Ticks never overlap (`poke()` during a tick → exactly one more after it). Idle until `start()`: `buildApp` creates
+    it (so app tests get no auto jobs), `run-server` starts it after `recover()` + `startMonitor()`.
+  - Triggers, through a new server-side `Broadcaster.listen()`: `graph.updated` (any ingest, upload, manual add),
+    `scope.changed` (rules and settings), `job.updated` of an auto job reaching a final status (the refill),
+    `runner.status` reachable; `start()`; a 24 h `setInterval` (unref'd).
+- Orchestrator: `EnqueueOptions.trigger` (default `manual`), `cancelQueued(trigger, error)`, and `pump()` orders
+  queued jobs manual first, then by id. A running auto job is never stopped for a manual one.
+- `REDWHALE_AUTO_MAX_QUEUED` (`autoMaxQueued()`: a positive integer, else 10) → `RunnerOptions.autoMaxQueued`.
+- Tests: `server/test/takeover-scheduler.test.ts` (11: due order and skips, failed attempt retried after 24 h, the
+  cap, no rows/logs without Docker or image, out of scope never queued, manual first, setting off/on, start(), the
+  refill until all five are checked, which events poke, the env parsing); `api/jobs.test.ts` (2: an upload queues auto
+  jobs and PATCH settings off cancels the queued ones over the real app; nothing before `start()`).
+
 ## Next action
 
-Step 2: `server/src/takeover/scheduler.ts` (tick: setting on + Docker reachable + dns image built; due = in scope by an
-unlogged pre-check, no takeover-check scan or auto job in 24 h, nothing queued/running; queue up to
-`REDWHALE_AUTO_MAX_QUEUED` minus queued auto jobs, through `enqueue(..., { trigger: 'auto' })`); orchestrator `pump()`
-manual first; triggers (start, ingest touching subdomains, 24 h timer, Docker back, an auto job finishing); setting off
-cancels queued auto jobs. Tests with the fake runtime and an injected clock.
+Step 3 (web): a `takeover` bottom panel (`BottomPanel` in `web/src/state/ui.ts`) listing `GET /api/takeover/watch`
+(TanStack Query, refetch on `job.updated` / `graph.updated` / `scope.changed`), status counts, days-left colours
+(< 30 red, < 90 amber), the registrations tooltip, "out of scope, not refreshed", "last check failed: <reason>",
+pending; a row click picks the node like the table view. Scope panel: an "Auto takeover checks" switch (PATCH
+`autoTakeoverChecks`). Jobs tab: an `auto` badge. Testing Library tests.

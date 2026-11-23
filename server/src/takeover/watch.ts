@@ -57,7 +57,7 @@ function byRisk(a: TakeoverRegistration, b: TakeoverRegistration): number {
   );
 }
 
-interface LatestScan {
+export interface LatestScan {
   id: string;
   status: ScanStatus;
   finishedAt: string;
@@ -76,7 +76,7 @@ interface ScanFacts {
 }
 
 /** The latest takeover-check scan per (normalized) target. */
-function latestScans(db: Db): Map<string, LatestScan> {
+export function latestScans(db: Db): Map<string, LatestScan> {
   const rows = db
     .select({ id: scans.id, target: scans.target, status: scans.status, finishedAt: scans.finishedAt, ingestedAt: scans.ingestedAt })
     .from(scans)
