@@ -12,6 +12,7 @@ import { graphRoutes } from './routes/graph';
 import { jobDto, jobRoutes, type RunnerContext } from './routes/jobs';
 import { nodeRoutes } from './routes/nodes';
 import { scopeRoutes } from './routes/scope';
+import { takeoverRoutes } from './routes/takeover';
 import type { Catalog } from './runner/catalog';
 import type { ToolDef } from './runner/defs';
 import { ingestFinish } from './runner/finish';
@@ -145,6 +146,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   edgeRoutes(ctx);
   dataRoutes(ctx);
   scopeRoutes(ctx);
+  takeoverRoutes(ctx);
   jobRoutes(ctx, runner);
   app.get('/api/ws', { websocket: true }, (socket) => {
     broadcaster.add(socket);

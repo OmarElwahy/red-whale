@@ -18,7 +18,7 @@ const T = '2026-10-31T10:00:00.000Z';
 /** A fake scope API: validates bodies with the shared schemas, normalizes rules like the server. */
 function fakeApi(initial: ScopeRule[] = []) {
   let rules = [...initial];
-  let passiveOnly = true;
+  let settings = { passiveOnly: true, autoTakeoverChecks: true };
   const log: ScopeLogEntry[] = [];
   const calls: { method: string; url: string; body?: unknown }[] = [];
   const json = (body: unknown, status = 200) =>
@@ -50,8 +50,8 @@ function fakeApi(initial: ScopeRule[] = []) {
       return json(rules.find((r) => r.id === id));
     }
     if (u.pathname === '/api/scope/settings') {
-      if (method === 'PATCH') passiveOnly = scopeSettingsPatchSchema.parse(body).passiveOnly;
-      return json({ passiveOnly, updatedAt: T });
+      if (method === 'PATCH') settings = { ...settings, ...scopeSettingsPatchSchema.parse(body) };
+      return json({ ...settings, updatedAt: T });
     }
     if (u.pathname === '/api/scope/check' && method === 'POST') {
       const input = scopeCheckInputSchema.parse(body);

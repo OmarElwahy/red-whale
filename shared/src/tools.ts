@@ -14,3 +14,7 @@ export type JobStatus = (typeof JOB_STATUSES)[number];
 
 /** A job in one of these never changes again. */
 export const FINISHED_JOB_STATUSES: readonly JobStatus[] = ['succeeded', 'failed', 'cancelled', 'refused'];
+
+/** Who queued a job: the analyst (`manual`) or the takeover watch's scheduler (`auto`, TW-2). */
+export const JOB_TRIGGERS = ['manual', 'auto'] as const;
+export type JobTrigger = (typeof JOB_TRIGGERS)[number];

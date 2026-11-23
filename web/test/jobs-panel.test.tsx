@@ -18,6 +18,7 @@ function job(over: Partial<Job> = {}): Job {
     targetValue: 'example.com',
     mode: 'passive',
     status: 'succeeded',
+    trigger: 'manual',
     queuedScopeLogId: 1,
     scopeLogId: 2,
     argv: ['python3', '-I', '/opt/redwhale/subdomain/subfinder/run.py', '--target', 'example.com', '--out', '/out'],

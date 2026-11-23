@@ -16,7 +16,7 @@ import {
 } from './enums';
 import type { NodeType, Relation } from './enums';
 import { SCOPE_ACTIONS, SCOPE_DECISIONS, SCOPE_KINDS, SCOPE_MODES, SCOPE_SOURCES, TARGETABLE_TYPES } from './scope';
-import { JOB_STATUSES, TOOL_MODES } from './tools';
+import { JOB_STATUSES, JOB_TRIGGERS, TOOL_MODES } from './tools';
 
 // --- aggregate IDs ---------------------------------------------------------------------------------
 
@@ -483,11 +483,19 @@ export const scopeLogResponseSchema = z.strictObject({
 export const scopeSettingsSchema = z.strictObject({
   /** On (the default): every active check is out of scope. */
   passiveOnly: z.boolean(),
+  /** On (the default): takeover-check runs by itself on in-scope subdomains not checked in 24 h (TW-2). */
+  autoTakeoverChecks: z.boolean(),
   updatedAt: timestamp,
 });
 export type ScopeSettings = z.infer<typeof scopeSettingsSchema>;
 
-export const scopeSettingsPatchSchema = z.strictObject({ passiveOnly: z.boolean() });
+/** Either setting, or both. */
+export const scopeSettingsPatchSchema = z
+  .strictObject({ passiveOnly: z.boolean().optional(), autoTakeoverChecks: z.boolean().optional() })
+  .refine((p) => p.passiveOnly !== undefined || p.autoTakeoverChecks !== undefined, {
+    message: 'give passiveOnly, autoTakeoverChecks or both',
+  });
+export type ScopeSettingsPatch = z.infer<typeof scopeSettingsPatchSchema>;
 
 const nodeRef = graphNodeSchema.pick({ id: true, type: true, value: true, label: true, severity: true, confidence: true });
 
@@ -706,6 +714,8 @@ export const jobSchema = z.strictObject({
   targetValue: z.string(),
   mode: z.enum(TOOL_MODES),
   status: z.enum(JOB_STATUSES),
+  /** `manual`: the analyst queued it; `auto`: the takeover watch's scheduler did (TW-2). */
+  trigger: z.enum(JOB_TRIGGERS),
   /** scope_log rows: the decision at queueing, and the one right before the container started. */
   queuedScopeLogId: z.number().int(),
   scopeLogId: z.number().int().nullable(),
@@ -743,6 +753,80 @@ export const jobsResponseSchema = z.strictObject({
   total: z.number().int(),
 });
 export type JobsResponse = z.infer<typeof jobsResponseSchema>;
+
+// --- takeover watch (TW-2) ------------------------------------------------------------------------------
+
+/**
+ * A subdomain's place in the watch, in display order. `takeable`: an open takeover vulnerability (reported by its
+ * latest check, not tagged ignored); `expiring`: a looked-up domain expires in < 90 days (or already has);
+ * `unknown`: the check was partial/failed or a registration is unknown. `out-of-scope` is only for subdomains never
+ * checked; a checked one that is out of scope now keeps its last status (`inScope: false`, not refreshed).
+ */
+export const TAKEOVER_STATUSES = ['takeable', 'expiring', 'unknown', 'ok', 'not-checked', 'out-of-scope'] as const;
+export type TakeoverStatus = (typeof TAKEOVER_STATUSES)[number];
+
+/** Expiring below this many days (amber); red below TAKEOVER_RED_DAYS. */
+export const TAKEOVER_EXPIRING_DAYS = 90;
+export const TAKEOVER_RED_DAYS = 30;
+
+/** One registrable domain the check looked up. */
+export const takeoverRegistrationSchema = z.strictObject({
+  nodeId: z.string(),
+  domain: z.string(),
+  /** true / false (RDAP 404) / null (unknown). */
+  registered: z.boolean().nullable(),
+  /** As the registry gave it. */
+  expiresAt: z.string().nullable(),
+  /** Whole days from the server's `now` to expiresAt (negative: already past). */
+  daysLeft: z.number().int().nullable(),
+  source: z.string().nullable(),
+  reason: z.string().nullable(),
+});
+export type TakeoverRegistration = z.infer<typeof takeoverRegistrationSchema>;
+
+export const takeoverWatchRowSchema = z.strictObject({
+  nodeId: z.string(),
+  subdomain: z.string(),
+  status: z.enum(TAKEOVER_STATUSES),
+  inScope: z.boolean(),
+  /** The CNAME hops after the subdomain, in order (empty: no CNAME, or not checked). */
+  chain: z.array(z.string()),
+  /** The last name of the chain (the subdomain itself without a CNAME); null when not checked. */
+  chainEnd: z.string().nullable(),
+  /** The chain end's cloud service (a private suffix such as azurewebsites.net), when it has one. */
+  service: z.string().nullable(),
+  /** The weakest link: the registration that sets the status (soonest expiry when all are fine). */
+  registration: takeoverRegistrationSchema.nullable(),
+  /** Every domain the check looked up (the row's tooltip). */
+  registrations: z.array(takeoverRegistrationSchema),
+  /** Open takeover vulnerabilities from the latest check. */
+  vulnerabilities: z.array(z.strictObject({ nodeId: z.string(), label: z.string(), severity })),
+  /** The latest takeover-check scan of this subdomain. */
+  lastCheck: z.strictObject({ scanId: z.string(), at: timestamp, status: z.enum(SCAN_STATUSES) }).nullable(),
+  /** The latest takeover-check job failed (after the latest scan, if any). */
+  lastFailure: z.strictObject({ jobId: z.number().int(), at: timestamp, error: z.string() }).nullable(),
+  /** A takeover-check job for it is queued or running. */
+  pending: z.boolean(),
+});
+export type TakeoverWatchRow = z.infer<typeof takeoverWatchRowSchema>;
+
+export const TAKEOVER_PAGE_SIZE = { default: 100, max: 500 } as const;
+
+export const takeoverWatchQuerySchema = z.strictObject({
+  page: positiveInt.default(1),
+  pageSize: positiveInt.max(TAKEOVER_PAGE_SIZE.max).default(TAKEOVER_PAGE_SIZE.default),
+});
+
+export const takeoverWatchResponseSchema = z.strictObject({
+  items: z.array(takeoverWatchRowSchema),
+  page: z.number().int(),
+  pageSize: z.number().int(),
+  total: z.number().int(),
+  counts: countsBy(TAKEOVER_STATUSES),
+  /** The server's clock for daysLeft. */
+  now: timestamp,
+});
+export type TakeoverWatchResponse = z.infer<typeof takeoverWatchResponseSchema>;
 
 export const JOB_OUTPUT_STREAMS = ['stdout', 'stderr', 'raw'] as const;
 export type JobOutputStream = (typeof JOB_OUTPUT_STREAMS)[number];

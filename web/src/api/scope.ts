@@ -13,6 +13,7 @@ import {
   type ScopeCheckResponse,
   type ScopeRule,
   type ScopeSettings,
+  type ScopeSettingsPatch,
   type ScopeSource,
   type NodeType,
 } from '@redwhale/shared';
@@ -88,7 +89,7 @@ export function usePatchScopeRule() {
 export function usePatchScopeSettings() {
   const refresh = useRefreshAll();
   return useMutation({
-    mutationFn: (patch: { passiveOnly: boolean }) => sendJson('PATCH', '/api/scope/settings', patch, scopeSettingsSchema),
+    mutationFn: (patch: ScopeSettingsPatch) => sendJson('PATCH', '/api/scope/settings', patch, scopeSettingsSchema),
     onSuccess: refresh,
   });
 }
