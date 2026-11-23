@@ -105,9 +105,8 @@ fingerprints of cloud services, TLS expiry, any active probing.
     status is `partial`.
   - A CNAME at a registrable domain (apex) can't be a `cname_to` edge (only subdomains have it): the next name is
     reported without that edge, with a log line. Not covered by a fixture (rare and illegal DNS).
-  - **Decision to confirm:** `takeover-dangling-cname` skips NXDOMAIN names inside the target's **own**
-    registrable domain (the zone owner's to fix; nobody else can claim it). The plan's rule read literally would
-    flag them too.
+  - **Decided (user confirmed after step 4):** `takeover-dangling-cname` skips NXDOMAIN names inside the target's
+    **own** registrable domain (only the zone owner can create them); the hop keeps its `rcode` in its data. §13.
 - **Fixtures**: all 8 cases (main = case 3, Microsoft 365 chain; 7 case folders replayed by the unit test). Real
   exchanges captured 2026-11-22 in the image with `LiveNet`; cases 4–8 assembled with edited CNAME lines, all in
   `fixtures/NOTE.md`. Case 5 is assembled too (no dangling CNAME on the authorized domain; a real NXDOMAIN under
@@ -124,7 +123,7 @@ fingerprints of cloud services, TLS expiry, any active probing.
   registrations, private suffixes, findings, transcript replay, bundled data), §13 (12 rows dated 2026-11-24).
 - `tools/dns/README.md` (group renamed "DNS", takeover-check section), team-guide (copy-table row; "If your tool
   makes several requests": investigate/LiveNet/ReplayNet, transcript, politeness, assembled fixtures), handoff
-  (status, TW-1 row, key decision, open items incl. the decision to confirm and TW-2).
+  (status, TW-1 row, key decision, open items incl. TW-2).
 
 ## Manual check (PowerShell, from the repo root)
 
@@ -184,7 +183,8 @@ registrations end to end, through the normal ingest):
     then `Get-Content $env:TEMP\rw-tc2\result.json`: `"status": "failed"`, "no system resolver found; refusing to
     use public ones" (Windows has no `/etc/resolv.conf`); nothing ran.
 
-**To decide at the check:** `takeover-dangling-cname` skips NXDOMAIN names inside the target's own domain (§13).
+Decided: an NXDOMAIN hop inside the target's own domain is not a `takeover-dangling-cname` (its `rcode` stays in the
+hop's data; §13).
 
 ## Next action
 

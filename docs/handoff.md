@@ -105,7 +105,8 @@ and `docs/phase-tw1-progress.md`).
 - **Takeover check (TW-1):** a CNAME's target is a `domain` if it is the registrable name (PSL ICANN section), else
   a `subdomain` under its domain; external domains have no parent. RDAP 404 is the only "not registered" (WHOIS gives
   a date or unknown); RDAP redirects are never followed; private-suffix names (`x.herokuapp.com`) get `service`, not a
-  lookup. The target's own registrable domain is a finding (exception to the 6C-3 rule). Raw output = a transcript
+  lookup. An NXDOMAIN hop inside the target's own domain is not dangling (only the zone owner can create it; its
+  rcode stays in data). The target's own registrable domain is a finding (exception to the 6C-3 rule). Raw output = a transcript
   of every exchange; `parse()` always replays it through the same logic. PSL/bootstrap are bundled, downloaded only
   by `pnpm tools:refresh-data`. Migrations now run with foreign keys off, then `foreign_key_check`.
 
@@ -113,7 +114,6 @@ and `docs/phase-tw1-progress.md`).
 
 - **Manual check** for 6C-4 (`docs/phase-6c4-progress.md`), then merge `phase-6c4`; then TW-1's
   (`docs/phase-tw1-progress.md`), then merge `phase-tw1`.
-- **TW-1 decision to confirm:** `takeover-dangling-cname` skips NXDOMAIN names inside the target's own domain.
 - **TW-2** (Takeover watch, second half): the panel, scheduled/automatic runs, expiry urgency, HTTP fingerprints of
   cloud services ("NoSuchBucket", "No such app"), TLS certificate expiry.
 - **Teammates' real scripts** not yet tested end to end (`pnpm tools:check` → run in the group → check the graph).

@@ -237,8 +237,11 @@ class VulnerabilityTest(unittest.TestCase):
                                          "rdap.verisign.com after 3 tries"])
 
     def test_a_missing_name_in_the_targets_own_domain_is_not_a_takeover(self):
+        # only the zone owner can create it; the hop is still reported, with its rcode
         doc = self.run_chain("gone.northwind.example", "NXDOMAIN", boot={})
         self.assertEqual(vulns(doc), {})
+        hop = [f for f in findings(doc, "subdomain") if f["relation"] == "cname_to"]
+        self.assertEqual([(f["value"], f["data"]) for f in hop], [("gone.northwind.example", {"rcode": "NXDOMAIN"})])
 
     def test_resolving_names_are_not_dangling(self):
         self.assertEqual(vulns(self.run_chain("gone.herokuapp.com", "NOERROR", boot={})), {})
