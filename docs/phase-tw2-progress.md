@@ -14,7 +14,7 @@ takeover-check runs. Not in scope: HTTP fingerprints, TLS expiry, other automati
 | 1 | Migration 0007 + the watch query and `GET /api/takeover/watch` + tests | done |
 | 2 | The auto-check scheduler + tests (fake runtime) | done |
 | 3 | The Takeover watch tab + the "Auto takeover checks" setting + the Jobs trigger badge | done |
-| 4 | Docs + manual checklist | next |
+| 4 | Docs + manual checklist | done |
 
 ## Decisions (from the plan review)
 
@@ -98,9 +98,66 @@ takeover-check runs. Not in scope: HTTP fingerprints, TLS expiry, other automati
 - Tests: `web/test/takeover-panel.test.tsx` (4), the badge in `jobs-panel.test.tsx`, the switch in
   `scope-panel.test.tsx`. Not checked in a real browser in this step: that's in the manual checklist (step 4).
 
+## Step 4 (done)
+
+- architecture.md: §4 (`scans` index, `scope_settings.auto_takeover_checks`, `jobs.trigger`, migration 0007), §6
+  (`GET /takeover/watch`, settings PATCH), §8 (bottom panel list, the Takeover watch tab, the `auto` badge, the
+  switch), §9 (TW-2 done; fingerprints/TLS expiry later), §11 (queue order; "Takeover watch" and "Automatic checks"
+  sections), §13 (6 rows dated 2026-11-23). CLAUDE.md: `REDWHALE_AUTO_MAX_QUEUED`. handoff.md: status, TW-2 row, key
+  decision, open items (merge order; fingerprints/TLS expiry; external hops as rows).
+
+## Manual check (PowerShell, from the repo root)
+
+**Read first:** on this branch, the server queues passive takeover-checks **by itself** as soon as it starts, on
+every in-scope subdomain not checked in the last 24 h (setting "Auto takeover checks", default on). They only ask
+your system DNS resolver and RDAP/WHOIS servers, never the subdomains themselves, and each one goes through the scope
+guard. If you don't want that on your real database yet, start on a copy (step 3).
+
+**Setup** (proves: migration 0007 keeps your data; nothing else changed in the tools):
+
+1. `git switch phase-tw2`, then `pnpm install`.
+2. `pnpm tools:build dns`: nothing under `tools/` changed since TW-1, so it prints `✓ dns: … is up to date` (or
+   builds it if you haven't since TW-1).
+3. Optional, to try it on a copy (with `pnpm dev` stopped, so the copy is complete), in its **own folder** (job outputs go to `jobs\` next to the database, so a copy in
+   `data\` would share job folders with the real one): `New-Item -ItemType Directory data\tw2-copy`, then
+   `Copy-Item data\redwhale.db data\tw2-copy\redwhale.db`, then `$env:REDWHALE_DB = "data/tw2-copy/redwhale.db"`
+   (remove it afterwards with `Remove-Item Env:REDWHALE_DB`).
+4. `pnpm dev`: no "Database is from an older schema" message; the graph, your old jobs and their results are all
+   still there. Old jobs have **no** `auto` badge (they became `manual`).
+
+**Automatic checks** (proves: they start by themselves, stay capped, refill, run behind your own jobs):
+
+5. Within a few seconds the Jobs tab fills with takeover-check jobs with a sky-blue **AUTO** badge: at most 2 running
+   (`REDWHALE_MAX_JOBS`) and at most **10 queued**. As each finishes, another is queued, until every in-scope
+   subdomain was checked once. Out-of-scope subdomains never get a job (and no `run` entries for them in the Scope
+   log).
+6. While auto jobs are queued, run any tool by hand (right-click ▸ Run tool): it starts as soon as a running job
+   finishes, **before** the queued auto jobs. Nothing running is stopped for it.
+7. Scope panel ▸ **Auto takeover checks** off: every queued auto job becomes `cancelled` ("auto takeover checks were
+   turned off"); the running ones finish normally; no new auto job appears. Turn it on again: the queue fills again
+   with the subdomains that were cancelled.
+8. Stop `pnpm dev` and start it again (on Windows, check that no old vite is left on :5173): subdomains checked in
+   the last 24 h get **no** new auto job.
+9. Optional: `$env:REDWHALE_AUTO_MAX_QUEUED = "3"`, restart: at most 3 auto jobs queued at once. Remove it afterwards
+   (`Remove-Item Env:REDWHALE_AUTO_MAX_QUEUED`).
+
+**The Takeover watch tab** (proves: rows from the latest check, ordering, live refresh, the row click):
+
+10. Header ▸ **Takeover watch**. The counts list the statuses present. Rows are ordered: takeable now (red) →
+    expiring (soonest first, already expired on top) → unknown → ok → not checked → not checked (out of scope).
+    External chain hops (e.g. `x.azurewebsites.net`, `*.outlook.com`) show at the bottom as "not checked (out of
+    scope)".
+11. While auto jobs run, rows show "checking…" and change status without a reload when their job finishes.
+12. A subdomain with a CNAME to a third party: Chain end = the last name of the chain (the full chain as its tooltip;
+    "(… service)" for a cloud name); Domain = the weakest link. Hover Domain: one line per domain looked up (your own
+    domain and each external one) with registered/expiry/days and source (rdap/whois). Days left is red under 30,
+    amber under 90, plain otherwise. A subdomain without a CNAME: Chain end = itself, Domain = your own domain.
+13. Click a row (anywhere): the graph selects that subdomain and opens the groups down to it, like a Table row.
+14. Scope panel: add an **exclude** rule for one subdomain that is already checked: its row keeps its status, with
+    "out of scope, not refreshed" and its last-checked date; no new auto job for it later. Remove the rule afterwards.
+15. Run Takeover check by hand on a subdomain again: the row's Last checked moves to now (the latest scan wins).
+
 ## Next action
 
-Step 4: docs. architecture.md §4 (migration 0007), §6 (`GET /api/takeover/watch`, settings PATCH), §8 (the tab, the
-badge, the switch), §9 (TW-2 done; HTTP fingerprints/TLS expiry still later), §11 (scheduler + watch), §13 (decisions
-dated 2026-11-23); CLAUDE.md (`REDWHALE_AUTO_MAX_QUEUED`); handoff.md (status, TW-2 row, decisions); this file's
-manual checklist.
+All four steps are done and pushed. Waiting for the user's manual check (above), after 6C-4's and TW-1's; the user
+merges `phase-6c4`, then `phase-tw1`, then `phase-tw2`. Nothing after TW-2 is started.

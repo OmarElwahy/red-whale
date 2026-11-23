@@ -55,7 +55,8 @@ Additional rules (see decisions log, 2026-10-29):
 **scans** — one row per ingested tool-output file
 `id` (uuid) · `tool` · `tool_version` · `target` · `command` · `status` · `errors` (json) ·
 `started_at` · `finished_at` · `ingested_at` · `file_hash` (unique; sha256 of the file's canonical JSON —
-keys sorted, no whitespace — so re-ingesting a file, even reformatted, is a no-op) · `raw` (json, the whole file)
+keys sorted, no whitespace — so re-ingesting a file, even reformatted, is a no-op) · `raw` (json, the whole file) ·
+index `(tool, target)` (TW-2: a subdomain's latest takeover-check)
 
 **nodes**
 `id` (pk, deterministic) · `type` · `value` (normalized) · `label` (display text) ·
@@ -91,12 +92,13 @@ in file order, highest `severity`. `role` is `finding` if the file reports the n
 `id` · `source` (`check` | `run`) · `target_type` · `target_value` (as asked) · `mode` (`passive` | `active`) ·
 `decision` (`in` | `out` | `n/a`) · `rule_id` → scope_rules (nullable) · `reason` · `at`. Index on (`source`, `at`).
 
-**scope_settings** — one row (`id = 1`, CHECK), created by the migration: `passive_only` (default on) · `updated_at`.
+**scope_settings** — one row (`id = 1`, CHECK), created by the migration: `passive_only` (default on) ·
+`auto_takeover_checks` (default on, TW-2) · `updated_at`.
 
 **jobs** — one row per tool run (§11), from queueing to the ingested scan. Never deleted (the mock wipe aside).
 `id` (integer) · `tool` · `tool_group` · `node_id` → nodes (**NULL once the analyst deleted the node**, §12; the job
 then shows "node deleted") · `target_type` · `target_value` (the node's value when queued) · `mode` (`passive` | `active` | `intrusive`) · `status` (`queued` | `running` | `succeeded` | `failed` |
-`cancelled` | `refused`) · `queued_scope_log_id` → scope_log (the `authorize()` decision at queueing) ·
+`cancelled` | `refused`) · `trigger` (`manual` | `auto`, TW-2: the analyst or the takeover watch's scheduler) · `queued_scope_log_id` → scope_log (the `authorize()` decision at queueing) ·
 `scope_log_id` → scope_log (the decision right before the container started) · `argv` (json, the command as run) ·
 `image` · `container_id` · `timeout_sec` · `exit_code` · `error` · `issues` (json, why `result.json` was rejected) ·
 `created_at` · `started_at` · `finished_at` · `scan_id` → scans · `nodes_created` · `nodes_updated`.
@@ -133,7 +135,9 @@ pnpm mock (or re-ingest your files)."). Breaking so far: `0001_observation_role`
 `openDb` runs migrations with `foreign_keys` **off**, then `PRAGMA foreign_key_check` (any broken key: it throws),
 then on: a table rebuild that drops a referenced table (`0006_cname_to` rebuilds `edges` for its relation CHECK,
 copying every row: not breaking) would otherwise fail, because a migration file's own `PRAGMA foreign_keys=OFF` is a
-no-op inside the migrator's transaction.
+no-op inside the migrator's transaction. `0007_takeover_watch` rebuilds `jobs` the same way (new `trigger` + its CHECK;
+existing jobs become `manual`; drizzle-kit's copy statement named the new column, removed by hand), adds
+`scope_settings.auto_takeover_checks` and the `scans (tool, target)` index: not breaking.
 
 ## 5. Ingest pipeline
 
@@ -191,7 +195,7 @@ edge's full set of `edge_observations` in the same order (`recomputeEdges`, `der
 | `GET /scope/check?type=&value=&mode=` | The decision against the current scope; **not logged** (a GET must not write) |
 | `POST /scope/check` | Same body/answer, **logged** as `check`: the UI's "test a target" box, on submit only |
 | `GET /scope/log?source=&page=&pageSize=` | Decision log, newest first; `source` defaults to `run` (`run,check` adds the test box) |
-| `GET /scope/settings`, `PATCH /scope/settings` | `{ passiveOnly }` |
+| `GET /scope/settings`, `PATCH /scope/settings` | `{ passiveOnly, autoTakeoverChecks }`; a PATCH takes either or both (400 if neither) |
 | `GET /tools` | Tool groups (label, image, `imageStatus` built/outdated/missing/unknown, tools) and tools (mode, accepted types, external services, `contacts`, timeout) |
 | `POST /jobs` | `{ tool, nodeId, confirmActive? }`: 201 `{ jobs }` queued · 403 `{ error, decision, jobs }` refused by scope (kept as `refused`) · 404 · 400 · 409 image not built · 428 `{ error, reason: "confirm-required" }` a non-passive tool without `confirmActive: true` · 503 Docker unreachable |
 | `POST /jobs/group` | `{ group, nodeId, confirmActive? }`: one job per tool of the group that takes the node's type, one `authorize()` each; 428 if any of those tools isn't passive and `confirmActive` isn't true |
@@ -200,6 +204,7 @@ edge's full set of `edge_observations` in the same order (`recomputeEdges`, `der
 | `GET /jobs/:id/output/:stream` | `stdout` \| `stderr` \| `raw` as `text/plain` (≤ 5 MB, as kept) |
 | `POST /jobs/:id/cancel` | Queued → cancelled; running → killed, cancelled, nothing ingested; 409 if finished |
 | `GET /runner/status` | `{ docker: { reachable, version, error }, images: [{ group, image, status }], running, queued, maxConcurrent }` |
+| `GET /takeover/watch?page=&pageSize=` | TW-2: one row per subdomain, riskiest first (`pageSize` ≤ 500, default 100), `counts` per status, the server's `now` (§11). Works without the runner |
 | `WS /ws` (i.e. `/api/ws`) | Push events: `graph.updated`, `graph.deleted { nodeIds, edgeIds }`, `scan.ingested`, `scope.changed`, `job.updated { job }`, `runner.status { reachable, error }` |
 
 Request and response shapes are the Zod schemas in `shared/src/api.ts`. Details:
@@ -442,8 +447,8 @@ included (1,945 elements, truncated).
   them, plus view-only `mute=1` and `hops=N`, which never reach the API. Bad values are dropped one by one.
 - **Mute low-risk:** fades nodes whose effective severity is below medium (aggregates by `maxSeverity`), and edges
   touching them; a quiet parent above a serious finding stays bright.
-- **Bottom panel:** toggled from the header, under the canvas: **Table**, **Highlights**, **Scope**, **Deleted** (§12) or
-  **Jobs**. A job whose target node was deleted shows its target value with "(node deleted)" instead of a link.
+- **Bottom panel:** toggled from the header, under the canvas: **Table**, **Highlights**, **Scope**, **Takeover watch**
+  (TW-2), **Deleted** (§12) or **Jobs**. A job whose target node was deleted shows its target value with "(node deleted)" instead of a link.
 - **Jobs** (`web/src/jobs/JobsPanel.tsx`, §11): every run, newest first, live (`job.updated` refetches only the runner's
   queries and the scope log, never the graph): status, tool, target (click = pick the node), started, duration
   (ticking while running), what it found ("+14 new, 6 updated" / "nothing new"), the error; **Cancel** (queued or
@@ -451,11 +456,17 @@ included (1,945 elements, truncated).
   **Show results** (picks the target node and highlights that scan's rows in its provenance table). Queuing a run
   opens the tab and says what happened in the header ("… refused: <scope reason>" on a 403). Provenance rows from a run
   link to its raw output. The header shows the runner: green Docker, amber (images not built), red Docker off, grey
-  runner off, with running(+queued) counts.
+  runner off, with running(+queued) counts. A job the takeover watch queued has an `auto` badge (TW-2).
+- **Takeover watch** (`web/src/takeover/TakeoverPanel.tsx`, TW-2, §11): `GET /takeover/watch`, refetched on
+  `job.updated` (its key is under the runner's), `graph.updated` and `scope.changed`. Status counts; columns
+  subdomain, status, chain end (the full chain as title; "(x service)" for a private suffix), domain (the weakest
+  link; tooltip: every domain looked up, its state, source and reason), registered, expires, days left (< 30 red,
+  < 90 amber), last checked. Notes under the subdomain: "out of scope, not refreshed", "last check failed: <reason>"
+  (red), "checking…". A click on a row picks the node like a table row (select + open its path).
 - **Scope** (`web/src/scope/ScopePanel.tsx`, §10): the header chip shows the active rule count and "passive" while
   passive-only is on (amber dot when there is no include rule). The panel has the rules (add with the server's
   normalized value or its refusal; edit a note; remove with a second confirming click; "show removed" lists the
-  history), the passive-only switch, a "test a target" box (type, mode, value; `POST /scope/check` on Enter or the
+  history), the passive-only and "Auto takeover checks" switches (TW-2), a "test a target" box (type, mode, value; `POST /scope/check` on Enter or the
   button only, never per keystroke) and the log (runs by default, "include checks" adds the test box's entries, paged).
   With no include rule a banner under the header says nothing is in scope and opens the panel. The filter sidebar
   has a Scope group (in scope / out of scope / not targetable, workspace totals), and the side panel a Scope section
@@ -562,8 +573,9 @@ Reports · CVE monitoring · local LLM scoring · JS analysis agent.
 - Scope rules and settings in `GET /export` (today the export has each node's `inScope`, not the rules behind it).
 - A `scope.logged` WS event, so other tabs' log panels refresh when a run is authorized (6C).
 - ~~Dangling CNAME detection (subdomain takeover)~~: done in TW-1 as `takeover-check` (§11), with the relation
-  `cname_to`. dnsx still reports no finding for a dangling CNAME (only its log and `raw.txt`). TW-2: the Takeover
-  watch panel, scheduled runs, HTTP fingerprints of cloud services ("NoSuchBucket"), TLS expiry.
+  `cname_to`. dnsx still reports no finding for a dangling CNAME (only its log and `raw.txt`). The Takeover watch tab
+  and the automatic checks: done in TW-2 (§11). Still later: HTTP fingerprints of cloud services ("NoSuchBucket"),
+  TLS certificate expiry, other automation (6D).
 
 ## 10. Scope guard
 
@@ -693,7 +705,8 @@ log). The UI asks every time (Run tool ▸ on an active tool or group opens a di
 `GET /scope/check`, unlogged; **Run active scan** / **Cancel**; no "don't ask again"). A confirmed run still meets
 `authorize()` twice like any other (passive-only on → refused).
 
-**Queue** (`orchestrator.ts`): jobs live in SQLite, oldest first, at most `REDWHALE_MAX_JOBS` (default 2) running.
+**Queue** (`orchestrator.ts`): jobs live in SQLite, manual jobs first, then oldest first (TW-2), at most
+`REDWHALE_MAX_JOBS` (default 2) running. A running job is never stopped to make room.
 1. Queueing (`POST /jobs`, `/jobs/group`): tool, node, type, Docker and image are checked first (no row, nothing
    logged on failure); then `authorize()` decides and logs (`run`); refused → a `refused` job and a 403.
 2. Starting: **`authorize()` again, right before the container**; refused → `refused` ("out of scope at start"), no
@@ -777,6 +790,39 @@ contacts the target or the names in its chain.
   sha256 (README). Only `pnpm tools:refresh-data` downloads them; they are in the dns build context, so a refresh
   changes the image tag. `psl.py` (stdlib; ICANN and private sections apart; wildcards, exceptions, punycode) and the
   server's `tldts` must agree on `tools/lib/fixtures/psl_vectors.json` (`test_psl.py`, `psl-parity.test.ts`).
+
+**Takeover watch** (TW-2, `server/src/takeover/`). Nothing is stored: `GET /takeover/watch` builds one row per
+subdomain on read (`watch.ts`).
+- **From the latest check only:** a subdomain's latest takeover-check scan (`scans.tool` + normalized `target`, so a
+  file ingested by hand counts too) is read through per-scan provenance: the chain from that scan's `cname_to` edge
+  observations, the registrations from its `domain` observations with `registered`, the vulnerabilities from its
+  vulnerability observations. An older chain or registration never leaks into the row; a later clean check closes a
+  vulnerability (the node stays).
+- **Status**, in display order: `takeable` (an open takeover vulnerability: in the latest check, node not tagged
+  `ignored`; the node is shared by ID, so the tag closes it on every row) → `expiring` (a registered domain with
+  < 90 days left, already expired included, soonest first) → `unknown` (scan partial/failed, a registration `null`,
+  or none) → `ok` → `not-checked` → `out-of-scope` (never checked). A checked subdomain now out of scope keeps its
+  status (`inScope: false`, "out of scope, not refreshed"). Every subdomain is a row, chain hops outside the scope too.
+- **Weakest link:** the status weighs every domain the check looked up (own + external); `registration` is the one
+  that sets it (not registered → expiring → unknown → soonest expiry), so the own domain expiring shows on every row.
+  `registrations` lists them all. `chainEnd` is always the real chain end (the subdomain itself without a CNAME).
+- **Failures:** the latest finished takeover-check job, if it failed after the latest scan was ingested, is
+  `lastFailure`; `pending` = a takeover-check job queued or running.
+
+**Automatic checks** (TW-2, `scheduler.ts`). The scheduler queues takeover-check (passive) on in-scope subdomains
+not checked in the last 24 h. It only queues: every job goes through `enqueue()`, so `authorize()` decides and logs at
+queueing and again at the start, as for a manual run.
+- **A tick:** setting "Auto takeover checks" off → cancel the queued auto jobs ("auto takeover checks were turned
+  off"), queue nothing. Else, only with Docker reachable and the dns image built (no job row and no scope decision
+  otherwise, like a manual run), it queues due subdomains until `REDWHALE_AUTO_MAX_QUEUED` (default 10) auto jobs are
+  queued. Ticks never overlap.
+- **Due:** in scope by an unlogged pre-check; no takeover-check scan finished in 24 h; no takeover-check job queued
+  or running; no auto job created in 24 h, whatever its outcome (a failed one is retried after 24 h, like a
+  success; jobs cancelled by turning the setting off don't count). Never checked first, then the oldest check.
+- **When:** `start()` (server start, after `recover()`), then on `graph.updated` (any ingest or manual add),
+  `scope.changed` (rules and settings), an auto job's final `job.updated` (the refill), Docker coming back, and every
+  24 h. It listens to the app's broadcasts (`Broadcaster.listen()`). `buildApp` creates it idle, so tests get no
+  auto jobs unless they call `start()`.
 
 ## 12. Graph editing
 
@@ -985,3 +1031,9 @@ delete is one transaction with a record.
 | 2026-11-24 | **`takeover-dangling-cname` skips NXDOMAIN names inside the target's own registrable domain** (confirmed by the user after TW-1 step 4): only the zone owner can create those names, so nobody else can take them over. The hop is still reported with its `rcode` (`NXDOMAIN`) in its data. Outside the own domain, NXDOMAIN + a registered domain or a private suffix → medium |
 | 2026-11-24 | **Transcript replay** (takeover-check, the first tool with several requests): its raw output is one JSON transcript of every exchange plus the bootstrap entries used, keyed by domain; `parse()` always re-runs `investigate(target, net)` on a `ReplayNet` of it, so live and `--replay` build findings through one code path. A replay needs no network and no current bootstrap (a refresh can't change old fixtures; anonymized `.example` names keep the real server). A missing answer stops only that step, with an error naming it |
 | 2026-11-24 | **takeover-check fixtures**: the main `fixtures/raw.json` (a real 4-hop Microsoft 365 chain) is checked by `tools:check`; 7 case folders are replayed by `test_takeover_check.py`. All exchanges are real captures (2026-11-22, `LiveNet` in the image); cases 4–8 are assembled with edited CNAME lines (no zone to create records in), all marked in NOTE.md. The target's and its company's domains, RDAP handles, registrar, dates, nameservers and all IPs are anonymized; well-known third-party service names (Microsoft 365, azurewebsites.net, statuspage.io) are kept, since the PSL behaviour depends on them and they say nothing about the target |
+| 2026-11-23 | **TW-2 Takeover watch: no stored table.** `GET /takeover/watch` builds one row per subdomain on read from its latest takeover-check scan, through per-scan provenance (observations, edge observations), so nothing can drift and an older chain never leaks into a row. Why: the graph already holds every fact; a second copy would need its own invalidation |
+| 2026-11-23 | **Weakest link per row** (confirmed by the user): the status weighs every domain the check looked up, and the domain/registered/expires columns show the one that sets it, so the own domain expiring shows on every row; a tooltip lists them all. The chain-end column is always the real chain end. Why: a row should show what makes it risky |
+| 2026-11-23 | **Expiring = registered with < 90 days left**, already-expired-but-registered included (red, negative days, first among expiring); days-left colours < 30 red, < 90 amber (confirmed by the user) |
+| 2026-11-23 | **Out-of-scope subdomains checked earlier keep their last status** with "out of scope, not refreshed" and the last-checked date; only never-checked ones are "not checked (out of scope)" (confirmed by the user). Why: hiding an old "takeable now" is the worse failure |
+| 2026-11-23 | **Automatic takeover checks**: passive takeover-check on in-scope subdomains not checked in 24 h, on server start, after any ingest, every 24 h, and as auto jobs finish (the refill, confirmed by the user); at most `REDWHALE_AUTO_MAX_QUEUED` (default 10) auto jobs queued; manual jobs start first (a running auto job is not stopped). A failed auto job is retried after 24 h, like a success, and shows on the row as "last check failed: <reason>". Setting "Auto takeover checks" (Scope panel, default on); off cancels the queued auto jobs. Every run goes through `authorize()` |
+| 2026-11-23 | **Migration `0007_takeover_watch`** (proposed in the TW-2 plan, approved): `jobs.trigger` (`manual`/`auto`, CHECK; `jobs` rebuilt, rows kept as `manual`), `scope_settings.auto_takeover_checks` (on), index `scans (tool, target)`. Not breaking. drizzle-kit's generated copy selected the new column from the old table; fixed by hand |

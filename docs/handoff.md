@@ -4,7 +4,7 @@ Paste this file into a new chat to continue where we left off. It holds the cont
 other docs. Source of truth for design details is still `docs/architecture.md` (incl. the decisions log, §13),
 `docs/contract.md` and `CLAUDE.md` — attach `docs/architecture.md` too if the question is technical.
 
-_Last updated: 2026-11-03_
+_Last updated: 2026-11-23_
 
 ## Who / what
 
@@ -30,9 +30,9 @@ Dropped: `cytoscape-expand-collapse` (groups are server-side).
 
 ## Status
 
-Main has everything through 6C-3. 6C-4 is on branch `phase-6c4`, and TW-1 on `phase-tw1` (branched from
-`phase-6c4`'s tip); both on GitHub, **not merged** until my manual checks (checklists in `docs/phase-6c4-progress.md`
-and `docs/phase-tw1-progress.md`).
+Main has everything through 6C-3. 6C-4 is on branch `phase-6c4`, TW-1 on `phase-tw1` (from `phase-6c4`'s tip) and
+TW-2 on `phase-tw2` (from `phase-tw1`'s tip); all on GitHub, **not merged** until my manual checks (checklists in
+`docs/phase-6c4-progress.md`, `docs/phase-tw1-progress.md` and `docs/phase-tw2-progress.md`).
 
 | Phase | What | Status |
 |---|---|---|
@@ -49,6 +49,8 @@ and `docs/phase-tw1-progress.md`).
 | 6C-3 | `dns` group with dnsx (passive: A/AAAA/CNAME through the system resolver, never brute-force) and `ports` group with naabu (active, IPs only: connect scan of the top 100 TCP ports, no capability); lab also on 8080; tools that resolve names refuse to run without a system resolver | ✅ done (on main) |
 | 6C-4 | nmap in the `ports` group (active, an ip or a port: connect scan + `-sV`, no other scripts/OS/UDP; Debian-pinned package); lab answers on TCP 22 with a fake SSH banner; typed command builders `command(target, target_type)` | ✅ done · manual check pending (checklist in `docs/phase-6c4-progress.md`) |
 | TW-1 | Takeover watch, first half: relation `cname_to` (+ migration 0006, rows kept); bundled PSL + RDAP bootstrap (`pnpm tools:refresh-data`), `tools/lib/psl.py` = tldts on shared vectors; `takeover-check` in `dns` (passive: CNAME chain via dnsx, RDAP / WHOIS registration, `takeover-unregistered-domain` critical, `takeover-dangling-cname` medium; transcript replay) | ✅ done · manual check pending (checklist in `docs/phase-tw1-progress.md`) |
+
+| TW-2 | Takeover watch, second half: a "Takeover watch" tab (one row per subdomain, built on read from its latest takeover-check: status, chain end, weakest-link registration, days left, last checked), automatic passive checks (24 h, capped queue, manual first, setting in the Scope panel), `auto` badge in Jobs; migration 0007 (rows kept) | ✅ done (branch `phase-tw2`, awaiting my check) |
 
 ## How I work with Claude Code
 
@@ -109,13 +111,21 @@ and `docs/phase-tw1-progress.md`).
   rcode stays in data). The target's own registrable domain is a finding (exception to the 6C-3 rule). Raw output = a transcript
   of every exchange; `parse()` always replays it through the same logic. PSL/bootstrap are bundled, downloaded only
   by `pnpm tools:refresh-data`. Migrations now run with foreign keys off, then `foreign_key_check`.
+- **Takeover watch (TW-2):** no stored table; each row comes from the subdomain's latest takeover-check scan only.
+  Status order takeable → expiring (< 90 days, expired first) → unknown → ok → not checked → out of scope; the row
+  shows the weakest link among all domains looked up (own domain included). A checked subdomain that left the scope
+  keeps its status ("not refreshed"). Auto checks: in-scope subdomains not checked in 24 h, at most
+  `REDWHALE_AUTO_MAX_QUEUED` (10) queued, manual jobs first, failed ones retried after 24 h, each through
+  `authorize()`; "Auto takeover checks" switch (default on; off cancels queued auto jobs).
 
 ## Open items
 
 - **Manual check** for 6C-4 (`docs/phase-6c4-progress.md`), then merge `phase-6c4`; then TW-1's
-  (`docs/phase-tw1-progress.md`), then merge `phase-tw1`.
-- **TW-2** (Takeover watch, second half): the panel, scheduled/automatic runs, expiry urgency, HTTP fingerprints of
-  cloud services ("NoSuchBucket", "No such app"), TLS certificate expiry.
+  (`docs/phase-tw1-progress.md`), then merge `phase-tw1`; then TW-2's (`docs/phase-tw2-progress.md`), then merge
+  `phase-tw2`.
+- **Takeover, later:** HTTP fingerprints of cloud services ("NoSuchBucket", "No such app"), TLS certificate expiry.
+  The watch lists external chain hops (`x.azurewebsites.net`) as "not checked (out of scope)" rows: hide them if it
+  gets noisy.
 - **Teammates' real scripts** not yet tested end to end (`pnpm tools:check` → run in the group → check the graph).
 - **Technology spelling:** `tech_value()` fixes case/spaces, but different tools still name things differently
   (`iis` vs `microsoft-iis`), so corroboration can silently fail: maybe an alias table later.
