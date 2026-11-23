@@ -255,11 +255,11 @@ export function takeoverWatchRows(db: Db, now: Date): TakeoverWatchRow[] {
   });
 
   const rank = (s: TakeoverStatus) => TAKEOVER_STATUSES.indexOf(s);
+  // Within each status, the least time left first (the weakest link's days; rows without a date after), then by name.
+  const days = (r: TakeoverWatchRow) => r.registration?.daysLeft ?? null;
+  const byDays = (a: number | null, b: number | null) => (a === b ? 0 : a === null ? 1 : b === null ? -1 : a - b);
   return rows.sort(
-    (a, b) =>
-      rank(a.status) - rank(b.status) ||
-      (a.status === 'expiring' ? (a.registration?.daysLeft ?? 0) - (b.registration?.daysLeft ?? 0) : 0) ||
-      a.subdomain.localeCompare(b.subdomain),
+    (a, b) => rank(a.status) - rank(b.status) || byDays(days(a), days(b)) || a.subdomain.localeCompare(b.subdomain),
   );
 }
 

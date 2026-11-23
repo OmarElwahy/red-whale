@@ -158,6 +158,24 @@ describe('takeover watch rows', () => {
     expect(d.lastCheck?.status).toBe('partial');
   });
 
+  test('within a status, the least time left first (rows without a date last), then by name', () => {
+    const db = freshDb();
+    graph(db, [sub('a'), sub('m'), sub('z'), sub('n')]);
+    addRule(db, { kind: 'wildcard', value: `*.${OWN}`, action: 'include' });
+    ingest(db, check(sub('a'), [])); // own domain only: FAR (~760 days)
+    ingest(db, check(sub('m'), [])); // same date as a: by name
+    ingest(db, check(sub('z'), [hop('z.svc-z.example', sub('z')), reg('svc-z.example', { expires_at: '2027-06-01T00:00:00Z' })]));
+    ingest(db, check(sub('n'), [hop('n.svc-n.example', sub('n')), reg('svc-n.example', { expires_at: '2027-04-01T00:00:00Z' })]));
+    const ok = takeoverWatchRows(db, NOW).filter((r) => r.status === 'ok');
+    const far = daysLeft(FAR, NOW);
+    expect(ok.map((r) => [r.subdomain, r.registration?.daysLeft])).toEqual([
+      [sub('n'), daysLeft('2027-04-01T00:00:00Z', NOW)],
+      [sub('z'), daysLeft('2027-06-01T00:00:00Z', NOW)],
+      [sub('a'), far],
+      [sub('m'), far],
+    ]);
+  });
+
   test('the chain comes from the latest scan only; a private suffix shows as the service', () => {
     const db = freshDb();
     seed(db);

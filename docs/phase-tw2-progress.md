@@ -27,7 +27,8 @@ takeover-check runs. Not in scope: HTTP fingerprints, TLS expiry, other automati
 - **Status order:** `takeable` (an open takeover vulnerability: observed in the latest check, node not tagged
   `ignored`) → `expiring` (registered, days left < 90, already-expired included: negative days, sorted first) →
   `unknown` (scan partial/failed, a registration `null`, or none) → `ok` → `not-checked` → `out-of-scope`.
-  Days left colours: < 30 red, < 90 amber.
+  Within each status, the least time left first (rows without a date after them), then by name (asked by the user
+  after step 4: the `ok` rows were sorted by name only). Days left colours: < 30 red, < 90 amber.
 - **Out of scope:** a subdomain checked earlier keeps its last status with `inScope: false` ("out of scope, not
   refreshed" + its last-checked date). Only never-checked out-of-scope subdomains are `out-of-scope`.
 - **Failures:** the latest finished takeover-check job, if it failed after the latest scan was ingested, is the row's

@@ -801,7 +801,8 @@ subdomain on read (`watch.ts`).
 - **Status**, in display order: `takeable` (an open takeover vulnerability: in the latest check, node not tagged
   `ignored`; the node is shared by ID, so the tag closes it on every row) → `expiring` (a registered domain with
   < 90 days left, already expired included, soonest first) → `unknown` (scan partial/failed, a registration `null`,
-  or none) → `ok` → `not-checked` → `out-of-scope` (never checked). A checked subdomain now out of scope keeps its
+  or none) → `ok` → `not-checked` → `out-of-scope` (never checked). Within each status, the least time left first
+  (the weakest link's days left; rows without a date after them), then by name. A checked subdomain now out of scope keeps its
   status (`inScope: false`, "out of scope, not refreshed"). Every subdomain is a row, chain hops outside the scope too.
 - **Weakest link:** the status weighs every domain the check looked up (own + external); `registration` is the one
   that sets it (not registered → expiring → unknown → soonest expiry), so the own domain expiring shows on every row.
@@ -1037,3 +1038,4 @@ delete is one transaction with a record.
 | 2026-11-23 | **Out-of-scope subdomains checked earlier keep their last status** with "out of scope, not refreshed" and the last-checked date; only never-checked ones are "not checked (out of scope)" (confirmed by the user). Why: hiding an old "takeable now" is the worse failure |
 | 2026-11-23 | **Automatic takeover checks**: passive takeover-check on in-scope subdomains not checked in 24 h, on server start, after any ingest, every 24 h, and as auto jobs finish (the refill, confirmed by the user); at most `REDWHALE_AUTO_MAX_QUEUED` (default 10) auto jobs queued; manual jobs start first (a running auto job is not stopped). A failed auto job is retried after 24 h, like a success, and shows on the row as "last check failed: <reason>". Setting "Auto takeover checks" (Scope panel, default on); off cancels the queued auto jobs. Every run goes through `authorize()` |
 | 2026-11-23 | **Migration `0007_takeover_watch`** (proposed in the TW-2 plan, approved): `jobs.trigger` (`manual`/`auto`, CHECK; `jobs` rebuilt, rows kept as `manual`), `scope_settings.auto_takeover_checks` (on), index `scans (tool, target)`. Not breaking. drizzle-kit's generated copy selected the new column from the old table; fixed by hand |
+| 2026-11-23 | **Takeover watch order within a status: least time left first** (the weakest link's days left; rows without a date after them), then by name (asked by the user after TW-2 step 4; before, only `expiring` rows were sorted by days, the rest by name) |
