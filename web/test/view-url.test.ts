@@ -56,6 +56,15 @@ describe('filters → GET /api/graph params', () => {
     expect(view().filters).toEqual({});
   });
 
+  test('"show external CNAME names" is showExternal=1 in the URL and the API; off removes it; a bad value is dropped', () => {
+    view().setShowExternal(true);
+    expect(apiParams()).toBe('showExternal=1');
+    expect(viewFromSearch('?showExternal=1').filters).toEqual({ showExternal: '1' });
+    expect(viewFromSearch('?showExternal=yes').filters).toEqual({});
+    view().setShowExternal(false);
+    expect(view().filters).toEqual({});
+  });
+
   test('a blank search is no q at all (the API rejects q=)', () => {
     view().setQuery('dev');
     view().setQuery('   ');

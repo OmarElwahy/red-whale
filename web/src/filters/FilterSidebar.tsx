@@ -70,6 +70,7 @@ function CheckList<K extends ListFilter>({
   options,
   counts,
   labels,
+  children,
 }: {
   title: string;
   filter: K;
@@ -77,6 +78,8 @@ function CheckList<K extends ListFilter>({
   counts: Partial<Record<string, number>> | undefined;
   /** Display text per option, when the value itself isn't clear enough. */
   labels?: Partial<Record<string, string>>;
+  /** More controls at the end of the group. */
+  children?: ReactNode;
 }) {
   const selected = useView((s) => s.filters[filter]) as readonly ListValue<K>[] | undefined;
   const toggle = useView((s) => s.toggle);
@@ -95,7 +98,27 @@ function CheckList<K extends ListFilter>({
           {labels?.[value] ?? value}
         </Choice>
       ))}
+      {children}
     </Group>
+  );
+}
+
+/** External CNAME names (TW-2): out-of-scope nodes only takeover-check reported. Hidden unless this is on. */
+function ShowExternal() {
+  const on = useView((s) => s.filters.showExternal === '1');
+  const setShowExternal = useView((s) => s.setShowExternal);
+  return (
+    <Choice
+      type="checkbox"
+      checked={on}
+      onChange={() => {
+        setShowExternal(!on);
+      }}
+    >
+      <span title="Third-party names from takeover-check's CNAME chains (out of scope, no other tool reported them). Hidden by default; the Takeover watch still uses them.">
+        show external CNAME names
+      </span>
+    </Choice>
   );
 }
 
@@ -210,7 +233,9 @@ export function FilterSidebar({ stats, className }: { stats: StatsResponse | und
       <CheckList title="Confidence" filter="confidence" options={CONFIDENCE_LEVELS} counts={stats?.byConfidence} />
       <CheckList title="Tool" filter="tool" options={tools} counts={stats?.byTool} />
       <CheckList title="Tag" filter="tag" options={TAGS} counts={stats?.byTag} />
-      <CheckList title="Scope" filter="scope" options={SCOPE_DECISIONS} counts={stats?.byScope} labels={SCOPE_FILTER_LABEL} />
+      <CheckList title="Scope" filter="scope" options={SCOPE_DECISIONS} counts={stats?.byScope} labels={SCOPE_FILTER_LABEL}>
+        <ShowExternal />
+      </CheckList>
     </aside>
   );
 }

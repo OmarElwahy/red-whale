@@ -15,6 +15,7 @@ takeover-check runs. Not in scope: HTTP fingerprints, TLS expiry, other automati
 | 2 | The auto-check scheduler + tests (fake runtime) | done |
 | 3 | The Takeover watch tab + the "Auto takeover checks" setting + the Jobs trigger badge | done |
 | 4 | Docs + manual checklist | done |
+| 5 | Hide external CNAME names (graph, table, watch) behind a filter, off by default (asked after step 4) | done |
 
 ## Decisions (from the plan review)
 
@@ -107,6 +108,24 @@ takeover-check runs. Not in scope: HTTP fingerprints, TLS expiry, other automati
   sections), §13 (6 rows dated 2026-11-23). CLAUDE.md: `REDWHALE_AUTO_MAX_QUEUED`. handoff.md: status, TW-2 row, key
   decision, open items (merge order; fingerprints/TLS expiry; external hops as rows).
 
+## Step 5 (done, asked by the user after step 4)
+
+- After the first real run the user asked for the third-party chain names (Microsoft 365, CloudFront, the target's
+  hosting provider: 11 nodes) to be hidden. Decided: hidden by default with a switch, in the graph **and** the watch, as
+  step 5 on this branch.
+- **Rule:** external = `inScope === 'out'` **and** only takeover-check ever observed it
+  (`takeoverOnlyNodeIds()`: `GROUP BY node_id HAVING SUM(tool <> 'takeover-check') = 0`, so a `manual` row or any
+  other tool keeps it visible). Vulnerabilities are `n/a`, never hidden. It follows the scope and the tools live.
+- `GraphFilters.showExternal` (`'1'`), applied in `filteredGraph()`: graph, view, path, groups, `/nodes`, group delete.
+  `GET /takeover/watch?showExternal=1`. Nothing deleted; the watch still reads hidden registrations.
+- `TAKEOVER_TOOL` moved to `shared/src/tools.ts` (graph/store needs it; watch.ts re-exports it).
+- Web: sidebar ▸ Scope ▸ "show external CNAME names" (`setShowExternal`; in the URL like any filter; "reset" hides
+  them again). The Takeover watch tab follows the same switch.
+- Also from the user after step 4: within each status, the least time left first (separate commit).
+- Tests: 4 server (graph/table hide and show, other tool or scope brings one back, nothing stored changes and the
+  watch still reads hidden registrations, the API), the watch defaults updated (9 rows, 16 with `showExternal`);
+  web: the sidebar switch, the URL round trip, the watch request.
+
 ## Manual check (PowerShell, from the repo root)
 
 **Read first:** on this branch, the server queues passive takeover-checks **by itself** as soon as it starts, on
@@ -157,8 +176,19 @@ guard. If you don't want that on your real database yet, start on a copy (step 3
 14. Scope panel: add an **exclude** rule for one subdomain that is already checked: its row keeps its status, with
     "out of scope, not refreshed" and its last-checked date; no new auto job for it later. Remove the rule afterwards.
 15. Run Takeover check by hand on a subdomain again: the row's Last checked moves to now (the latest scan wins).
+16. Rows with the same status are ordered by days left, least first (rows without a date after them).
+
+**External names hidden** (step 5; proves: third parties are hidden, not deleted, and come back with the switch):
+
+17. The graph no longer shows `outlook.com`, `office.com`, `cloud.microsoft`, `cloudfront.net`, your hosting
+    provider's domain or their hosts; a chain name under your own domain (in scope) is still there. The Table view
+    doesn't list them either, and the Takeover watch has no "not checked (out of scope)" rows for them.
+18. Your `autodiscover.` subdomain's row in the Takeover watch still shows its chain end and, in the Domain tooltip,
+    the Microsoft domains' expiry dates.
+19. Sidebar ▸ Scope ▸ tick **show external CNAME names**: they come back in the graph, the table and the watch, and
+    the URL gets `showExternal=1`. Untick it (or "reset"): hidden again.
 
 ## Next action
 
-All four steps are done and pushed. Waiting for the user's manual check (above), after 6C-4's and TW-1's; the user
+All five steps are done and pushed. Waiting for the user's manual check (above), after 6C-4's and TW-1's; the user
 merges `phase-6c4`, then `phase-tw1`, then `phase-tw2`. Nothing after TW-2 is started.

@@ -8,12 +8,15 @@ import { queryKeys } from './query';
 
 export const TAKEOVER_PANEL_SIZE = 100;
 
-export function useTakeoverWatch(page: number): UseQueryResult<TakeoverWatchResponse> {
+/** `showExternal`: the graph's "show external CNAME names" filter, so the tab hides the same rows the graph does. */
+export function useTakeoverWatch(page: number, showExternal = false): UseQueryResult<TakeoverWatchResponse> {
+  const params = new URLSearchParams({ page: String(page), pageSize: String(TAKEOVER_PANEL_SIZE) });
+  if (showExternal) params.set('showExternal', '1');
   return useQuery({
-    queryKey: queryKeys.takeoverWatch(page),
+    queryKey: queryKeys.takeoverWatch(page, showExternal),
     queryFn: ({ signal }) =>
       getJson(
-        `/api/takeover/watch?${new URLSearchParams({ page: String(page), pageSize: String(TAKEOVER_PANEL_SIZE) }).toString()}`,
+        `/api/takeover/watch?${params.toString()}`,
         takeoverWatchResponseSchema,
         { signal },
       ),

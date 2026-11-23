@@ -116,7 +116,9 @@ TW-2 on `phase-tw2` (from `phase-tw1`'s tip); all on GitHub, **not merged** unti
   shows the weakest link among all domains looked up (own domain included). A checked subdomain that left the scope
   keeps its status ("not refreshed"). Auto checks: in-scope subdomains not checked in 24 h, at most
   `REDWHALE_AUTO_MAX_QUEUED` (10) queued, manual jobs first, failed ones retried after 24 h, each through
-  `authorize()`; "Auto takeover checks" switch (default on; off cancels queued auto jobs).
+  `authorize()`; "Auto takeover checks" switch (default on; off cancels queued auto jobs). Third-party chain names
+  (out of scope, only takeover-check saw them) are hidden from the graph, table and watch unless the sidebar's
+  "show external CNAME names" is on; nothing is deleted. Within a status, least time left first.
 
 ## Open items
 
@@ -124,8 +126,8 @@ TW-2 on `phase-tw2` (from `phase-tw1`'s tip); all on GitHub, **not merged** unti
   (`docs/phase-tw1-progress.md`), then merge `phase-tw1`; then TW-2's (`docs/phase-tw2-progress.md`), then merge
   `phase-tw2`.
 - **Takeover, later:** HTTP fingerprints of cloud services ("NoSuchBucket", "No such app"), TLS certificate expiry.
-  The watch lists external chain hops (`x.azurewebsites.net`) as "not checked (out of scope)" rows: hide them if it
-  gets noisy.
+  An in-scope domain with no checked subdomain never shows its own expiry (takeover-check takes subdomains only):
+  maybe domain rows later.
 - **Teammates' real scripts** not yet tested end to end (`pnpm tools:check` → run in the group → check the graph).
 - **Technology spelling:** `tech_value()` fixes case/spaces, but different tools still name things differently
   (`iis` vs `microsoft-iis`), so corroboration can silently fail: maybe an alias table later.

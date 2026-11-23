@@ -81,6 +81,11 @@ export const graphFiltersSchema = z.strictObject({
   excludeTag: list(z.enum(TAGS)).optional(),
   /** Scope decision in passive mode (`inScope` on every node). */
   scope: list(z.enum(SCOPE_DECISIONS)).optional(),
+  /**
+   * `1`: also show external names, i.e. out-of-scope nodes that only takeover-check reported (the CNAME chains' third
+   * parties, TW-2). Hidden by default; they stay in the database (and in the Takeover watch's data).
+   */
+  showExternal: z.literal('1').optional(),
   /** Case-insensitive substring of value or label. */
   q: z.string().trim().min(1).max(200).optional(),
 });
@@ -815,6 +820,8 @@ export const TAKEOVER_PAGE_SIZE = { default: 100, max: 500 } as const;
 export const takeoverWatchQuerySchema = z.strictObject({
   page: positiveInt.default(1),
   pageSize: positiveInt.max(TAKEOVER_PAGE_SIZE.max).default(TAKEOVER_PAGE_SIZE.default),
+  /** As the graph filter: `1` also lists the external chain names (hidden by default). */
+  showExternal: z.literal('1').optional(),
 });
 
 export const takeoverWatchResponseSchema = z.strictObject({

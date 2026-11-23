@@ -3,6 +3,7 @@
 // provenance (observations, edge_observations): an older chain or an older registration never leaks into it.
 import {
   TAKEOVER_EXPIRING_DAYS,
+  TAKEOVER_TOOL,
   TAKEOVER_STATUSES,
   compileScope,
   normalize,
@@ -16,9 +17,10 @@ import {
 import { and, asc, eq, inArray, isNotNull } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { edgeObservations, edges, jobs, nodes, observations, scans } from '../db/schema';
+import { isExternal, takeoverOnlyNodeIds } from '../graph/store';
 import { currentScope } from '../scope/store';
 
-export const TAKEOVER_TOOL = 'takeover-check';
+export { TAKEOVER_TOOL };
 
 const DAY_MS = 86_400_000;
 /** SQLite's bound-parameter limit is far above this; chunks keep each IN list modest. */
@@ -183,21 +185,29 @@ function jobFacts(db: Db): Map<string, JobFacts> {
   return out;
 }
 
-/** Every subdomain's row, in display order. */
-export function takeoverWatchRows(db: Db, now: Date): TakeoverWatchRow[] {
-  const subs = db
+/**
+ * Every subdomain's row, in display order. External names (out of scope, known only from takeover-check: the third
+ * parties of CNAME chains) are left out unless `showExternal`, like in the graph.
+ */
+export function takeoverWatchRows(db: Db, now: Date, { showExternal = false }: { showExternal?: boolean } = {}): TakeoverWatchRow[] {
+  const all = db
     .select({ id: nodes.id, value: nodes.value })
     .from(nodes)
     .where(eq(nodes.type, 'subdomain'))
     .orderBy(asc(nodes.value))
     .all();
+  const scope = compileScope(currentScope(db));
+  const takeoverOnly = showExternal ? null : takeoverOnlyNodeIds(db);
+  const decided = all.map((s) => ({ ...s, decision: scope.check('subdomain', s.value, 'passive').decision }));
+  const subs = takeoverOnly
+    ? decided.filter((s) => !isExternal({ id: s.id, inScope: s.decision }, takeoverOnly))
+    : decided;
   const latest = latestScans(db);
   const facts = scanFacts(db, [...new Set(subs.flatMap((s) => latest.get(s.value)?.id ?? []))]);
   const jobsBy = jobFacts(db);
-  const scope = compileScope(currentScope(db));
 
   const rows = subs.map((sub): TakeoverWatchRow => {
-    const inScope = scope.check('subdomain', sub.value, 'passive').decision === 'in';
+    const inScope = sub.decision === 'in';
     const scan = latest.get(sub.value) ?? null;
     const f = scan ? facts.get(scan.id) : undefined;
     const job = jobsBy.get(sub.id);
@@ -263,8 +273,11 @@ export function takeoverWatchRows(db: Db, now: Date): TakeoverWatchRow[] {
   );
 }
 
-export function takeoverWatch(db: Db, { page, pageSize, now }: { page: number; pageSize: number; now: Date }): TakeoverWatchResponse {
-  const rows = takeoverWatchRows(db, now);
+export function takeoverWatch(
+  db: Db,
+  { page, pageSize, now, showExternal = false }: { page: number; pageSize: number; now: Date; showExternal?: boolean },
+): TakeoverWatchResponse {
+  const rows = takeoverWatchRows(db, now, { showExternal });
   const counts = Object.fromEntries(TAKEOVER_STATUSES.map((s) => [s, 0])) as Record<TakeoverStatus, number>;
   for (const r of rows) counts[r.status] += 1;
   return {

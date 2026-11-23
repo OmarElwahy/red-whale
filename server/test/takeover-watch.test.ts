@@ -3,6 +3,7 @@ import { describe, expect, test } from 'vitest';
 import type { Db } from '../src/db/client';
 import { ingestDocument } from '../src/ingest/ingest';
 import { addRule } from '../src/scope/store';
+import { filteredGraph, takeoverOnlyNodeIds } from '../src/graph/store';
 import { daysLeft, takeoverWatch, takeoverWatchRows } from '../src/takeover/watch';
 import { body, testApi } from './api/helpers';
 import { baseDoc, freshDb, type Doc } from './helpers';
@@ -95,7 +96,7 @@ describe('takeover watch rows', () => {
   test('status order: takeable, expiring (expired first, then soonest), unknown, ok, not checked, out of scope', () => {
     const db = freshDb();
     seed(db);
-    const rows = takeoverWatchRows(db, NOW);
+    const rows = takeoverWatchRows(db, NOW, { showExternal: true });
     expect(rows.map((r) => [r.subdomain, r.status])).toEqual([
       [sub('a'), 'takeable'],
       [sub('c'), 'expiring'],
@@ -243,8 +244,9 @@ describe('takeover watch rows', () => {
     seed(db);
     const page = takeoverWatch(db, { page: 2, pageSize: 4, now: NOW });
     expect(page.items.map((r) => r.subdomain)).toEqual([sub('e'), sub('g'), sub('h'), sub('f')]);
-    expect(page).toMatchObject({ page: 2, pageSize: 4, total: 16, now: NOW.toISOString() });
-    expect(page.counts).toEqual({ takeable: 1, expiring: 2, unknown: 1, ok: 3, 'not-checked': 1, 'out-of-scope': 8 });
+    expect(page).toMatchObject({ page: 2, pageSize: 4, total: 9, now: NOW.toISOString() });
+    expect(page.counts).toEqual({ takeable: 1, expiring: 2, unknown: 1, ok: 3, 'not-checked': 1, 'out-of-scope': 1 });
+    expect(takeoverWatch(db, { page: 1, pageSize: 100, now: NOW, showExternal: true }).total).toBe(16);
   });
 });
 
@@ -255,13 +257,94 @@ describe('GET /api/takeover/watch', () => {
     const res = body(await api.get('/api/takeover/watch?pageSize=3'), 200, takeoverWatchResponseSchema);
     expect(res.items).toHaveLength(3);
     expect(res.items[0]).toMatchObject({ subdomain: sub('a'), status: 'takeable' });
-    expect(res.total).toBe(16);
+    expect(res.total).toBe(9);
+    expect(body(await api.get('/api/takeover/watch?showExternal=1'), 200, takeoverWatchResponseSchema).total).toBe(16);
     expect((await api.get('/api/takeover/watch?pageSize=9999')).statusCode).toBe(400);
+    expect((await api.get('/api/takeover/watch?showExternal=yes')).statusCode).toBe(400);
   });
 
   test('an empty workspace has no rows', async () => {
     const api = await testApi();
     const res = body(await api.get('/api/takeover/watch'), 200, takeoverWatchResponseSchema);
     expect(res).toMatchObject({ items: [], total: 0, page: 1, pageSize: 100 });
+  });
+});
+
+describe('external names (out of scope, only takeover-check knows them) are hidden by default', () => {
+  const EXTERNAL = [
+    'b.cdn-x.example',
+    'c.old.example',
+    'cdn-x.example',
+    'd.whois-x.example',
+    'g.svc.azurewebsites.net',
+    'gone-7q2x.example',
+    'h.new-svc.example',
+    'h.old-svc.example',
+    'h2.new-svc.example',
+    'new-svc.example',
+    'old-svc.example',
+    'old.example',
+    'whois-x.example',
+  ];
+  const values = (db: Db, filters: Parameters<typeof filteredGraph>[1]) =>
+    new Set(filteredGraph(db, filters).nodes.map((n) => n.value));
+
+  test('the graph and the table leave them out (and their edges); showExternal=1 brings them back', () => {
+    const db = freshDb();
+    seed(db);
+    const shown = values(db, {});
+    for (const v of EXTERNAL) expect(shown.has(v), v).toBe(false);
+    // In-scope subdomains, the own domain and out-of-scope names other tools found stay.
+    for (const v of [sub('a'), sub('g'), OWN, 'out.other.example']) expect(shown.has(v), v).toBe(true);
+    const graph = filteredGraph(db, {});
+    const ids = new Set(graph.nodes.map((n) => n.id));
+    expect(graph.edges.every((e) => ids.has(e.source) && ids.has(e.target))).toBe(true);
+    expect(graph.edges.some((e) => e.relation === 'cname_to')).toBe(false);
+
+    const all = values(db, { showExternal: '1' });
+    for (const v of EXTERNAL) expect(all.has(v), v).toBe(true);
+  });
+
+  test('a name another tool also reported, or one the scope now includes, is shown', () => {
+    const db = freshDb();
+    seed(db);
+    ingest(db, baseDoc({ tool: 'subfinder', target: 'cdn-x.example', command: 'subfinder cdn-x', findings: [{ type: 'subdomain', value: 'b.cdn-x.example', parent: { type: 'domain', value: 'cdn-x.example' }, relation: 'has_subdomain' }] }));
+    addRule(db, { kind: 'wildcard', value: '*.new-svc.example', action: 'include' });
+    const shown = values(db, {});
+    expect(shown.has('b.cdn-x.example')).toBe(true); // subfinder found it too
+    expect(shown.has('cdn-x.example')).toBe(true); // subfinder named it as the parent
+    expect(shown.has('h.new-svc.example')).toBe(true); // now in scope
+    expect(shown.has('old.example')).toBe(false);
+    // The watch follows the same rule.
+    const rows = takeoverWatchRows(db, NOW).map((r) => r.subdomain);
+    expect(rows).toContain('b.cdn-x.example');
+    expect(rows).toContain('h.new-svc.example');
+    expect(rows).not.toContain('c.old.example');
+  });
+
+  test('hiding changes nothing stored, and the watch still reads the hidden registrations', () => {
+    const db = freshDb();
+    seed(db);
+    const before = db.$client.prepare('SELECT (SELECT COUNT(*) FROM nodes) AS n, (SELECT COUNT(*) FROM edges) AS e').get();
+    filteredGraph(db, {});
+    expect(db.$client.prepare('SELECT (SELECT COUNT(*) FROM nodes) AS n, (SELECT COUNT(*) FROM edges) AS e').get()).toEqual(before);
+    // The vulnerability is takeover-only too, but not targetable (n/a), so it stays visible: a finding is never hidden.
+    expect(takeoverOnlyNodeIds(db).size).toBe(EXTERNAL.length + 1);
+    expect(values(db, {}).has('takeover-unregistered-domain')).toBe(true);
+    const b = row(takeoverWatchRows(db, NOW), sub('b'));
+    expect(b).toMatchObject({ chainEnd: 'b.cdn-x.example', registration: { domain: 'cdn-x.example', daysLeft: 20 } });
+  });
+
+  test('GET /api/nodes (the table) and /api/graph hide them unless showExternal=1', async () => {
+    const api = await testApi();
+    seed(api.db);
+    const labels = async (qs: string) => {
+      const res = await api.get(`/api/nodes?pageSize=200${qs}`);
+      expect(res.statusCode).toBe(200);
+      return JSON.stringify(res.json());
+    };
+    expect(await labels('')).not.toContain('gone-7q2x.example');
+    expect(await labels('&showExternal=1')).toContain('gone-7q2x.example');
+    expect((await api.get('/api/graph?showExternal=true')).statusCode).toBe(400);
   });
 });

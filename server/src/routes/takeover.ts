@@ -6,7 +6,7 @@ import type { RouteContext } from './context';
 
 export function takeoverRoutes({ app, db }: RouteContext): void {
   app.get('/api/takeover/watch', (req) => {
-    const { page, pageSize } = parseInput(takeoverWatchQuerySchema, req.query);
-    return takeoverWatch(db, { page, pageSize, now: new Date() });
+    const { page, pageSize, showExternal } = parseInput(takeoverWatchQuerySchema, req.query);
+    return takeoverWatch(db, { page, pageSize, now: new Date(), showExternal: showExternal === '1' });
   });
 }

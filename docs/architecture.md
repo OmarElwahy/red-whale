@@ -170,7 +170,7 @@ edge's full set of `edge_observations` in the same order (`recomputeEdges`, `der
 
 | Method & path | Purpose |
 |---|---|
-| `GET /graph?types=&minSeverity=&confidence=&tool=&tag=&excludeTag=&scope=&q=` | Filtered graph, **grouped**, every group collapsed (see §7) |
+| `GET /graph?types=&minSeverity=&confidence=&tool=&tag=&excludeTag=&scope=&showExternal=&q=` | Filtered graph, **grouped**, every group collapsed (see §7) |
 | `POST /graph/view` | The same, with the analyst's view: open groups, neighbor expansions, expand-all, `keep` (§7). What the UI uses |
 | `GET /graph/path/:nodeId?…filters` | The groups to open (as pins) so that a node deep inside collapsed groups is drawn |
 | `GET /graph/expand/:aggregateId?…filters&page=&pageSize=` | Members of a group (paged, riskiest first). Not used by the UI since 5D; kept for scripts |
@@ -204,7 +204,7 @@ edge's full set of `edge_observations` in the same order (`recomputeEdges`, `der
 | `GET /jobs/:id/output/:stream` | `stdout` \| `stderr` \| `raw` as `text/plain` (≤ 5 MB, as kept) |
 | `POST /jobs/:id/cancel` | Queued → cancelled; running → killed, cancelled, nothing ingested; 409 if finished |
 | `GET /runner/status` | `{ docker: { reachable, version, error }, images: [{ group, image, status }], running, queued, maxConcurrent }` |
-| `GET /takeover/watch?page=&pageSize=` | TW-2: one row per subdomain, riskiest first (`pageSize` ≤ 500, default 100), `counts` per status, the server's `now` (§11). Works without the runner |
+| `GET /takeover/watch?page=&pageSize=&showExternal=` | TW-2: one row per subdomain, riskiest first (`pageSize` ≤ 500, default 100), `counts` per status, the server's `now` (§11); external names left out unless `showExternal=1` (§6 Scope). Works without the runner |
 | `WS /ws` (i.e. `/api/ws`) | Push events: `graph.updated`, `graph.deleted { nodeIds, edgeIds }`, `scan.ingested`, `scope.changed`, `job.updated { job }`, `runner.status { reachable, error }` |
 
 Request and response shapes are the Zod schemas in `shared/src/api.ts`. Details:
@@ -231,6 +231,12 @@ Request and response shapes are the Zod schemas in `shared/src/api.ts`. Details:
   read from the current rules, never stored. `scope=in,out,n/a` filters on it like any other node filter (so with
   `scope=out` an out-of-scope subdomain whose apex is in scope is parentless: a root, grouped as `agg:root:subdomain` above 25).
   `GET /nodes/:id` adds `scope: { decision, reason, rule }`. Rule and setting changes broadcast `scope.changed`.
+- **External names** (TW-2 step 5): a node that is out of scope **and** only ever observed by takeover-check (no other
+  tool, no `manual` row) is a third party from a CNAME chain (`outlook.com`, `x.cloudfront.net`…). Every filtered read
+  (graph, view, path, groups, `/nodes`, group delete) leaves it out unless `showExternal=1`; its edges go with it.
+  Nothing is deleted: it keeps its observations and the Takeover watch still reads its registration. It follows the
+  scope (include it and it shows) and the tools (another tool reports it and it shows). Vulnerabilities are `n/a`, so
+  a takeover finding is never hidden.
 - **`POST /graph/view`** (a POST because the open groups don't fit in a query string; it only reads) takes
   `{ filters, expand: [{ id, pages, pins }], neighbors, expandAll, keep: { edges, roots } }` (`graphViewRequestSchema`:
   ≤ 2,000 open groups, `pages` ≤ 50, ≤ 100 pins each, ≤ 200 neighbor expansions, ≤ 10 expand-all). `filters` are the
@@ -469,7 +475,8 @@ included (1,945 elements, truncated).
   history), the passive-only and "Auto takeover checks" switches (TW-2), a "test a target" box (type, mode, value; `POST /scope/check` on Enter or the
   button only, never per keystroke) and the log (runs by default, "include checks" adds the test box's entries, paged).
   With no include rule a banner under the header says nothing is in scope and opens the panel. The filter sidebar
-  has a Scope group (in scope / out of scope / not targetable, workspace totals), and the side panel a Scope section
+  has a Scope group (in scope / out of scope / not targetable, workspace totals, and "show external CNAME names", off
+  by default: `showExternal=1`), and the side panel a Scope section
   (decision, reason, deciding rule and its note).
 - **Table view** (`web/src/table/`): TanStack Table (v9) over `GET /nodes` with the graph's filters, 50 per page,
   sorted on the server (click a header; shift-click adds a column). Clicking a row selects the node, opens exactly the
@@ -803,7 +810,8 @@ subdomain on read (`watch.ts`).
   < 90 days left, already expired included, soonest first) → `unknown` (scan partial/failed, a registration `null`,
   or none) → `ok` → `not-checked` → `out-of-scope` (never checked). Within each status, the least time left first
   (the weakest link's days left; rows without a date after them), then by name. A checked subdomain now out of scope keeps its
-  status (`inScope: false`, "out of scope, not refreshed"). Every subdomain is a row, chain hops outside the scope too.
+  status (`inScope: false`, "out of scope, not refreshed"). Every subdomain is a row, except external names (chain
+  hops on third parties, §6) unless `showExternal=1`, the same switch as the graph's.
 - **Weakest link:** the status weighs every domain the check looked up (own + external); `registration` is the one
   that sets it (not registered → expiring → unknown → soonest expiry), so the own domain expiring shows on every row.
   `registrations` lists them all. `chainEnd` is always the real chain end (the subdomain itself without a CNAME).
@@ -1039,3 +1047,4 @@ delete is one transaction with a record.
 | 2026-11-23 | **Automatic takeover checks**: passive takeover-check on in-scope subdomains not checked in 24 h, on server start, after any ingest, every 24 h, and as auto jobs finish (the refill, confirmed by the user); at most `REDWHALE_AUTO_MAX_QUEUED` (default 10) auto jobs queued; manual jobs start first (a running auto job is not stopped). A failed auto job is retried after 24 h, like a success, and shows on the row as "last check failed: <reason>". Setting "Auto takeover checks" (Scope panel, default on); off cancels the queued auto jobs. Every run goes through `authorize()` |
 | 2026-11-23 | **Migration `0007_takeover_watch`** (proposed in the TW-2 plan, approved): `jobs.trigger` (`manual`/`auto`, CHECK; `jobs` rebuilt, rows kept as `manual`), `scope_settings.auto_takeover_checks` (on), index `scans (tool, target)`. Not breaking. drizzle-kit's generated copy selected the new column from the old table; fixed by hand |
 | 2026-11-23 | **Takeover watch order within a status: least time left first** (the weakest link's days left; rows without a date after them), then by name (asked by the user after TW-2 step 4; before, only `expiring` rows were sorted by days, the rest by name) |
+| 2026-11-23 | **External CNAME names hidden by default** (asked by the user after TW-2 step 4): out-of-scope nodes that only takeover-check ever observed are left out of every filtered read and of the Takeover watch unless `showExternal=1` (sidebar ▸ Scope ▸ "show external CNAME names"). Nothing is deleted (rule 4). Why: third-party chain names (Microsoft 365, CloudFront…) cluttered the graph; they are evidence, not attack surface |

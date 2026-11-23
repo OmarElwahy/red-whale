@@ -2,6 +2,7 @@ import { takeoverWatchResponseSchema, type TakeoverRegistration, type TakeoverWa
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { defaultView, useView } from '../src/state/view';
 import { TakeoverPanel, daysClass, registrationsTitle } from '../src/takeover/TakeoverPanel';
 
 const T = '2026-11-30T10:00:00.000Z';
@@ -80,6 +81,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.unstubAllGlobals();
+  useView.setState(defaultView);
 });
 
 function renderPanel(selectedId: string | null = null) {
@@ -155,6 +157,13 @@ describe('TakeoverPanel', () => {
     expect(onPick).toHaveBeenLastCalledWith('n-a.northwind.example');
     expect(onPick).toHaveBeenCalledTimes(2);
     expect(at(list, 1).getAttribute('aria-selected')).toBe('true');
+  });
+
+  test('follows the graph\'s "show external CNAME names" filter', async () => {
+    useView.getState().setShowExternal(true);
+    renderPanel();
+    await rows();
+    expect(calls[0]).toBe('/api/takeover/watch?page=1&pageSize=100&showExternal=1');
   });
 
   test('days-left colours and the tooltip text', () => {

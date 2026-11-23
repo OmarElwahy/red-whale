@@ -13,6 +13,7 @@ import { useState } from 'react';
 import { useTakeoverWatch } from '@/api/takeover';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { useView } from '@/state/view';
 import { formatTime } from '@/panel/format';
 
 export const STATUS_LABEL: Record<TakeoverStatus, string> = {
@@ -135,7 +136,9 @@ export function TakeoverPanel({
   onPick: (nodeId: string) => void;
 }) {
   const [page, setPage] = useState(1);
-  const watch = useTakeoverWatch(page);
+  // The same switch as the graph's (filter sidebar ▸ Scope): external chain names are hidden in both.
+  const showExternal = useView((s) => s.filters.showExternal === '1');
+  const watch = useTakeoverWatch(page, showExternal);
   const data = watch.data;
   const pages = data ? Math.max(1, Math.ceil(data.total / data.pageSize)) : 1;
 
