@@ -14,7 +14,7 @@ export interface MenuState {
 }
 
 /** The panel under the graph. */
-export type BottomPanel = 'table' | 'highlights' | 'scope' | 'jobs' | 'deleted';
+export type BottomPanel = 'table' | 'highlights' | 'scope' | 'jobs' | 'deleted' | 'takeover';
 
 export interface TableState {
   page: number;

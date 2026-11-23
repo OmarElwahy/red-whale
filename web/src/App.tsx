@@ -52,6 +52,7 @@ import { EdgePanel, GroupEdgePanel } from '@/panel/EdgePanel';
 import { SidePanel } from '@/panel/SidePanel';
 import { useLive } from '@/state/live';
 import { useUi, type BottomPanel } from '@/state/ui';
+import { TakeoverPanel } from '@/takeover/TakeoverPanel';
 import { NodeTable } from '@/table/NodeTable';
 import { LAYOUT_MODES, hasFilters, useView, type LayoutMode } from '@/state/view';
 
@@ -650,6 +651,9 @@ export function App() {
             Highlights{highlights.data ? ` (${String(highlights.data.length)})` : ''}
           </PanelToggle>
           <ScopeToggle current={bottomPanel} />
+          <PanelToggle panel="takeover" current={bottomPanel}>
+            Takeover watch
+          </PanelToggle>
           <PanelToggle panel="deleted" current={bottomPanel}>
             Deleted
           </PanelToggle>
@@ -788,6 +792,11 @@ export function App() {
                   pick(job.nodeId);
                 }}
               />
+            </section>
+          )}
+          {bottomPanel === 'takeover' && (
+            <section aria-label="Takeover watch" className="flex h-[40%] min-h-40 shrink-0 flex-col border-t">
+              <TakeoverPanel className="flex-1" selectedId={selectedId} onPick={pick} />
             </section>
           )}
           {bottomPanel === 'deleted' && (

@@ -13,8 +13,8 @@ takeover-check runs. Not in scope: HTTP fingerprints, TLS expiry, other automati
 |---|---|---|
 | 1 | Migration 0007 + the watch query and `GET /api/takeover/watch` + tests | done |
 | 2 | The auto-check scheduler + tests (fake runtime) | done |
-| 3 | The Takeover watch tab + the "Auto takeover checks" setting + the Jobs trigger badge | next |
-| 4 | Docs + manual checklist | |
+| 3 | The Takeover watch tab + the "Auto takeover checks" setting + the Jobs trigger badge | done |
+| 4 | Docs + manual checklist | next |
 
 ## Decisions (from the plan review)
 
@@ -82,10 +82,25 @@ takeover-check runs. Not in scope: HTTP fingerprints, TLS expiry, other automati
   refill until all five are checked, which events poke, the env parsing); `api/jobs.test.ts` (2: an upload queues auto
   jobs and PATCH settings off cancels the queued ones over the real app; nothing before `start()`).
 
+## Step 3 (done)
+
+- `web/src/takeover/TakeoverPanel.tsx`, bottom panel `takeover` ("Takeover watch" button, between Scope and
+  Deleted): status counts (non-zero only), paging (100 per page), a table: Subdomain (+ notes: "out of scope, not
+  refreshed", "last check failed: <reason>" in red, "checking…"), Status ("takeable now" with the vulnerability names
+  as its title, "not checked (out of scope)"), Chain end (the full chain as its title; "(x service)" for a private
+  suffix), Domain (the weakest link; tooltip: every domain looked up with its state, source and reason; "+N"), Registered,
+  Expires (date), Days left (< 30 red, < 90 amber), Last checked (UTC, "(partial)"/"(failed)"). A click anywhere on a
+  row picks the node with App's `pick` (the table view's: select + open the path); the selected row is marked.
+- `web/src/api/takeover.ts` (`useTakeoverWatch`); the query key `['api', 'runner', 'takeover', page]` sits under
+  `runner`, so `job.updated` refetches it as well as `graph.updated` / `scope.changed` (which refetch everything).
+- Scope panel: `SettingSwitch` (the passive-only switch, made generic) + "Auto takeover checks" (PATCHes only its own
+  field). Jobs tab: an `auto` badge (sky) after the tool name.
+- Tests: `web/test/takeover-panel.test.tsx` (4), the badge in `jobs-panel.test.tsx`, the switch in
+  `scope-panel.test.tsx`. Not checked in a real browser in this step: that's in the manual checklist (step 4).
+
 ## Next action
 
-Step 3 (web): a `takeover` bottom panel (`BottomPanel` in `web/src/state/ui.ts`) listing `GET /api/takeover/watch`
-(TanStack Query, refetch on `job.updated` / `graph.updated` / `scope.changed`), status counts, days-left colours
-(< 30 red, < 90 amber), the registrations tooltip, "out of scope, not refreshed", "last check failed: <reason>",
-pending; a row click picks the node like the table view. Scope panel: an "Auto takeover checks" switch (PATCH
-`autoTakeoverChecks`). Jobs tab: an `auto` badge. Testing Library tests.
+Step 4: docs. architecture.md §4 (migration 0007), §6 (`GET /api/takeover/watch`, settings PATCH), §8 (the tab, the
+badge, the switch), §9 (TW-2 done; HTTP fingerprints/TLS expiry still later), §11 (scheduler + watch), §13 (decisions
+dated 2026-11-23); CLAUDE.md (`REDWHALE_AUTO_MAX_QUEUED`); handoff.md (status, TW-2 row, decisions); this file's
+manual checklist.

@@ -206,6 +206,25 @@ describe('ScopePanel: passive only', () => {
       expect(screen.getByRole<HTMLInputElement>('switch', { name: 'Passive only' }).checked).toBe(false);
     });
   });
+
+  test('the auto takeover checks switch: on by default, PATCHes only its own field', async () => {
+    wrap(<ScopePanel />);
+    const toggle = await screen.findByRole<HTMLInputElement>('switch', { name: 'Auto takeover checks' });
+    await waitFor(() => {
+      expect(toggle.disabled).toBe(false);
+    });
+    expect(toggle.checked).toBe(true);
+    expect(screen.getByText(/runs by itself on in-scope subdomains not checked in 24 h/)).toBeTruthy();
+    fireEvent.click(toggle);
+    await waitFor(() => {
+      expect(api.calls.find((c) => c.method === 'PATCH')).toMatchObject({ url: '/api/scope/settings', body: { autoTakeoverChecks: false } });
+    });
+    await waitFor(() => {
+      expect(screen.getByRole<HTMLInputElement>('switch', { name: 'Auto takeover checks' }).checked).toBe(false);
+    });
+    expect(screen.getByText(/Queued automatic checks are cancelled/)).toBeTruthy();
+    expect(screen.getByRole<HTMLInputElement>('switch', { name: 'Passive only' }).checked).toBe(true);
+  });
 });
 
 describe('ScopePanel: test a target', () => {

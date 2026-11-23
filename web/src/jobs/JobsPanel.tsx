@@ -187,6 +187,14 @@ export function JobsPanel({ className, onPickNode, onShowResults }: JobsPanelPro
                       {job.mode}
                     </span>
                   )}
+                  {job.trigger === 'auto' && (
+                    <span
+                      className="ml-1 rounded border border-sky-500/60 px-1 text-[10px] text-sky-400 uppercase"
+                      title="Queued by the automatic takeover checks (Scope panel), not by you"
+                    >
+                      auto
+                    </span>
+                  )}
                 </td>
                 <td className="truncate py-1 pr-2">
                   {job.nodeId === null ? (

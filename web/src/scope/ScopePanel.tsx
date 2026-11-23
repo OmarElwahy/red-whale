@@ -287,10 +287,24 @@ function RulesColumn() {
   );
 }
 
-function PassiveOnlySwitch() {
+/** A scope setting as a switch, with what each position means. */
+function SettingSwitch({
+  field,
+  label,
+  fallback,
+  onText,
+  offText,
+}: {
+  field: 'passiveOnly' | 'autoTakeoverChecks';
+  label: string;
+  /** Shown until the settings load. */
+  fallback: boolean;
+  onText: string;
+  offText: string;
+}) {
   const settings = useScopeSettings();
   const patch = usePatchScopeSettings();
-  const on = settings.data?.passiveOnly ?? true;
+  const on = settings.data?.[field] ?? fallback;
   return (
     <div className="flex flex-col gap-1">
       <label className="flex cursor-pointer items-center gap-2 text-xs">
@@ -302,7 +316,7 @@ function PassiveOnlySwitch() {
           checked={on}
           disabled={!settings.data || patch.isPending}
           onChange={(e) => {
-            patch.mutate({ passiveOnly: e.target.checked });
+            patch.mutate({ [field]: e.target.checked });
           }}
         />
         <span
@@ -314,15 +328,35 @@ function PassiveOnlySwitch() {
         >
           <span className={cn('absolute top-0.5 size-3 rounded-full bg-white transition-all', on ? 'left-3.5' : 'left-0.5')} />
         </span>
-        <span className="font-medium">Passive only</span>
+        <span className="font-medium">{label}</span>
       </label>
-      <p className="text-muted-foreground text-[11px]">
-        {on
-          ? 'On: no active check is in scope (nothing that sends packets to a target), whatever the rules say.'
-          : 'Off: active checks follow the rules. Turn it back on when active testing is over.'}
-      </p>
+      <p className="text-muted-foreground text-[11px]">{on ? onText : offText}</p>
       {patch.error && <p className="text-xs text-red-400">{errorText(patch.error)}</p>}
     </div>
+  );
+}
+
+function PassiveOnlySwitch() {
+  return (
+    <SettingSwitch
+      field="passiveOnly"
+      label="Passive only"
+      fallback
+      onText="On: no active check is in scope (nothing that sends packets to a target), whatever the rules say."
+      offText="Off: active checks follow the rules. Turn it back on when active testing is over."
+    />
+  );
+}
+
+function AutoTakeoverSwitch() {
+  return (
+    <SettingSwitch
+      field="autoTakeoverChecks"
+      label="Auto takeover checks"
+      fallback
+      onText="On: takeover-check (passive) runs by itself on in-scope subdomains not checked in 24 h, behind your own runs."
+      offText="Off: subdomains are only checked when you run takeover-check yourself. Queued automatic checks are cancelled."
+    />
   );
 }
 
@@ -473,6 +507,7 @@ export function ScopePanel({ className }: { className?: string }) {
       <RulesColumn />
       <Column title="Settings & test">
         <PassiveOnlySwitch />
+        <AutoTakeoverSwitch />
         <div className="border-t pt-2">
           <TestTarget />
         </div>
