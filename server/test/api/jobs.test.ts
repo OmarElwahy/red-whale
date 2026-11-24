@@ -90,7 +90,7 @@ describe('GET /api/tools and /api/runner/status', () => {
     expect(tools.tools.find((t) => t.name === 'katana')).toMatchObject({
       external: [],
       contacts:
-        "fetches pages, scripts and other files linked from {target}, on {target}'s host only (GET, two levels deep, at most 5 requests a second; redirects are not followed)",
+        "fetches pages, scripts and other files linked from {target}, on that URL's host only (GET, two levels deep, at most 5 requests a second; redirects are not followed)",
     });
     expect(tools.tools.find((t) => t.name === 'gau')?.external).toEqual(['Wayback Machine', 'Common Crawl', 'AlienVault OTX']);
   });

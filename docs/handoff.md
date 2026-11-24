@@ -4,7 +4,7 @@ Paste this file into a new chat to continue where we left off. It holds the cont
 other docs. Source of truth for design details is still `docs/architecture.md` (incl. the decisions log, §13),
 `docs/contract.md` and `CLAUDE.md` — attach `docs/architecture.md` too if the question is technical.
 
-_Last updated: 2026-11-23_
+_Last updated: 2026-11-24_
 
 ## Who / what
 
@@ -31,8 +31,9 @@ Dropped: `cytoscape-expand-collapse` (groups are server-side).
 ## Status
 
 Main has everything through 6C-3. 6C-4 is on branch `phase-6c4`, TW-1 on `phase-tw1` (from `phase-6c4`'s tip) and
-TW-2 on `phase-tw2` (from `phase-tw1`'s tip); all on GitHub, **not merged** until my manual checks (checklists in
-`docs/phase-6c4-progress.md`, `docs/phase-tw1-progress.md` and `docs/phase-tw2-progress.md`).
+TW-2 on `phase-tw2` (from `phase-tw1`'s tip) and 6C-5 on `phase-6c5` (from `phase-tw2`'s tip); all on GitHub, **not
+merged** until my manual checks (checklists in `docs/phase-6c4-progress.md`, `docs/phase-tw1-progress.md`,
+`docs/phase-tw2-progress.md` and `docs/phase-6c5-progress.md`).
 
 | Phase | What | Status |
 |---|---|---|
@@ -51,6 +52,7 @@ TW-2 on `phase-tw2` (from `phase-tw1`'s tip); all on GitHub, **not merged** unti
 | TW-1 | Takeover watch, first half: relation `cname_to` (+ migration 0006, rows kept); bundled PSL + RDAP bootstrap (`pnpm tools:refresh-data`), `tools/lib/psl.py` = tldts on shared vectors; `takeover-check` in `dns` (passive: CNAME chain via dnsx, RDAP / WHOIS registration, `takeover-unregistered-domain` critical, `takeover-dangling-cname` medium; transcript replay) | ✅ done · manual check pending (checklist in `docs/phase-tw1-progress.md`) |
 
 | TW-2 | Takeover watch, second half: a "Takeover watch" tab (one row per subdomain, built on read from its latest takeover-check: status, chain end, weakest-link registration, days left, last checked), automatic passive checks (24 h, capped queue, manual first, setting in the Scope panel), `auto` badge in Jobs; migration 0007 (rows kept) | ✅ done (branch `phase-tw2`, awaiting my check) |
+| 6C-5 | `urls` group (URL discovery): gau (passive, domain/subdomain: Wayback, Common Crawl, OTX, one run per provider so each URL's source is known, target host only, `serves`, ≤ 5,000, a failed provider → partial) and katana (active, url: same host only, depth 2, links + JavaScript, GET only, no redirects, no `-kf`, `has_url` from the page it was found on); one static-extension list; lab crawl site; no contract change | ✅ done (branch `phase-6c5`, awaiting my check) |
 
 ## How I work with Claude Code
 
@@ -65,7 +67,7 @@ TW-2 on `phase-tw2` (from `phase-tw1`'s tip); all on GitHub, **not merged** unti
 
 ## Next up
 
-1. Tool batches, in order: ~~dnsx → naabu~~ (6C-3) → ~~nmap~~ (6C-4) → katana + gau → nuclei → wafw00f + testssl → the rest (active ones
+1. Tool batches, in order: ~~dnsx → naabu~~ (6C-3) → ~~nmap~~ (6C-4) → ~~katana + gau~~ (6C-5) → nuclei → wafw00f + testssl → the rest (active ones
    use `contacts`, the confirmation and the lab; scripts that name the target as a parent use `{targetType}`).
 2. Redirect following stays out until 6D (httpx keeps the `Location` as data).
 3. **6D** presets + auto-chaining (redirect-following tools re-check scope on every hop) → **6E** scan diffing →
@@ -119,12 +121,18 @@ TW-2 on `phase-tw2` (from `phase-tw1`'s tip); all on GitHub, **not merged** unti
   `authorize()`; "Auto takeover checks" switch (default on; off cancels queued auto jobs). Third-party chain names
   (out of scope, only takeover-check saw them) are hidden from the graph, table and watch unless the sidebar's
   "show external CNAME names" is on; nothing is deleted. Within a status, least time left first.
+- **URL discovery (6C-5):** no contract change (`serves` domain/subdomain → url, `has_url` url → url exist). gau runs
+  once per provider (its JSON names none), exits 0 even when one fails (only a `--verbose` warning says so): the
+  failed provider is named, status partial, the others' URLs kept; 5,000 at most. katana: `-fs fqdn -dr -d 2 -jc`,
+  **no `-kf`** (v1.8.0's sitemap handling loses the pages it lists), `-ndef` (its own denylist drops PDFs),
+  `-eof body` (not `-ob`, which turns off JS parsing); its duplicate-content filter stays on. One static-extension
+  list (images, fonts, media) for both; CSS/JS/PDF kept.
 
 ## Open items
 
 - **Manual check** for 6C-4 (`docs/phase-6c4-progress.md`), then merge `phase-6c4`; then TW-1's
   (`docs/phase-tw1-progress.md`), then merge `phase-tw1`; then TW-2's (`docs/phase-tw2-progress.md`), then merge
-  `phase-tw2`.
+  `phase-tw2`; then 6C-5's (`docs/phase-6c5-progress.md`), then merge `phase-6c5`.
 - **Takeover, later:** HTTP fingerprints of cloud services ("NoSuchBucket", "No such app"), TLS certificate expiry.
   An in-scope domain with no checked subdomain never shows its own expiry (takeover-check takes subdomains only):
   maybe domain rows later.

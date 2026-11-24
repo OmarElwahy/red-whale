@@ -14,7 +14,7 @@ redirects or chaining (6D); feeding found URLs into other tools; provider API ke
 |---|---|---|
 | 1+2 | Contract check (no change needed) + `urls` group: Dockerfile, gau (tool.json, run.py, fixture, tests) | done |
 | 3 | Lab crawl site + katana (tool.json, run.py, lab fixture, tests, e2e) | done |
-| 4 | Docs (architecture §11/§13, tools/urls/README, team-guide row, handoff) + manual checklist | |
+| 4 | Docs (architecture §11/§13, tools/urls/README, team-guide row, handoff) + manual checklist | done |
 
 ## Decisions
 
@@ -84,9 +84,9 @@ Final candidate argv:
 ## Notes from step 3
 
 - **katana** `tool.json`: active, accepts `url`, `timeoutSec` 300 (`-ct 210s`; a test keeps it a minute inside the
-  script's 270 s). Contacts: "fetches pages, scripts and other files linked from {target}, on {target}'s host only
+  script's 270 s). Contacts: "fetches pages, scripts and other files linked from {target}, on that URL's host only
   (GET, two levels deep, at most 5 requests a second; redirects are not followed)": no robots/sitemap, since there
-  is no `-kf`.
+  is no `-kf` (step 4 changed "{target}'s host" to "that URL's host": the target is a URL).
 - **Parse**: the target itself (no `source`) is a finding without a parent (katana fetched it: its status); every
   other URL hangs off its `source` page with `has_url`, or off the target when the source is missing, on another
   host or the URL itself. data: `status_code`, `location` (3xx), `tag`/`attribute`, `error` (e.g. "max depth
@@ -106,9 +106,66 @@ Final candidate argv:
   `http`/`ports` images were rebuilt for the current hashes).
 - `pnpm typecheck`, `pnpm lint`, `pnpm test` green (77 files; the 5 lab e2e suites ran).
 
+## Notes from step 4
+
+- `docs/architecture.md` §11: `urls` in the groups paragraph, the crawl site in the lab paragraph; §13: six rows
+  (no contract change, gau per provider, gau's warning-only failures, katana's flags and why, the static list, the
+  lab crawl site and its e2e).
+- `tools/urls/README.md` (new), `docs/team-guide.md` (two rows in "pick the example": gau for one run per source,
+  katana for a crawler taking a url), `docs/handoff.md` (Last updated 2026-11-24, status, 6C-5 row, next up, key
+  decisions, open items).
+- katana's `contacts` reworded: "on that URL's host only" (the dialog filled `{target}'s host` with a URL).
+
+## Manual check (PowerShell, from the repo root)
+
+**Setup** (proves: the image builds with both checksummed binaries; the lab has its crawl site; fixtures replay):
+
+1. `git switch phase-6c5`, then `pnpm install`.
+2. `pnpm tools:build urls`: the log shows `ok gau (8646916 bytes)` and `ok katana (68030626 bytes)`, each with
+   its archive's sha256. (If C: is nearly full, free space first: a full disk broke Docker's storage in this phase.)
+3. `pnpm lab:up`: rebuilds the lab (its files changed). `pnpm lab:status` lists the same ports as before.
+4. `pnpm tools:check --all`: `✓ all 11 passed` (gau and katana replay their fixtures; no Docker or network).
+5. `pnpm dev`, open http://127.0.0.1:5173. Run tool ▸ lists a **URL discovery** group: gau on a domain or
+   subdomain, katana on a url.
+
+**katana against the lab, active** (proves: confirmation, same host only, no redirect, links under their pages):
+
+6. Scope panel: `include domain lab.redwhale.test` and `include ip 172.29.250.10`; passive-only **off**.
+7. Add node ▸ subdomain `lab.redwhale.test` (or reuse it), Run tool ▸ httpx ▸ Run active scan: it adds the url
+   `https://lab.redwhale.test/` (as before).
+8. Right-click `https://lab.redwhale.test/` ▸ Run tool ▸ **katana**: the dialog shows ACTIVE, the target url,
+   "Contacts the target: fetches pages, scripts and other files linked from https://lab.redwhale.test/, on that URL's
+   host only (GET, two levels deep, at most 5 requests a second; redirects are not followed)", "External services:
+   none", **In scope**.
+9. **Run active scan**: the job succeeds in about 15 s. Under `https://lab.redwhale.test/` (`has_url`):
+   `about.html`, `products.html`, `static/app.js`, `static/site.css` and `http://lab.redwhale.test/`; under
+   `app.js`: `/api/v1/orders`; under `about.html`: `files/brochure.pdf`; under `products.html`: `item.html`; under
+   `item.html`: `deep.html` (no status: "max depth reached").
+10. Select `http://lab.redwhale.test/`: katana's observation has `status_code 301`, `location
+    https://elsewhere.redwhale.test/`. It and `https://lab.redwhale.test/` are **corroborated** (httpx and katana).
+    No node mentions `elsewhere`.
+11. `docker logs redwhale-lab --since 5m`: the crawl's lines are all `host=lab.redwhale.test`, all `GET`; one
+    `"GET / HTTP/1.1" 301`; **no** `elsewhere`, `/static/logo.png`, `/robots.txt`, `/sitemap.xml` or `/contact.html`.
+12. Jobs tab ▸ the katana job: the command has `-fs fqdn -dr -d 2 -jc -ndef -ef … -rl 5 … -eof body`, and no `-hl`,
+    `-aff`, `-kf` or `-ob`.
+
+**gau, passive** (proves: per-provider sources, target host only, a failed provider is named):
+
+13. On a domain you are authorized to research (in scope; passive-only can be on): Run tool ▸ **gau** (no active
+    dialog). It can take up to 15 minutes (three providers, one after another).
+14. When it finishes: the URLs hang off the domain (`serves`), all on exactly that host (no `www.` or other
+    subdomains); select one: data `source` (sorted providers) and `historical: true`.
+15. If an archive was down (common for the Wayback Machine), the job is `partial` and the Jobs tab names it
+    (`wayback failed: …`); the other providers' URLs are there. A URL also found by katana or httpx is corroborated.
+
+**Refusals without the network** (no Docker needed):
+
+16. `py -3 tools/urls/katana/run.py --target lab.redwhale.test --out $env:TEMP\rw-katana`, then
+    `Get-Content $env:TEMP\rw-katana\result.json`: `"status": "failed"`, errors "no system resolver found;
+    refusing to use public ones" (Windows has no `/etc/resolv.conf`) and "target 'lab.redwhale.test' is not an
+    http(s) URL"; katana never ran. (In a container, the command builder refuses it instead: "katana crawls an
+    http(s) URL, not 'lab.redwhale.test'", covered by `test_katana.py`.)
+
 ## Next action
 
-Step 4 (docs): architecture §11 (the `urls` group, gau and katana rows, the lab's crawl site) and §13 (decisions:
-no contract change; gau per provider and its warning-only failures; katana without `-kf`, with `-ndef` and
-`-eof body`), `tools/urls/README.md`, the team-guide row, `docs/handoff.md` (Status, decisions, "Last updated" from
-Get-Date), and a manual checklist in this file. Commit `6c5 step 4`, push.
+None: all four steps are done. Awaiting the user's manual check, then merge (the user merges; never main by Claude).

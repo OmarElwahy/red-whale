@@ -700,7 +700,9 @@ by digest; self-signed certificate made at build) on the tools network as `lab.r
 log records the `Host`, so a followed redirect would show); `https://` serves the page; `http://…:8080/` a plain
 page (6C-3: a port only a port scan finds, `LAB_PORTS`, listed by `lab:status`); TCP 22 a fake SSH banner (6C-4: `SSH-2.0-OpenSSH_9.6p1`, then the connection closes;
 an nginx `stream` `return`, **no real SSH**); the web ports all send `Server` and
-`X-Powered-By`. Hardened like a job (nginx's own user 101, read-only root, no capabilities, ports 80/443 via the
+`X-Powered-By`; `https://` also serves a small crawl site (6C-5, `lab/site/`, for katana: pages one, two and three
+links deep, a script naming `/api/v1/orders`, a stylesheet, a PDF, an image, robots.txt and sitemap.xml, links to
+the http:// 301 and to `https://elsewhere.redwhale.test/`; every file is in `LAB_FILES`). Hardened like a job (nginx's own user 101, read-only root, no capabilities, ports 80/443 via the
 container's `ip_unprivileged_port_start` sysctl, 128 MB), label `redwhale.lab`, image `redwhale-lab:<hash of lab/>`.
 `lab:up` builds/replaces as needed and **never adds scope rules**: it prints them (domain `lab.redwhale.test`, ip
 `172.29.250.10`). The mock wipe treats `.test` scans as disposable, like `.example`.
@@ -753,11 +755,16 @@ replays it. How to add a tool: `docs/team-guide.md`.
 80/443, never follows redirects, DNS only through the container's resolver; `tools/http/README.md`), `dns` (dnsx;
 passive: A/AAAA/CNAME of the one name through the system resolver, never brute-force; `ip` findings with
 `resolves_to`, the CNAME in their data, the target itself never a finding; and takeover-check, TW-1, passive,
-`subdomain` only, below; `tools/dns/README.md`) and `ports` (naabu;
+`subdomain` only, below; `tools/dns/README.md`), `ports` (naabu;
 **active**, IPs only: connect scan of the top 100 TCP ports, ≤ 50/s, no host discovery, no capability;
 `port` findings with `has_port`; and nmap, 6C-4, **active**, an `ip` or a `port`: connect scan + `-sV`, which
 also runs nmap's `version` scripts (no others, no OS detection, no UDP), `port` findings with the service in their
-data and `technology` with `uses_technology`; `tools/ports/README.md`). Scripts that need
+data and `technology` with `uses_technology`; `tools/ports/README.md`) and `urls` (6C-5: gau, passive, a `domain` or
+`subdomain`: URLs the Wayback Machine, Common Crawl and AlienVault OTX saw on exactly that host, one gau run per
+provider so each URL's `source` is known, `serves` from the target, `historical: true`, a failed provider named in
+an error with the others' URLs kept, at most 5,000; and katana, **active**, a `url`: crawls that host only, two
+levels deep, links and JavaScript, GET only, ≤ 5/s, never a redirect, each URL `has_url` from the page it was
+found on; one static-extension list for both; `tools/urls/README.md`). Scripts that need
 the target's type call `main(..., needs_target_type=True)` and get `--target-type` (`{targetType}`), and their
 command builder is called as `command(target, target_type)` (6C-4; others keep `command(target)`); `tech_value(name,
 version)` spells technologies one way (lowercase, spaces → `-`, `name/version`).
@@ -1048,3 +1055,9 @@ delete is one transaction with a record.
 | 2026-11-23 | **Migration `0007_takeover_watch`** (proposed in the TW-2 plan, approved): `jobs.trigger` (`manual`/`auto`, CHECK; `jobs` rebuilt, rows kept as `manual`), `scope_settings.auto_takeover_checks` (on), index `scans (tool, target)`. Not breaking. drizzle-kit's generated copy selected the new column from the old table; fixed by hand |
 | 2026-11-23 | **Takeover watch order within a status: least time left first** (the weakest link's days left; rows without a date after them), then by name (asked by the user after TW-2 step 4; before, only `expiring` rows were sorted by days, the rest by name) |
 | 2026-11-23 | **External CNAME names hidden by default** (asked by the user after TW-2 step 4): out-of-scope nodes that only takeover-check ever observed are left out of every filtered read and of the Takeover watch unless `showExternal=1` (sidebar ▸ Scope ▸ "show external CNAME names"). Nothing is deleted (rule 4). Why: third-party chain names (Microsoft 365, CloudFront…) cluttered the graph; they are evidence, not attack surface |
+| 2026-11-24 | **6C-5 needs no contract change**: gau's URLs hang off the target with `serves` (`domain`/`subdomain` → `url`, already in §4) and katana's off the page they were found on with `has_url` (`url` → `url`). No migration |
+| 2026-11-24 | **gau runs once per provider** (wayback, commoncrawl, otx; one after another, each with the time left divided by the providers left): its `--json` lines name no provider. `data = {source: [sorted providers], historical: true}`. Target host only (no `--subs`; other hosts OTX returns are ignored), 5,000 URLs at most after deduplication (the first, in provider order; more is an error). Raw output: one `#provider <p> exit=<code>` section per run, gau's stdout and stderr unchanged |
+| 2026-11-24 | **gau failures are warnings only**: gau exits 0 when a provider fails and logs it only with `--verbose` (`level=warning`). The script runs with `--verbose`; a provider that times out, exits non-zero or logs a warning/error (except the expected `error reading config`) is named in an error (`partial`), and the other providers' URLs are kept |
+| 2026-11-24 | **katana**: active, accepts `url`, `-fs fqdn -dr -d 2 -jc -ndef -ef <static> -rl 5 -c 2 -p 1 -ct 210s -j -or -eof body`, own resolvers. **No `-kf`** (user, after probes): v1.8.0's `-kf sitemapxml` loses every URL the sitemap lists and the pages behind them; `-kf robotstxt` adds nothing. `-ndef`: katana's own extension denylist drops PDFs. `-eof body` instead of `-ob`, which also turns off JavaScript parsing. Its duplicate-content filter is left on |
+| 2026-11-24 | **One static-extension list** (`tools/urls/urls_common.py`): images, fonts, audio, video; gau `--blacklist` and katana `-ef`. CSS, JavaScript and PDF are kept |
+| 2026-11-24 | **Lab crawl site** (`lab/site/`, served on 443; `index.html` keeps its title): katana's e2e proves from the access log that its container asked only `lab.redwhale.test` (GETs only), requested the http:// 301 once without following it, and never asked for `elsewhere`, the image or the known files. Lab e2e suites can run at once, so each filters the log to its own container where it matters |
