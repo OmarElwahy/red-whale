@@ -1,0 +1,131 @@
+{
+  "target": "northwind.example",
+  "target_type": "domain",
+  "status": "partial",
+  "errors": [
+    "wayback failed: northwind.example - failed to fetch wayback results page 0: timeout"
+  ],
+  "findings": [
+    {
+      "type": "url",
+      "value": "http://northwind.example/",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "serves",
+      "data": {
+        "source": [
+          "otx"
+        ],
+        "historical": true
+      }
+    },
+    {
+      "type": "url",
+      "value": "https://northwind.example/bulkSetWatchlistShow.rpc",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "serves",
+      "data": {
+        "source": [
+          "commoncrawl"
+        ],
+        "historical": true
+      }
+    },
+    {
+      "type": "url",
+      "value": "https://northwind.example/download.action",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "serves",
+      "data": {
+        "source": [
+          "commoncrawl",
+          "otx"
+        ],
+        "historical": true
+      }
+    },
+    {
+      "type": "url",
+      "value": "https://northwind.example/product/goldenhills.action",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "serves",
+      "data": {
+        "source": [
+          "commoncrawl"
+        ],
+        "historical": true
+      }
+    },
+    {
+      "type": "url",
+      "value": "https://northwind.example/product/gowidget.action",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "serves",
+      "data": {
+        "source": [
+          "commoncrawl"
+        ],
+        "historical": true
+      }
+    },
+    {
+      "type": "url",
+      "value": "https://northwind.example/product/pricescan.action",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "serves",
+      "data": {
+        "source": [
+          "commoncrawl"
+        ],
+        "historical": true
+      }
+    },
+    {
+      "type": "url",
+      "value": "https://northwind.example/robots.txt",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "serves",
+      "data": {
+        "source": [
+          "commoncrawl"
+        ],
+        "historical": true
+      }
+    },
+    {
+      "type": "url",
+      "value": "https://northwind.example/store/vendors/144.action",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "serves",
+      "data": {
+        "source": [
+          "commoncrawl"
+        ],
+        "historical": true
+      }
+    }
+  ]
+}

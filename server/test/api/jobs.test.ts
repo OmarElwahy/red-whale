@@ -65,6 +65,7 @@ describe('GET /api/tools and /api/runner/status', () => {
       { name: 'http', label: 'HTTP probing', image: catalog.imageRef('http'), imageStatus: 'missing', tools: ['httpx'] },
       { name: 'ports', label: 'port scanning', image: catalog.imageRef('ports'), imageStatus: 'missing', tools: ['naabu', 'nmap'] },
       { name: 'subdomain', label: 'subdomain enumeration', image: IMAGE, imageStatus: 'built', tools: ['subfinder', 'assetfinder', 'findomain', 'crtsh'] },
+      { name: 'urls', label: 'URL discovery', image: catalog.imageRef('urls'), imageStatus: 'missing', tools: ['gau'] },
     ]);
     expect(tools.tools.find((t) => t.name === 'httpx')).toMatchObject({
       mode: 'active',
@@ -82,8 +83,10 @@ describe('GET /api/tools and /api/runner/status', () => {
       ['assetfinder', 'passive', ['domain']],
       ['findomain', 'passive', ['domain']],
       ['crtsh', 'passive', ['domain']],
+      ['gau', 'passive', ['domain', 'subdomain']],
     ]);
     expect(tools.tools.find((t) => t.name === 'crtsh')?.external).toEqual(['crt.sh']);
+    expect(tools.tools.find((t) => t.name === 'gau')?.external).toEqual(['Wayback Machine', 'Common Crawl', 'AlienVault OTX']);
   });
 
   test('image missing, outdated, and Docker down', async () => {
@@ -97,6 +100,7 @@ describe('GET /api/tools and /api/runner/status', () => {
         { group: 'http', image: catalog.imageRef('http'), status: 'missing' },
         { group: 'ports', image: catalog.imageRef('ports'), status: 'missing' },
         { group: 'subdomain', image: IMAGE, status: 'outdated' },
+        { group: 'urls', image: catalog.imageRef('urls'), status: 'missing' },
       ],
       running: 0,
       queued: 0,
