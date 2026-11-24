@@ -40,7 +40,7 @@ const sortFindings = (findings: Record<string, unknown>[]) =>
 
 describe.skipIf(!python)('tool parsers against their saved real output', () => {
   test('every repo tool has a fixture', () => {
-    expect(withFixtures.map((t) => t.tool)).toEqual(['dnsx', 'takeover-check', 'httpx', 'wafw00f', 'naabu', 'nmap', 'subfinder', 'assetfinder', 'findomain', 'crtsh', 'gau', 'katana', 'nuclei']);
+    expect(withFixtures.map((t) => t.tool)).toEqual(['dnsx', 'takeover-check', 'httpx', 'wafw00f', 'naabu', 'nmap', 'subfinder', 'assetfinder', 'findomain', 'crtsh', 'testssl', 'gau', 'katana', 'nuclei']);
   });
 
   test.each(withFixtures)('$tool', ({ tool, dir, raw, expected }) => {
@@ -92,7 +92,7 @@ describe.skipIf(!python)('tools/check.py (pnpm tools:check)', () => {
   test('every tool in the repo passes', () => {
     const r = check(TOOLS_DIR, ['--all']);
     expect(r.code, r.out).toBe(0);
-    expect(r.out).toContain('✓ all 13 passed');
+    expect(r.out).toContain('✓ all 14 passed');
   }, 120_000);
 
   test('a parser change that loses findings fails, naming them', () => {

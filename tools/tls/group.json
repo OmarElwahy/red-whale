@@ -1,0 +1,6 @@
+{
+  "name": "tls",
+  "label": "TLS checks",
+  "image": "redwhale-tools/tls",
+  "tools": ["testssl"]
+}

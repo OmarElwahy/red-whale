@@ -65,6 +65,7 @@ describe('GET /api/tools and /api/runner/status', () => {
       { name: 'http', label: 'HTTP probing', image: catalog.imageRef('http'), imageStatus: 'missing', tools: ['httpx', 'wafw00f'] },
       { name: 'ports', label: 'port scanning', image: catalog.imageRef('ports'), imageStatus: 'missing', tools: ['naabu', 'nmap'] },
       { name: 'subdomain', label: 'subdomain enumeration', image: IMAGE, imageStatus: 'built', tools: ['subfinder', 'assetfinder', 'findomain', 'crtsh'] },
+      { name: 'tls', label: 'TLS checks', image: catalog.imageRef('tls'), imageStatus: 'missing', tools: ['testssl'] },
       { name: 'urls', label: 'URL discovery', image: catalog.imageRef('urls'), imageStatus: 'missing', tools: ['gau', 'katana'] },
       { name: 'vuln', label: 'Vulnerability scanning', image: catalog.imageRef('vuln'), imageStatus: 'missing', tools: ['nuclei'] },
     ]);
@@ -85,6 +86,7 @@ describe('GET /api/tools and /api/runner/status', () => {
       ['assetfinder', 'passive', ['domain']],
       ['findomain', 'passive', ['domain']],
       ['crtsh', 'passive', ['domain']],
+      ['testssl', 'active', ['url', 'port']],
       ['gau', 'passive', ['domain', 'subdomain']],
       ['katana', 'active', ['url']],
       ['nuclei', 'active', ['url']],
@@ -116,6 +118,7 @@ describe('GET /api/tools and /api/runner/status', () => {
         { group: 'http', image: catalog.imageRef('http'), status: 'missing' },
         { group: 'ports', image: catalog.imageRef('ports'), status: 'missing' },
         { group: 'subdomain', image: IMAGE, status: 'outdated' },
+        { group: 'tls', image: catalog.imageRef('tls'), status: 'missing' },
         { group: 'urls', image: catalog.imageRef('urls'), status: 'missing' },
         { group: 'vuln', image: catalog.imageRef('vuln'), status: 'missing' },
       ],

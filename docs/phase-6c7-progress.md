@@ -12,7 +12,7 @@ Branch `phase-6c7`, cut from `phase-6c6` (`feb293a`). Started 2026-11-24.
 | # | Step | Status |
 |---|---|---|
 | 1 | wafw00f in `http` (pin, tool.json, run.py, lab fake WAF, fixtures, tests) | done |
-| 2 | `tls` group + testssl (Dockerfile, flags checked, tool.json, run.py, certificate/vuln parser, tests) | |
+| 2 | `tls` group + testssl (Dockerfile, flags checked, tool.json, run.py, certificate/vuln parser, tests) | done |
 | 3 | e2e (wafw00f; testssl fast + slow), results recorded here | |
 | 4 | Docs (§11/§13, group READMEs, team-guide rows, handoff) + manual checklist | |
 
@@ -67,8 +67,62 @@ Branch `phase-6c7`, cut from `phase-6c6` (`feb293a`). Started 2026-11-24.
   the `/waf/` rule) restarted the lab 37 minutes into it. Not a result. **Run #4** started 2026-11-24 23:31 with the
   lab untouched; its result goes into `docs/phase-6c6-progress.md`.
 
+## Step 2: testssl.sh, group `tls`
+
+- **testssl.sh v3.2.5** (2026-11-04; the newest stable, 20 days old; 3.3 is only dev snapshots). The release has no
+  asset and no checksum: GitHub's source archive of the tag, sha256 `23bb53d5…d779` computed from the download
+  (104 entries, no links). `fetch_release --tree`; Darwin/FreeBSD openssl builds removed; `testssl.sh` and
+  `bin/openssl.Linux.x86_64` made executable (`--tree` writes 0644).
+- **Image** (`tools/tls/Dockerfile`, group `tls` "TLS checks", `redwhale-tools/tls`): the pinned Python base (it has
+  `/usr/bin/openssl` 3.5.9, testssl's second OpenSSL for TLS 1.3, plus bash, coreutils `timeout`, getent) + Debian
+  packages, exact versions: `procps=2:4.0.4-9` (ps), `bsdextrautils=2.41.5-0+deb13u1` (hexdump),
+  `bind9-dnsutils=1:9.20.30-1~deb13u1` (dig), `gawk=1:5.2.1-2+b1`. **No curl/wget/socat**: a second lock on
+  `--phone-out`. testssl's own OpenSSL `1.0.2-bad` (bundled) via `--openssl`.
+- **Flags** (all in `testssl.sh --help` of 3.2.5): `-p -s -S -U --jsonfile <tmp> --nodns min --ip one --warnings
+  batch --color 0 --quiet --disable-rating --connect-timeout 10 --openssl-timeout 10`, `-6` for an IPv6 port target.
+  `--version` is standalone (with other options: "Fatal error: --version is a standalone command line option").
+- **DNS (probed with a logging `dig` shim first on PATH):** with `--nodns min` the only queries were
+  `dig +search -r +short +timeout=2 +tries=2 -t a|aaaa lab.redwhale.test` (system resolver; `-r` ignores ~/.digrc).
+  In the source: `min` skips PTR ("instructed to minimize DNS queries") and CAA ("check skipped as instructed"); MX
+  only with `--mx`. `--nodns none` can't be used with `--ip one` (testssl refuses it).
+- **Lab (url target), 49 s:** TLS 1.2+1.3, CBC offered, self-signed. LOW+: `cipherlist_OBSOLETED` (low),
+  `cert_chain_of_trust` (critical), `cert_extlifeSpan` (medium, 825 > 398 days), `cert_revocation` (high),
+  `LUCKY13` (low, `CVE-2013-0169`). `engine_problem` WARN ("No engine or GOST support") on every run: ignored.
+  BREACH: "only supplied "/" tested" (one HTTP GET). DROWN prints a censys.io search link: text only, nothing fetched.
+- **Port target** (`172.29.250.10:443`): same, plus `cmdline_ip-target` WARN ("results may be completely wrong, at
+  minimum trust may show false results") and **`cert_trust` HIGH "certificate does not match supplied URI"**: an
+  artifact of no hostname. **Decision (mine, tell the user): `cert_trust` is not reported on port targets** (kept in
+  raw); on url targets it is.
+- **Failures (probed):** `:8080` (plain HTTP) → `optimal_proto` WARN "doesn't seem to be a TLS/SSL enabled server",
+  exit 245 → "no TLS service on 172.29.250.10:8080". `:9` → `scanProblem` FATAL "Can't connect …", exit 246 →
+  "can't connect to …: closed, refused or filtered (…)". Unresolvable name with `--ip one` → FATAL "couldn't identify
+  supplied 'CMDLINE_IP'" → "<host> did not resolve: no address through the system resolver". The specific reason
+  replaces run_command's "exit code N" line; `failed`, no findings.
+- **run.py**: `main(fetch=…)` (testssl's JSON is a file, stdout is the screen report): runs the command, returns the
+  JSON file as raw. `needs_target_type` + `needs_resolvers`. `--checks a,b` (tests only, never in tool.json: subset
+  of protocols, ciphers, defaults, vulnerabilities). An unclosed JSON list (killed at the time limit) is still read.
+- **Findings:** url target: ip (parent only) →`has_port` `ip:port/tcp` (data `service: https`, like httpx) →`serves`
+  url, and port →`has_certificate` certificate. **No host →`resolves_to` ip**: whether the url's host is a domain or a
+  subdomain needs the Public Suffix List, which lives in the dns image; httpx/dnsx make that link and the port node
+  merges with theirs. Port target: certificate and vulnerabilities under the port itself. Certificate data: subject
+  (`cert_commonName`; testssl has no full subject), sans (list), issuer (`cert_caIssuers`), not_before/not_after
+  (`YYYY-MM-DDTHH:MM:00Z`), trusted (`cert_chain_of_trust` OK), ip. Several certificates (`<hostCert#N>`): one node
+  each; a vulnerability from one names it in `data.certificate`. Vulnerability data: id, finding (≤ 300), cwe, cves
+  (when > 1), ip. Severity LOW/MEDIUM/HIGH/CRITICAL → low…critical.
+- **Fixtures** (`tools/tls/testssl/fixtures/`, NOTE.md; all real, anonymized, nothing edited): `raw.json` (url,
+  `tools:check`), `port.json`, `not-tls.json`, `closed.json`, `no-address.json`. The certificate fingerprint is the
+  lab's, made at build (differs per machine).
+- **Tests:** `test_testssl.py` (17: argv; never -h/STARTTLS/--phone-out/-c/-e…; port and IPv6 targets; refused
+  targets; --checks; tool.json; url fixture (chain, certificate data, 5 vulns, severities, cwe); OK/INFO/WARN not
+  findings; port target drops cert_trust; not-TLS, closed, no-address; two certificates; several CVEs; unclosed JSON;
+  bad output; refused target). Server lists: group order puts `tls` before `urls`; "all 14 passed".
+- `contacts` is capped at 300 characters by the tool.json schema: the probe list is shortened there (the README has
+  the full one).
+
 ## Next action
 
-Step 2: `tls` group. Pick the testssl.sh release (newest ≥ 2 weeks old), sha256 of its tarball, Dockerfile with its
-Debian dependencies, check `--help` for every flag (`-p -s -S -U --jsonfile --nodns min --ip one --warnings batch`),
-probe `--nodns min` under `--network none`. Don't restart the lab while nuclei run #4 is going.
+Step 3: e2e. `server/test/wafw00f.e2e.test.ts` (normal suite: `/waf/` → shadow-daemon; `/` → success, no findings;
+lab log: only lab, 2 and 7 requests, test strings seen, no `elsewhere`) and `server/test/testssl.e2e.test.ts` (fast:
+`--checks protocols,defaults` through the orchestrator: port chain, certificate with the lab's SANs, trusted false,
+no `elsewhere` request; slow `REDWHALE_E2E_SLOW=1`: the real catalog, the 5 vulns, the BREACH GET in the lab log).
+Check nuclei run #4 (scratchpad slow-e2e-4.txt) and record it in docs/phase-6c6-progress.md.

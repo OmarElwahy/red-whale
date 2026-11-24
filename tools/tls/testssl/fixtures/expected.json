@@ -1,0 +1,127 @@
+{
+  "target": "https://lab.northwind.example/",
+  "target_type": "url",
+  "status": "success",
+  "errors": [],
+  "findings": [
+    {
+      "type": "certificate",
+      "value": "b17f047e99eb51cf4b801320e453f9031f3df2be1ef20f46330e6e7871d281f6",
+      "parent": {
+        "type": "port",
+        "value": "198.18.0.10:443/tcp"
+      },
+      "relation": "has_certificate",
+      "data": {
+        "subject": "lab.northwind.example",
+        "sans": [
+          "lab.northwind.example",
+          "elsewhere.northwind.example"
+        ],
+        "issuer": "lab.northwind.example",
+        "not_before": "2026-11-03T09:13:00Z",
+        "not_after": "2029-02-05T09:13:00Z",
+        "trusted": false,
+        "ip": "198.18.0.10"
+      }
+    },
+    {
+      "type": "port",
+      "value": "198.18.0.10:443/tcp",
+      "parent": {
+        "type": "ip",
+        "value": "198.18.0.10"
+      },
+      "relation": "has_port",
+      "data": {
+        "service": "https"
+      }
+    },
+    {
+      "type": "url",
+      "value": "https://lab.northwind.example/",
+      "parent": {
+        "type": "port",
+        "value": "198.18.0.10:443/tcp"
+      },
+      "relation": "serves"
+    },
+    {
+      "type": "vulnerability",
+      "value": "CVE-2013-0169",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example/"
+      },
+      "relation": "has_vulnerability",
+      "severity": "low",
+      "data": {
+        "id": "LUCKY13",
+        "finding": "potentially vulnerable, uses obsolete TLS CBC ciphers",
+        "cwe": "CWE-310",
+        "ip": "198.18.0.10"
+      }
+    },
+    {
+      "type": "vulnerability",
+      "value": "cert_chain_of_trust",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example/"
+      },
+      "relation": "has_vulnerability",
+      "severity": "critical",
+      "data": {
+        "id": "cert_chain_of_trust",
+        "finding": "failed (self signed).",
+        "ip": "198.18.0.10"
+      }
+    },
+    {
+      "type": "vulnerability",
+      "value": "cert_extlifeSpan",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example/"
+      },
+      "relation": "has_vulnerability",
+      "severity": "medium",
+      "data": {
+        "id": "cert_extlifeSpan",
+        "finding": "825 > 398 days",
+        "ip": "198.18.0.10"
+      }
+    },
+    {
+      "type": "vulnerability",
+      "value": "cert_revocation",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example/"
+      },
+      "relation": "has_vulnerability",
+      "severity": "high",
+      "data": {
+        "id": "cert_revocation",
+        "finding": "Neither CRL nor OCSP URI provided",
+        "ip": "198.18.0.10"
+      }
+    },
+    {
+      "type": "vulnerability",
+      "value": "cipherlist_OBSOLETED",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example/"
+      },
+      "relation": "has_vulnerability",
+      "severity": "low",
+      "data": {
+        "id": "cipherlist_OBSOLETED",
+        "finding": "offered",
+        "cwe": "CWE-310",
+        "ip": "198.18.0.10"
+      }
+    }
+  ]
+}
