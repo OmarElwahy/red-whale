@@ -16,6 +16,7 @@ import { Orchestrator } from '../src/runner/orchestrator';
 import { LABEL_WORKSPACE } from '../src/runner/spec';
 import { addRule, setSettings } from '../src/scope/store';
 import { baseDoc, freshDb, tempDir } from './helpers';
+import { labLogSince, logMark } from './lab-log';
 
 const runtime = new DockerRuntime();
 const catalog = loadCatalog();
@@ -29,17 +30,6 @@ const quiet: LabIo = { out: () => undefined, err: () => undefined };
 
 /** Was the lab already running before this test (the analyst's)? Then it is left running. */
 let wasUp = false;
-
-async function labContainerId(): Promise<string> {
-  const found = (await runtime.listByLabel(LABEL_LAB)).containers.find((c) => c.state === 'running');
-  if (!found) throw new Error('the lab is not running');
-  return found.id;
-}
-
-async function labLog(): Promise<string[]> {
-  const { stdout } = await runtime.logs(await labContainerId(), 4 * 1024 * 1024);
-  return stdout.text.split('\n').filter(Boolean);
-}
 
 beforeAll(async () => {
   if (!ready) return;
@@ -71,7 +61,7 @@ describe.skipIf(!ready)('httpx against the local lab (real Docker)', () => {
     expect(orch.enqueue('httpx', target)).toMatchObject({ ok: false, code: 'confirm-required' });
 
     // 3. run it
-    const logBefore = (await labLog()).length;
+    const since = logMark();
     const queued = orch.enqueue('httpx', target, { confirmActive: true });
     expect(queued).toMatchObject({ ok: true, jobs: [{ tool: 'httpx', mode: 'active', status: 'queued' }] });
     await orch.idle();
@@ -105,7 +95,7 @@ describe.skipIf(!ready)('httpx against the local lab (real Docker)', () => {
     // …and the redirect target is neither a finding nor contacted
     const all = db.$client.prepare('SELECT value FROM nodes').all() as { value: string }[];
     expect(all.filter((n) => n.value.includes(LAB_REDIRECT_HOST))).toEqual([]);
-    const log = (await labLog()).slice(logBefore);
+    const log = await labLogSince(runtime, since);
     expect(log.filter((l) => l.startsWith(`host=${LAB_HOST} `)).length).toBeGreaterThanOrEqual(2);
     expect(log.filter((l) => l.includes(`host=${LAB_REDIRECT_HOST}`))).toEqual([]);
 

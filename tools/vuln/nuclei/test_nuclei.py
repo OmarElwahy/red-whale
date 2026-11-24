@@ -64,6 +64,11 @@ class CommandTest(unittest.TestCase):
             for flag in ("-ni", "-dr", "-duc", "-or", "-ot", "-jsonl", "-nc"):
                 self.assertIn(flag, cmd)
             self.assertEqual(set(self.arg(cmd, "-etags").split(",")), set(EXCLUDED))
+            eid = set(self.arg(cmd, "-eid").split(","))
+            self.assertEqual(len(eid), 23)
+            # a side port, a token checked against its service's API, and the one seen on a real target
+            for tid in ("hpe-autopass-panel", "slack-bot-token", "azure-domain-tenant", "nginx-status-403-bypass"):
+                self.assertIn(tid, eid)
             self.assertEqual(self.arg(cmd, "-tags"), "cve,misconfig,exposure,tech,takeover")
             self.assertEqual(self.arg(cmd, "-pt"), "http")
             self.assertEqual(self.arg(cmd, "-t"), "/opt/nuclei-templates/http/")
@@ -255,6 +260,15 @@ class LogTest(unittest.TestCase):
         self.assertIn("did not report", self.errors("[INF] Templates loaded for current scan: 6516\n")[0])
         self.assertIn("no templates", self.errors("[INF] Templates loaded for current scan: 0\n"
                                                   "[INF] Scan completed in 1ms. No results found.\n")[0])
+
+    def test_only_the_targets_own_port_being_skipped_is_an_error(self):
+        side = self.DONE + ("[INF] Skipped lab.northwind.example:5814 from target list as found unresponsive "
+                            "permanently: cause=\"port closed or filtered\"\n")
+        self.assertEqual(self.errors(side), [])
+        own = self.DONE + "[INF] Skipped lab.northwind.example:443 from target list as found unresponsive permanently\n"
+        self.assertEqual(len(self.errors(own)), 1)
+        self.assertEqual(nuclei.target_hostport("http://Lab.northwind.example:8080/x"), "lab.northwind.example:8080")
+        self.assertEqual(nuclei.target_hostport("http://[2001:db8::1]/"), "[2001:db8::1]:80")
 
     def test_an_incomplete_scan_with_findings_is_partial(self):
         run = parsed(line("t"), stderr="[INF] CTRL+C pressed: Exiting\n")

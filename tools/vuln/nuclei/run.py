@@ -28,7 +28,8 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "lib"))
-from redwhale_tool import canonical_url, json_lines, main, mask_secret, resolvers, tech_value  # noqa: E402
+from redwhale_tool import (DEFAULT_PORTS, canonical_url, json_lines, log, main, mask_secret,  # noqa: E402
+                          resolvers, tech_value)
 
 TOOL = "nuclei"
 NUCLEI = "/usr/local/bin/nuclei"  # absolute: never whatever else is called nuclei on PATH
@@ -38,6 +39,22 @@ TAGS = ("cve", "misconfig", "exposure", "tech", "takeover")
 # intrusive..osint: the phase's rule. ssrf, oast, proxy: templates that make the TARGET fetch a hard-coded outside
 # host (oast.pro, interact.sh, 169.254.169.254, ...) which -ni doesn't exclude (docs/phase-6c6-progress.md).
 EXCLUDED_TAGS = ("intrusive", "dos", "fuzz", "bruteforce", "default-login", "osint", "ssrf", "oast", "proxy")
+# nuclei talks only to the URL. Templates that connect anywhere else are excluded by ID (-eid); the full lists for
+# templates v10.5.1. The e2e's template-set test scans every loaded template and fails if an update brings in another
+# one, so these lists can't go stale silently.
+# - a fixed OTHER port of the target's host ({{Hostname}}:<port>; ports are naabu's and nmap's)
+SIDE_PORT_IDS = ("CVE-2018-8024", "CVE-2020-9480", "CVE-2024-6396", "CVE-2025-52665", "hpe-autopass-panel")
+# - another host: `@Host:` in a raw request or a literal URL in a path. Most check a token found on the target
+#   against its service's API (api.github.com, slack.com, api.stripe.com, ...): an outside contact that also USES
+#   a found credential. azure-domain-tenant asks login.microsoftonline.com about the domain (seen on a real target);
+#   nginx-status-403-bypass connects to localhost (the container itself).
+OUTSIDE_HOST_IDS = (
+    "azure-domain-tenant", "github-personal-access", "gitlab-personal-token", "google-gemini-key-exposure",
+    "intercom-identity-misconfiguration", "mapbox-token-disclosure", "nginx-status-403-bypass", "npm-access-token",
+    "rubygems-api-key", "slack-bot-token", "slack-user-token", "sonarqube-cloud-token", "square-access",
+    "stackhawk-api", "stripe-secret-key", "telegram-bot-token", "zenscrape-api-key", "zenserp-api-key",
+)
+EXCLUDED_IDS = SIDE_PORT_IDS + OUTSIDE_HOST_IDS
 # nuclei stops itself after this long, well inside tool.json's timeoutSec (3600; the script gets 3570), and keeps
 # what it found: the job is then `partial`, not killed.
 MAX_TIME = "55m"
@@ -82,7 +99,8 @@ def build_command(target, template_ids=()):
     #                                              its trailing "/": scan_url)
     #   -tags ... -etags ...                       the phase's tags, never the excluded ones (plus the templates'
     #                                              own .nuclei-ignore, read from /opt/nuclei-config)
-    #   -ni -dr -duc                               no interactsh/OAST, never follow a redirect, no update check
+    #   -eid <ids>                                 never a template that connects elsewhere (another port or host)
+    #   -ni -dr -duc                              no interactsh/OAST, never follow a redirect, no update check
     #   -rl 5 -c 5 -retries 1 -timeout 10          at most 5 requests a second
     #   -mt 55m                                    nuclei ends the scan itself before the job's time limit
     #   -jsonl -or -ot -nc                         JSON lines without raw requests/responses or encoded templates
@@ -93,7 +111,7 @@ def build_command(target, template_ids=()):
     if canonical_url(target) is None:
         raise ValueError(f"nuclei scans an http(s) URL, not '{target}'")
     cmd = [NUCLEI, "-u", scan_url(target), "-t", TEMPLATES, "-pt", "http",
-           "-tags", ",".join(TAGS), "-etags", ",".join(EXCLUDED_TAGS),
+           "-tags", ",".join(TAGS), "-etags", ",".join(EXCLUDED_TAGS), "-eid", ",".join(EXCLUDED_IDS),
            "-ni", "-dr", "-duc",
            "-rl", "5", "-c", "5", "-retries", "1", "-timeout", "10", "-mt", MAX_TIME,
            "-jsonl", "-or", "-ot", "-nc"]
@@ -183,12 +201,31 @@ def has_dot_segments(url):
     return any(seg in (".", "..") for seg in re.sub(r"%2e", ".", path, flags=re.IGNORECASE).split("/"))
 
 
-def check_log(stderr, run):
-    """nuclei's stderr (not with --replay): an incomplete scan is an error, so the job is `partial`."""
+def target_hostport(target):
+    """"host:port" of the target URL as nuclei names it in "Skipped <host:port> ..." (the scheme's port if none)."""
+    parts = urlsplit(target)
+    try:
+        port = parts.port or DEFAULT_PORTS.get(parts.scheme.lower())
+    except ValueError:
+        return None
+    host = (parts.hostname or "").rstrip(".")
+    return f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
+
+
+def check_log(stderr, run, target=None):
+    """nuclei's stderr (not with --replay): an incomplete scan is an error, so the job is `partial`.
+
+    nuclei skips a host:port after too many errors. Only the target's own host:port makes the scan incomplete; a few
+    templates probe a fixed other port of the same host (e.g. hpe-autopass-panel on :5814), and that port being
+    closed is normal: logged, not an error."""
     if stderr is None:
         return
+    own = target_hostport(target) if target else None
     for host in sorted(set(re.findall(r"Skipped (\S+) from target list as found unresponsive", stderr))):
-        run.error(f"nuclei skipped {host} as unresponsive (too many errors): the scan is incomplete")
+        if own is None or host.lower() == own.lower() or host.lower() == own.rsplit(":", 1)[0].lower():
+            run.error(f"nuclei skipped {host} as unresponsive (too many errors): the scan is incomplete")
+        else:
+            log(f"nuclei skipped {host} (another port of the target's host, used by a few templates): not the target")
     if "CTRL+C pressed" in stderr:
         run.error(f"nuclei stopped at its time limit (-mt {MAX_TIME}) before the scan finished; kept what it found")
     elif "Scan completed" not in stderr and not run.errors:
@@ -297,7 +334,7 @@ def parse(raw, run, target):
         run.add("vulnerability", value, parent=parent, relation="has_vulnerability", severity=g["severity"],
                 data={k: v for k, v in data.items() if v not in (None, "", [])})
 
-    check_log(run.stderr, run)
+    check_log(run.stderr, run, target)
 
 
 def _one_or_list(values):

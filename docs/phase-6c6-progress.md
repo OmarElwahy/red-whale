@@ -13,8 +13,8 @@ authenticated scans; auto-running after httpx/katana (6D); deciding the intrusiv
 |---|---|---|
 | 1 | `vuln` group image: Dockerfile (nuclei + pinned templates), flags checked, template count | done |
 | 2 | Lab files + nuclei tool.json/run.py/parser, lab fixture, tests | done |
-| 3 | e2e against the lab (fast every step; full scan gated on `REDWHALE_E2E_SLOW=1`) | |
-| 4 | Docs (§11/§13, tools/vuln/README, team-guide row, handoff) + manual checklist | |
+| 3 | e2e against the lab (fast every step; full scan gated on `REDWHALE_E2E_SLOW=1`) + what it found | done (full run #3 pending) |
+| 4 | Docs (§11/§13, tools/vuln/README, team-guide row, handoff, ALL TOOLS GUIDE.pdf) + manual checklist | done |
 
 ## Decisions (from the plan review)
 
@@ -121,6 +121,96 @@ authenticated scans; auto-running after httpx/katana (6D); deciding the intrusiv
   segments; stderr checks); lib: `test_fetch_release.py`, `ToolRun.stderr`. Server lists of groups/tools updated
   (`runner-docker`, `tools-fixtures`, `api/jobs`).
 
+## Step 3: e2e, and what the full runs found
+
+- **`server/test/nuclei.e2e.test.ts`**, three tests:
+  - **template set** (vuln image only, `--network none`): pipes `server/test/nuclei_template_set.py` into the image.
+    It lists what run.py's own command loads (`-tl`) and reads every template: none with an excluded tag, none of
+    the excluded IDs, **none that connects to another port** (`{{Hostname}}:<port>`) **or another host** (`@Host:` in
+    a raw request, a literal URL in a path or request line), HTTP only, `.nuclei-ignore` honoured. -tl lists 6,495.
+  - **fast** (normal real-Docker suite, ~20 s): the repo catalog with nuclei's argv + `--template-ids
+    git-config,laravel-env,nginx-version,php-detect`, through the orchestrator (confirm required, then
+    `confirmActive`), ingest: url `/.git/config` and `/.env` under the target; `git-config` (medium) and
+    `laravel-env` (high) under them; `nginx/1.30.6` corroborated (stand-in httpx seed), `php/8.3.12` discovered, no
+    bare `nginx`; the fake credential nowhere in the DB (observations, nodes, scans.raw), present in raw.txt; the
+    command has `-ni -dr -duc -or`, every excluded tag, `-eid`, `-u` without the trailing `/`; status success,
+    version 3.11.1; no excluded tag on any result; nuclei's access-log lines (its container's address, the one that
+    fetched `/.git/config`) all `host=lab.redwhale.test`, all GET, 20–40 of them, no OAST host.
+  - **slow** (`REDWHALE_E2E_SLOW=1`, ~38 min): the real catalog, the same checks plus generic-env,
+    http-missing-security-headers (10 matchers), waf-detect, no request from the interactsh-only templates
+    (`/backupmgt/`, `/plugins/servlet/jwd/amf`), Host header values only the lab, `_`, `localhost`, `interact.sh` or
+    random `.tld`/`.com`/`.invalid` names, > 9,000 requests.
+  - Lab logs are read with `docker logs --since` (spawnSync): `runtime.logs` keeps the first 4 MB, and a full scan
+    writes ~2.3 MB on top of what the lab already logged.
+- **Full run #1** (2,294 s): failed on status `partial`: "nuclei skipped lab.redwhale.test:5814 as unresponsive".
+  5 templates connect to a fixed **other port** of the host (4040 CVE-2018-8024, 6066 CVE-2020-9480, 43800
+  CVE-2024-6396, 9780 CVE-2025-52665, 5814 hpe-autopass-panel). Fixes: `check_log` treats only the target's own
+  host:port as incomplete (a side port is logged); **user: exclude the 5** (`-eid`, `SIDE_PORT_IDS`).
+- **Full run #2**: everything up to the access-log checks passed (status success, findings, masking, flags); it
+  failed on my own assertion "no OAST host in the log": the full set's open-redirect checks name oast.me /
+  interactsh.com in a parameter (75 lines, all to the lab; harmless with `-dr`, kept by design). That assertion is now
+  in the fast test only.
+- **The user's first real scan** (job 202, a real target's `http://` url, 38 min, success, 5 matches) showed
+  `azure-domain-tenant` matched at `https://login.microsoftonline.com/<domain>/…`: **nuclei had contacted Microsoft**
+  (an `@Host:` annotation moves the connection). The parser ignored the result (another host), but the request went
+  out. The lab e2e could not see it (the tools network has internet; the lab only logs its own requests). A scan of
+  all loaded templates found **18 that connect to another host**: 15 token checks that send a token found on the
+  target to its service's API (api.github.com, slack.com, api.stripe.com, api.telegram.org, ...), azure-domain-tenant,
+  intercom-identity-misconfiguration (api-iam.intercom.io) and nginx-status-403-bypass (`@Host: localhost`, the
+  container). All excluded (`OUTSIDE_HOST_IDS`): this is the phase's rule ("no outside contact except the target"),
+  not a new decision. The template-set test now fails on any new one. 23 IDs in `-eid` in all.
+- The job's other findings: cookies-without-secure (low), missing-cookie-samesite-strict, waf-detect (Cloudflare),
+  technology `cloudflare` (corroborated with httpx). `http://` most likely only redirects (Cloudflare); the
+  `https://` url node is the one to scan.
+- **Every tool image was outdated** after step 2 (tools/lib changed) and the user's UI blocked every run (red
+  circle): rebuilt all groups (`pnpm tools:build`), then `vuln` after each run.py change; `/api/runner/status` all
+  `built`.
+- **Lab log reads** (`server/test/lab-log.ts`, used by the httpx, katana and nuclei e2e): `docker logs --since`. Once every image was current, the httpx and katana e2e ran again and failed: they read `runtime.logs`, which keeps the FIRST 4 MB, and the lab's log had grown to 7.1 MB with the nuclei runs, so their own lines were cut.
+- **Full run #3** (with the 23 exclusions): running at commit time; its time, request count and findings go here.
+
+## Step 4: docs
+
+- `docs/architecture.md` §11 (lab files; the `vuln` group) and §13 (7 rows: no contract change; versions and config
+  folder; template set with ssrf/oast/proxy and the 23 `-eid`; time budget; run.py; findings; e2e).
+- `tools/vuln/README.md` (image, command, outside contact, findings, updating the templates); `docs/team-guide.md`
+  (a row for an active scanner with its own data); `docs/handoff.md` (status row, key decisions, batch list, open
+  items: rebuild all images after merging, the intrusive question).
+- **ALL TOOLS GUIDE.pdf** regenerated (21 pages, was 18): cover/footer 12 tools, 6 groups, 5 active, phase-6c6; a
+  3.12 nuclei section; section 4 now describes nuclei's templates; nuclei in the overview, groups, run order,
+  relations and lab tables. Its generator script (ReportLab) is not in the repo: it was found in an old scratchpad.
+
+## Manual check (PowerShell, from the repo root)
+
+**Setup** (proves: the image builds from pinned archives; every image is current; fixtures replay):
+
+1. `git switch phase-6c6`, then `pnpm install`.
+2. `pnpm tools:build`: every group builds; for vuln the log shows `ok nuclei (…)` and `ok <n> files from
+   nuclei-templates-10.5.1 to /dist/nuclei-templates`, each with its archive's sha256. (C: needs a few GB free.)
+3. `pnpm lab:up` (rebuilds the lab: nginx.conf changed). `pnpm tools:check --all`: `✓ all 12 passed`.
+4. `pnpm dev`, open http://127.0.0.1:5173. Right-click a **url** node ▸ Run tool lists **Run group: Vulnerability
+   scanning** and **nuclei**; on a domain or subdomain they are not listed (nuclei accepts url only). No red circles.
+
+**nuclei against the lab, active** (proves: confirmation, findings, masking, corroboration, no outside contact):
+
+5. Scope panel: `include domain lab.redwhale.test`, `include ip 172.29.250.10`; passive-only **off**.
+6. Subdomain `lab.redwhale.test` ▸ httpx (adds `https://lab.redwhale.test/` and `nginx/1.30.6`).
+7. Right-click `https://lab.redwhale.test/` ▸ **nuclei**: the dialog shows ACTIVE, "Contacts the target: about 11,000
+   HTTP requests to https://lab.redwhale.test/'s host for known CVEs, …; no out-of-band callbacks; redirects are not
+   followed", "External services: none", **In scope**. Run it: about 36–40 minutes.
+8. Under `https://lab.redwhale.test/`: url `/.git/config` with vulnerability **git-config** (medium; its observation
+   `extracted ["redw****cret"]`), url `/.env` with **laravel-env**, **generic-env** (high), and the target itself has
+   **http-missing-security-headers** (`matcher` lists 10 headers), **waf-detect**, technologies `nginx/1.30.6`
+   (**corroborated**: httpx and nuclei) and `php/8.3.12`. No node `nginx` without a version; nothing on `elsewhere`.
+9. The job's raw output (job panel ▸ raw) still has `fake-not-a-secret` (the evidence); no node or observation does.
+10. `docker logs redwhale-lab --since 45m | Select-String -NotMatch "host=lab.redwhale.test "`: only `host=_` (400s),
+    `host=localhost`, `host=interact.sh` and random `.tld` lines (Host-header checks); **no** `elsewhere`.
+
+**A real target** (only one you are authorized to test):
+
+11. Run nuclei on its **https://** url node (not `http://`, which often only redirects). The job's stderr (job panel)
+    ends with "Scan completed in …" and "Templates loaded for current scan: ~6,49x"; no result names another host
+    (before this phase's fix, azure-domain-tenant contacted login.microsoftonline.com).
+
 ## Next action
 
-Step 3: `server/test/nuclei.e2e.test.ts` (fast: `--template-ids git-config,laravel-env,nginx-version,php-detect` in the normal real-Docker suite; full scan with `REDWHALE_E2E_SLOW=1`, run once and recorded here).
+Record full run #3's result here (scratchpad slow-e2e-3.txt: `[nuclei slow e2e] <s> s, <n> requests, …`); if it fails, fix and re-run `REDWHALE_E2E_SLOW=1 pnpm vitest run server/test/nuclei.e2e.test.ts -t slow`. Then the phase is done: the user's manual check above, then merge (6C-5 first).

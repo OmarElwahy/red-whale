@@ -10,7 +10,7 @@ The exact command `build_command` ran:
 /usr/local/bin/nuclei -u https://lab.redwhale.test -t /opt/nuclei-templates/http/ -pt http -tags cve,misconfig,exposure,tech,takeover -etags intrusive,dos,fuzz,bruteforce,default-login,osint,ssrf,oast,proxy -ni -dr -duc -rl 5 -c 5 -retries 1 -timeout 10 -mt 55m -jsonl -or -ot -nc -r /tmp/redwhale-nuclei-resolvers.txt -id git-config,laravel-env,generic-env,nginx-version,php-detect,tech-detect,waf-detect,http-missing-security-headers
 ```
 
-(`-r` names a file with the container's own resolver, `127.0.0.11:53`. `-id` narrows the full template set to the 8
+(`-eid` with the 5 side-port templates was added after this capture; none of the 8 is among them. `-r` names a file with the container's own resolver, `127.0.0.11:53`. `-id` narrows the full template set to the 8
 templates that fire on the lab, so the capture took 11 s instead of ~37 min; nuclei ANDs `-id` with the tag filters.)
 nuclei's stderr: "Templates loaded for current scan: 8", "Scan completed in 8.8s. 18 matches found."
 The capture had 18 lines; all are kept, in nuclei's order (it varies between runs).
