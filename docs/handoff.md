@@ -54,6 +54,7 @@ merged** until my manual checks (checklists in `docs/phase-6c4-progress.md`, `do
 | TW-2 | Takeover watch, second half: a "Takeover watch" tab (one row per subdomain, built on read from its latest takeover-check: status, chain end, weakest-link registration, days left, last checked), automatic passive checks (24 h, capped queue, manual first, setting in the Scope panel), `auto` badge in Jobs; migration 0007 (rows kept) | ✅ done (branch `phase-tw2`, awaiting my check) |
 | 6C-5 | `urls` group (URL discovery): gau (passive, domain/subdomain: Wayback, Common Crawl, OTX, one run per provider so each URL's source is known, target host only, `serves`, ≤ 5,000, a failed provider → partial) and katana (active, url: same host only, depth 2, links + JavaScript, GET only, no redirects, no `-kf`, `has_url` from the page it was found on); one static-extension list; lab crawl site; no contract change | ✅ done (branch `phase-6c5`, awaiting my check) |
 | 6C-6 | `vuln` group (vulnerability scanning): nuclei (active, url) with pinned templates v10.5.1 baked in, HTTP only, tags cve/misconfig/exposure/tech/takeover minus intrusive/dos/fuzz/bruteforce/default-login/osint/ssrf/oast/proxy (~6,500 templates, ~11,000 requests at 5/s, `-mt 55m` in a 3600 s job), `-ni -dr -duc`, no outside contact; `tech` → technology, the rest → vulnerability (CVE or template ID) under the matched URL; extracted values masked; lab fake `/.git/config` + `/.env`; no contract change; **every tool image must be rebuilt** (shared lib changed) | ✅ done (branch `phase-6c6`, awaiting my check) |
+| 6C-7 | wafw00f in `http` (active, url; pip `--require-hashes` venv; 2–7 GETs with attack-looking test strings, no redirects; named WAF → technology, generic → `generic-waf`, none → success) and new group `tls` with testssl.sh 3.2.5 (active, https url or tcp port; `-p -s -S -U`, `--ip one`, `--nodns min`, no `--phone-out`/curl; ip → port → certificate, port serves url, every LOW+ result → vulnerability; no TLS/closed/unresolvable → failed with the reason); lab fake WAF on `/waf/`; no contract change; **rebuild `http` and `tls`** | ✅ done (branch `phase-6c7`, awaiting my check) |
 
 ## How I work with Claude Code
 
@@ -68,7 +69,7 @@ merged** until my manual checks (checklists in `docs/phase-6c4-progress.md`, `do
 
 ## Next up
 
-1. Tool batches, in order: ~~dnsx → naabu~~ (6C-3) → ~~nmap~~ (6C-4) → ~~katana + gau~~ (6C-5) → ~~nuclei~~ (6C-6) → wafw00f + testssl → the rest (active ones
+1. Tool batches, in order: ~~dnsx → naabu~~ (6C-3) → ~~nmap~~ (6C-4) → ~~katana + gau~~ (6C-5) → ~~nuclei~~ (6C-6) → ~~wafw00f + testssl~~ (6C-7) → the rest (active ones
    use `contacts`, the confirmation and the lab; scripts that name the target as a parent use `{targetType}`).
 2. Redirect following stays out until 6D (httpx keeps the `Location` as data).
 3. **6D** presets + auto-chaining (redirect-following tools re-check scope on every hop) → **6E** scan diffing →
@@ -129,15 +130,18 @@ merged** until my manual checks (checklists in `docs/phase-6c4-progress.md`, `do
   `-eof body` (not `-ob`, which turns off JS parsing); its duplicate-content filter stays on. One static-extension
   list (images, fonts, media) for both; CSS/JS/PDF kept.
 - **Vulnerability scanning (6C-6):** nuclei v3.11.1 + templates v10.5.1 (sha256-pinned, ≥ 2 weeks old, read-only in the image with a read-only config folder; never updates or downloads). HTTP templates only; `ssrf,oast,proxy` excluded too (templates that make the target fetch a hard-coded outside host, which `-ni` misses). 3600 s job, nuclei's own `-mt 55m`; a skipped host or the time limit → `partial` (read from stderr, so no `-silent`). One finding per value + URL (`data.matcher` a list); extracted values masked, raw.txt unredacted (evidence, local). Path-traversal matches hang off the target (the server would resolve `..` into a misleading URL). `--template-ids` is test-only and can only narrow. Fast e2e every run; full scan with `REDWHALE_E2E_SLOW=1`.
+- **WAF and TLS (6C-7):** wafw00f 2.4.2 and its dependencies pinned by version + wheel sha256 (`--require-hashes`, wheels only). wafw00f requests only the URL as given (plus query strings); first signature wins (never `-a`). testssl.sh 3.2.5 (source archive sha256; its own OpenSSL); one address (`--ip one`, named in the data), DNS only A/AAAA via the system resolver. The certificate hangs off the **port** (contract: no url → certificate); port targets drop `cert_trust` (no hostname). The lab plays a WAF on `/waf/` only (Shadow Daemon's signature, lab-named page). Fast e2e every run; full testssl with `REDWHALE_E2E_SLOW=1`.
 
 ## Open items
 
 - **Manual check** for 6C-4 (`docs/phase-6c4-progress.md`), then merge `phase-6c4`; then TW-1's
   (`docs/phase-tw1-progress.md`), then merge `phase-tw1`; then TW-2's (`docs/phase-tw2-progress.md`), then merge
   `phase-tw2`; then 6C-5's (`docs/phase-6c5-progress.md`), then merge `phase-6c5`; then 6C-6's
-  (`docs/phase-6c6-progress.md`), then merge `phase-6c6`. After 6C-6: `pnpm tools:build` (all groups).
+  (`docs/phase-6c6-progress.md`), then merge `phase-6c6`; then 6C-7's (`docs/phase-6c7-progress.md`), then merge
+  `phase-6c7`. After merging: `pnpm tools:build` (all groups; 6C-6 changed the shared lib, 6C-7 adds `tls`) and `pnpm lab:up` (`/waf/`).
 - **Intrusive-tools question (open):** nuclei's `cve` set still holds state-changing checks not tagged `intrusive` (e.g. CVE-2022-1388's `POST /mgmt/tm/util/bash`; `rce`, `file-upload` tags).
-- **Takeover, later:** HTTP fingerprints of cloud services ("NoSuchBucket", "No such app"), TLS certificate expiry.
+- **Takeover, later:** HTTP fingerprints of cloud services ("NoSuchBucket", "No such app"), TLS certificate expiry
+  (testssl's certificate nodes now carry `not_after`; certificate SANs as subdomain findings are also later).
   An in-scope domain with no checked subdomain never shows its own expiry (takeover-check takes subdomains only):
   maybe domain rows later.
 - **Teammates' real scripts** not yet tested end to end (`pnpm tools:check` → run in the group → check the graph).

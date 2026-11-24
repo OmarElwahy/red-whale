@@ -7,7 +7,7 @@ them**: it publishes no ports on your machine, so you can't open it in your brow
 | Name (from a job container) | What it answers |
 |---|---|
 | `http://lab.redwhale.test/` | `301` to `https://elsewhere.redwhale.test/` (another host: a tool must **not** follow it) |
-| `https://lab.redwhale.test/` | `200`, page title `Northwind Lab`, self-signed certificate |
+| `https://lab.redwhale.test/` | `200`, page title `Northwind Lab`, self-signed certificate (made when the lab image is built; SANs `lab` and `elsewhere`, 825 days). TLS 1.2 + 1.3 with CBC ciphers: testssl reports `cert_chain_of_trust` (critical), `cert_revocation` (high), `cert_extlifeSpan` (medium), `cipherlist_OBSOLETED` and LUCKY13 (low) |
 | `https://lab.redwhale.test/…` | a small site to crawl (below) |
 | `https://lab.redwhale.test/.git/config`, `/.env` | `200`, `text/plain`, **obviously fake** contents (a git config whose remote URL has a fake `user:password`; a Laravel-style `.env` with `APP_*`/`DB_*` lines): nuclei's `git-config` and `laravel-env` exposure templates fire on them. Linked from nowhere, so katana never finds them. Nothing in them is a real secret |
 | `https://lab.redwhale.test/waf/` | A **fake WAF** for wafw00f: `200` normally; a query string with an attack-looking test string (encoded `<script`, `UNION SELECT`, `../etc/passwd`) gets `403` with `<h1>403 Forbidden</h1>` and "Request forbidden by administrative rules" (what wafw00f's Shadow Daemon signature matches) and `X-RedWhale-Lab-Waf: blocked`. The page names only the lab, no real vendor. Only this path: the rest of the lab has no WAF. Linked from nowhere |

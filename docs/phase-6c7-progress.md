@@ -14,7 +14,7 @@ Branch `phase-6c7`, cut from `phase-6c6` (`feb293a`). Started 2026-11-24.
 | 1 | wafw00f in `http` (pin, tool.json, run.py, lab fake WAF, fixtures, tests) | done |
 | 2 | `tls` group + testssl (Dockerfile, flags checked, tool.json, run.py, certificate/vuln parser, tests) | done |
 | 3 | e2e (wafw00f; testssl fast + slow), results recorded here | done |
-| 4 | Docs (§11/§13, group READMEs, team-guide rows, handoff) + manual checklist | |
+| 4 | Docs (§11/§13, group READMEs, team-guide rows, handoff) + manual checklist | done |
 
 ## Decisions (from the plan review)
 
@@ -152,8 +152,62 @@ No lab change beyond step 1's `/waf/`. Both suites skip without Docker or the im
 - Seen once in a full run: `tools-python > tools/urls/katana` timed out (5 s default) under the e2e load; passes
   alone and on the next full run. Not touched by this phase.
 
+## Step 4: docs
+
+- `docs/architecture.md` §11 (lab `/waf/`; wafw00f in `http`; the `tls` group) and §13 (9 rows: no contract change;
+  wafw00f pin and flags; wafw00f findings; the lab WAF fixture; testssl image and flags; DNS and `--ip one`; testssl
+  findings incl. port targets without `cert_trust` and no `resolves_to`; failures; e2e).
+- `tools/http/README.md` (wafw00f section, updating), new `tools/tls/README.md`, `lab/README.md` (`/waf/` row; what
+  testssl reports on the https server), `docs/team-guide.md` (2 rows: a PyPI tool with one JSON array; a tool that
+  writes a JSON file, `main(fetch=…)`), `docs/handoff.md` (status row, key decisions, batch list, merge order and
+  rebuild).
+- **Not done:** ALL TOOLS GUIDE.pdf (its generator isn't in the repo; not in this phase's step list).
+
+## Manual check (PowerShell, from the repo root)
+
+**Setup** (proves: both images build from pinned sources; fixtures replay):
+
+1. `git switch phase-6c7`, then `pnpm install`.
+2. `pnpm tools:build http`, then `pnpm tools:build tls`: the http log shows pip installing exactly the 7 pinned wheels
+   (`--require-hashes`); the tls log shows `ok 94 files from testssl.sh-3.2.5 … sha256 of archive 23bb53d5…` and the
+   4 Debian packages at their pinned versions. (After merging everything: `pnpm tools:build`, all groups.)
+3. `pnpm lab:up` (rebuilds the lab: nginx.conf changed). `pnpm tools:check --all`: `✓ all 14 passed`.
+4. `pnpm dev`, open http://127.0.0.1:5173. Right-click a **url** node ▸ Run tool lists **wafw00f** (in HTTP
+   probing) and **testssl.sh** (Run group: **TLS checks**); a **port** node lists testssl.sh (and nmap); no red circles.
+
+**wafw00f against the lab** (proves: confirmation, the WAF finding, no finding without a WAF):
+
+5. Scope panel: `include domain lab.redwhale.test`, `include ip 172.29.250.10`; passive-only **off**.
+6. Add node ▸ url `https://lab.redwhale.test/waf/`. Right-click it ▸ **wafw00f**: the dialog shows ACTIVE, "Contacts
+   the target: 2 to 7 HTTP GET requests to https://lab.redwhale.test/waf/: …attack-looking test strings…; redirects
+   are not followed", External services: none, **In scope**. Run it: a few seconds.
+7. Under `/waf/`: technology **shadow-daemon** (its observation: `waf: true`, `manufacturer: Zecure`).
+8. Run wafw00f on `https://lab.redwhale.test/` (add the node if missing): job **succeeded**, scan success, **no new
+   node**.
+9. `docker logs redwhale-lab --since 5m | Select-String "waf/"`: two lines for step 6 (200, then 403 with
+   `%3Cscript%3E…` in the query string); nothing for `elsewhere`.
+
+**testssl against the lab** (proves: the port chain, the certificate, the vulnerabilities, failures):
+
+10. Right-click `https://lab.redwhale.test/` ▸ **testssl.sh**: the dialog shows ACTIVE and the TLS handshake text
+    (one address, system resolver, Heartbleed … RC4, one GET for BREACH, no other host). Run it: under a minute.
+11. Graph: `172.29.250.10` ▸ `172.29.250.10:443/tcp` (same node httpx makes, if you ran it) ▸ a **certificate** (its
+    observation: subject and issuer `lab.redwhale.test`, sans `lab` + `elsewhere`, `trusted: false`, not_after in
+    2029, ip); the port ▸ `serves` the url. Under the url: **cert_chain_of_trust** (critical), **cert_revocation**
+    (high), **cert_extlifeSpan** (medium), **cipherlist_OBSOLETED** and **CVE-2013-0169** (low; data `id: LUCKY13`).
+12. Right-click the port `172.29.250.10:443/tcp` ▸ testssl.sh: the same certificate (one node, now two
+    observations) and vulnerabilities under the port; **no `cert_trust`**.
+13. Add node ▸ port `172.29.250.10:8080/tcp` (under ip `172.29.250.10`) ▸ testssl.sh: job's scan **failed**, error
+    "no TLS service on 172.29.250.10:8080", no new node.
+14. `docker logs redwhale-lab --since 10m | Select-String "TLS tester"`: only `host=lab.redwhale.test` or
+    `host=172.29.250.10`, `GET /`; nothing for `elsewhere` (a SAN of the certificate).
+
+**A real target** (only one you are authorized to test, and only if its program allows active scans):
+
+15. wafw00f on its `https://` url: a CDN/WAF shows as technology (e.g. `cloudflare`, merging with httpx's). testssl on
+    the same url: the certificate is trusted (`trusted: true`), with the real SANs in its data; the tested `ip` is one
+    of the host's addresses.
+
 ## Next action
 
-Step 4: docs: architecture §11 (the `tls` group, wafw00f in `http`, lab `/waf/`) and §13 (decision rows), new
-`tools/tls/README.md`, team-guide rows, handoff (status, decisions, open items: rebuild http + tls after merging),
-manual checklist here. Also: record nuclei run #4 (scratchpad slow-e2e-4.txt) in docs/phase-6c6-progress.md.
+The phase is done: the user's manual check above, then merge (after 6C-6). Then `pnpm tools:build` (all groups).
