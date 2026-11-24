@@ -13,7 +13,7 @@ Branch `phase-6c7`, cut from `phase-6c6` (`feb293a`). Started 2026-11-24.
 |---|---|---|
 | 1 | wafw00f in `http` (pin, tool.json, run.py, lab fake WAF, fixtures, tests) | done |
 | 2 | `tls` group + testssl (Dockerfile, flags checked, tool.json, run.py, certificate/vuln parser, tests) | done |
-| 3 | e2e (wafw00f; testssl fast + slow), results recorded here | |
+| 3 | e2e (wafw00f; testssl fast + slow), results recorded here | done |
 | 4 | Docs (§11/§13, group READMEs, team-guide rows, handoff) + manual checklist | |
 
 ## Decisions (from the plan review)
@@ -119,10 +119,41 @@ Branch `phase-6c7`, cut from `phase-6c6` (`feb293a`). Started 2026-11-24.
 - `contacts` is capped at 300 characters by the tool.json schema: the probe list is shortened there (the README has
   the full one).
 
+## Step 3: e2e
+
+No lab change beyond step 1's `/waf/`. Both suites skip without Docker or the images; logs via `labLogSince`.
+
+- **`server/test/wafw00f.e2e.test.ts`** (normal real-Docker suite, ~12 s): seeds the url, confirm required, then
+  `confirmActive`; wafw00f's container is the address that sent the central attack (three random 8-letter
+  parameters: the XSS, SQLi and `../../etc/passwd` strings).
+  - `/waf/` → technology `shadow-daemon` (`uses_technology` from the url), data `{waf: true, manufacturer:
+    "Zecure"}`; exactly 2 requests, both `GET /waf/…` to `lab.redwhale.test`, answered 200 then 403.
+  - `/` → success, no findings; exactly 7 requests, all `GET /` or `GET /?…`, 4 with `python-requests/2.34.2`
+    (after the generic detection drops the browser UA), 2 with the SLEEP string.
+  - `http://` → success, no findings; every request answered 301, none to `elsewhere.redwhale.test`.
+  - Every run: scan `success`, version 2.4.2, `-r` and `--no-colors`, never `-a`/`-p`.
+- **`server/test/testssl.e2e.test.ts`**: testssl's lines in the lab log are the ones with its User-Agent
+  (`TLS tester from https://testssl.sh/`). The lab's fingerprint is read from the running lab
+  (`/etc/nginx/lab/cert.pem`, node's `X509Certificate`), never hard-coded.
+  - fast (normal suite, `--checks protocols,defaults`): url target → ip →`has_port` `172.29.250.10:443/tcp` →`serves`
+    url, →`has_certificate` the lab's fingerprint, data subject/issuer `lab.redwhale.test`, sans `[lab, elsewhere]`,
+    trusted false, ip; `cert_chain_of_trust` critical, `cert_extlifeSpan` medium, `cert_revocation` high under the
+    url; testssl's HTTP GETs (service detection) all `host=lab.redwhale.test`. Port target → certificate and
+    `cert_chain_of_trust` under the port, no `cert_trust` node; its GETs carry `Host: 172.29.250.10`. `:8080` →
+    scan `failed`, errors exactly `["no TLS service on 172.29.250.10:8080"]`, no testssl observation.
+  - slow (`REDWHALE_E2E_SLOW=1`, the real tool.json): `-p -s -S -U`, exactly the 5 vulnerabilities
+    (cipherlist_OBSOLETED low, cert_chain_of_trust critical, cert_extlifeSpan medium, cert_revocation high,
+    CVE-2013-0169 low). **Run 2026-11-24: passed, 32 s, 2 HTTP requests from testssl** (service detection + BREACH),
+    both to the lab.
+  - Every run: `--nodns min`, `--ip one`, never `-h/--phone-out/-t/-c/-e`; nothing ever to `elsewhere` (a SAN of the
+    lab's certificate: testssl must not contact it).
+- e2e tests need their own timeouts (Vitest's default 5 s; the wait for a clean log window is 2.1 s, because the
+  next container reuses the freed address and `--since` is whole seconds).
+- Seen once in a full run: `tools-python > tools/urls/katana` timed out (5 s default) under the e2e load; passes
+  alone and on the next full run. Not touched by this phase.
+
 ## Next action
 
-Step 3: e2e. `server/test/wafw00f.e2e.test.ts` (normal suite: `/waf/` → shadow-daemon; `/` → success, no findings;
-lab log: only lab, 2 and 7 requests, test strings seen, no `elsewhere`) and `server/test/testssl.e2e.test.ts` (fast:
-`--checks protocols,defaults` through the orchestrator: port chain, certificate with the lab's SANs, trusted false,
-no `elsewhere` request; slow `REDWHALE_E2E_SLOW=1`: the real catalog, the 5 vulns, the BREACH GET in the lab log).
-Check nuclei run #4 (scratchpad slow-e2e-4.txt) and record it in docs/phase-6c6-progress.md.
+Step 4: docs: architecture §11 (the `tls` group, wafw00f in `http`, lab `/waf/`) and §13 (decision rows), new
+`tools/tls/README.md`, team-guide rows, handoff (status, decisions, open items: rebuild http + tls after merging),
+manual checklist here. Also: record nuclei run #4 (scratchpad slow-e2e-4.txt) in docs/phase-6c6-progress.md.
