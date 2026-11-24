@@ -1,0 +1,13 @@
+{
+  "name": "nuclei",
+  "group": "vuln",
+  "label": "nuclei",
+  "description": "ProjectDiscovery nuclei with pinned templates (HTTP only; known CVEs, misconfigurations, exposed files, technologies, takeovers): reports each match as a vulnerability, or a technology, under the URL it matched at.",
+  "mode": "active",
+  "accepts": ["url"],
+  "argv": ["python3", "-I", "/opt/redwhale/vuln/nuclei/run.py", "--target", "{target}", "--out", "/out"],
+  "timeoutSec": 3600,
+  "external": [],
+  "contacts": "about 11,000 HTTP requests to {target}'s host for known CVEs, misconfigurations and exposed files (at most 5 a second, up to 55 minutes); no intrusive, fuzzing or brute-force templates; no out-of-band callbacks; redirects are not followed",
+  "outputDir": "/out"
+}

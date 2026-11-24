@@ -130,6 +130,13 @@ class MainTest(unittest.TestCase):
         run = rw.ToolRun("demo", "example.com")
         self.assertEqual(run.run_command(["redwhale-no-such-program-xyz"]), "")
         self.assertIn("not found", run.errors[0])
+        self.assertIsNone(run.stderr)
+
+    def test_the_tools_stderr_is_kept_for_the_parser(self):
+        run = rw.ToolRun("demo", "example.com")
+        self.assertIsNone(run.stderr)  # nothing ran (e.g. --replay)
+        out = run.run_command([sys.executable, "-c", "import sys; print('out'); print('[INF] done', file=sys.stderr)"])
+        self.assertEqual((out.strip(), run.stderr.strip(), run.errors), ("out", "[INF] done", []))
 
     def replay_typed(self, extra):
         path = os.path.join(self.dir.name, "raw.txt")

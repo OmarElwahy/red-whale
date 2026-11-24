@@ -1,0 +1,6 @@
+{
+  "name": "vuln",
+  "label": "Vulnerability scanning",
+  "image": "redwhale-tools/vuln",
+  "tools": ["nuclei"]
+}
