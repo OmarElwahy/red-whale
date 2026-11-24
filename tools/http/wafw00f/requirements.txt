@@ -1,0 +1,18 @@
+# wafw00f and every dependency, exact versions and the sha256 of each wheel (pip --require-hashes --no-deps
+# --only-binary :all: in tools/http/Dockerfile: nothing else is installed, nothing is built from source).
+# Pinned 2026-11-24, each the newest release at least two weeks old; resolved by pip in the image's Python 3.13
+# (linux/amd64). Updating: tools/http/README.md.
+wafw00f==2.4.2 \
+    --hash=sha256:c9a3df6e49b3ca913bd3a1a52dc7112ae0bc08c2bc0cfc0fd90e5982a202c05a
+requests==2.34.2 \
+    --hash=sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0
+urllib3==2.8.0 \
+    --hash=sha256:0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3
+idna==3.20 \
+    --hash=sha256:ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c
+charset-normalizer==3.5.2 \
+    --hash=sha256:7218e8f32b0956cfcd048fd42d9d5779809745ca1d86113ca56f66e7ae1549c4
+certifi==2026.10.23 \
+    --hash=sha256:e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1
+PySocks==1.7.1 \
+    --hash=sha256:2725bd0a9925919b9b51739eea5f9e2bae91e83288108a9ad338b2e3a4435ee5

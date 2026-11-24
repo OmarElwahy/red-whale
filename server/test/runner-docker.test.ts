@@ -107,7 +107,7 @@ describe('tool catalog', () => {
   test('the repo tools load: dns (dnsx, takeover-check), http (httpx), ports (naabu, nmap), subdomain (four tools, in run order) urls (gau, katana) and vuln (nuclei)', () => {
     const catalog = loadCatalog();
     expect(catalog.groups.map((g) => g.def.name)).toEqual(['dns', 'http', 'ports', 'subdomain', 'urls', 'vuln']);
-    expect(catalog.tools().map((t) => t.name)).toEqual(['dnsx', 'takeover-check', 'httpx', 'naabu', 'nmap', 'subfinder', 'assetfinder', 'findomain', 'crtsh', 'gau', 'katana', 'nuclei']);
+    expect(catalog.tools().map((t) => t.name)).toEqual(['dnsx', 'takeover-check', 'httpx', 'wafw00f', 'naabu', 'nmap', 'subfinder', 'assetfinder', 'findomain', 'crtsh', 'gau', 'katana', 'nuclei']);
     const naabu = catalog.tool('naabu');
     expect(naabu).toMatchObject({ mode: 'active', accepts: ['ip'], external: [] });
     expect(naabu?.contacts).toBe('connects to TCP ports of {target} (top 100 ports, at most 50 connections per second; connect scan, no raw packets)');

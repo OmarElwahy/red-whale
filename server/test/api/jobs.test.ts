@@ -62,7 +62,7 @@ describe('GET /api/tools and /api/runner/status', () => {
     const tools = body(await api.get('/api/tools'), 200, toolsResponseSchema);
     expect(tools.groups).toEqual([
       { name: 'dns', label: 'DNS', image: catalog.imageRef('dns'), imageStatus: 'missing', tools: ['dnsx', 'takeover-check'] },
-      { name: 'http', label: 'HTTP probing', image: catalog.imageRef('http'), imageStatus: 'missing', tools: ['httpx'] },
+      { name: 'http', label: 'HTTP probing', image: catalog.imageRef('http'), imageStatus: 'missing', tools: ['httpx', 'wafw00f'] },
       { name: 'ports', label: 'port scanning', image: catalog.imageRef('ports'), imageStatus: 'missing', tools: ['naabu', 'nmap'] },
       { name: 'subdomain', label: 'subdomain enumeration', image: IMAGE, imageStatus: 'built', tools: ['subfinder', 'assetfinder', 'findomain', 'crtsh'] },
       { name: 'urls', label: 'URL discovery', image: catalog.imageRef('urls'), imageStatus: 'missing', tools: ['gau', 'katana'] },
@@ -78,6 +78,7 @@ describe('GET /api/tools and /api/runner/status', () => {
       ['dnsx', 'passive', ['domain', 'subdomain']],
       ['takeover-check', 'passive', ['subdomain']],
       ['httpx', 'active', ['domain', 'subdomain']],
+      ['wafw00f', 'active', ['url']],
       ['naabu', 'active', ['ip']],
       ['nmap', 'active', ['ip', 'port']],
       ['subfinder', 'passive', ['domain']],

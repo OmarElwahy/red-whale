@@ -1,0 +1,20 @@
+{
+  "target": "https://lab.northwind.example/waf/",
+  "status": "success",
+  "errors": [],
+  "findings": [
+    {
+      "type": "technology",
+      "value": "shadow-daemon",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example/waf/"
+      },
+      "relation": "uses_technology",
+      "data": {
+        "waf": true,
+        "manufacturer": "Zecure"
+      }
+    }
+  ]
+}
