@@ -26,6 +26,7 @@ Pick the example closest to your tool:
 | **several requests** (a program run several times, web APIs, or both), recorded as a transcript | `tools/dns/takeover-check/` |
 | JSON lines, passive, **one run per source** (the output doesn't say which source found what), sections in one raw file | `tools/urls/gau/` |
 | JSON lines, active, a **crawler** that takes a **url** (each URL under the page it was found on) | `tools/urls/katana/` |
+| JSON lines, active, a **scanner with its own data** (templates baked into the image), results as `vulnerability`/`technology`, incomplete runs read from stderr | `tools/vuln/nuclei/` |
 
 Your tool goes in its **group's** folder (ask the team leader which group, e.g. `ports`, `http`, `vulns`). If the group
 doesn't exist yet, the team leader creates it (`group.json` + `Dockerfile`).
