@@ -1,0 +1,147 @@
+{
+  "target": "https://lab.northwind.example/",
+  "status": "success",
+  "errors": [],
+  "findings": [
+    {
+      "type": "url",
+      "value": "http://lab.northwind.example/",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example/"
+      },
+      "relation": "has_url",
+      "data": {
+        "status_code": 301,
+        "location": "https://elsewhere.northwind.example/",
+        "tag": "a",
+        "attribute": "href"
+      }
+    },
+    {
+      "type": "url",
+      "value": "https://lab.northwind.example/",
+      "data": {
+        "status_code": 200
+      }
+    },
+    {
+      "type": "url",
+      "value": "https://lab.northwind.example/about.html",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example/"
+      },
+      "relation": "has_url",
+      "data": {
+        "status_code": 200,
+        "tag": "a",
+        "attribute": "href"
+      }
+    },
+    {
+      "type": "url",
+      "value": "https://lab.northwind.example/api/v1/orders",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example/static/app.js"
+      },
+      "relation": "has_url",
+      "data": {
+        "status_code": 200,
+        "tag": "js",
+        "attribute": "regex"
+      }
+    },
+    {
+      "type": "url",
+      "value": "https://lab.northwind.example/deep.html",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example/item.html"
+      },
+      "relation": "has_url",
+      "data": {
+        "tag": [
+          "a",
+          "html"
+        ],
+        "attribute": [
+          "href",
+          "regex"
+        ],
+        "error": "max depth reached"
+      }
+    },
+    {
+      "type": "url",
+      "value": "https://lab.northwind.example/files/brochure.pdf",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example/about.html"
+      },
+      "relation": "has_url",
+      "data": {
+        "status_code": 200,
+        "tag": "a",
+        "attribute": "href"
+      }
+    },
+    {
+      "type": "url",
+      "value": "https://lab.northwind.example/item.html",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example/products.html"
+      },
+      "relation": "has_url",
+      "data": {
+        "status_code": 200,
+        "tag": "html",
+        "attribute": "regex"
+      }
+    },
+    {
+      "type": "url",
+      "value": "https://lab.northwind.example/products.html",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example/"
+      },
+      "relation": "has_url",
+      "data": {
+        "status_code": 200,
+        "tag": "a",
+        "attribute": "href"
+      }
+    },
+    {
+      "type": "url",
+      "value": "https://lab.northwind.example/static/app.js",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example/"
+      },
+      "relation": "has_url",
+      "data": {
+        "status_code": 200,
+        "tag": "script",
+        "attribute": "src"
+      }
+    },
+    {
+      "type": "url",
+      "value": "https://lab.northwind.example/static/site.css",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example/"
+      },
+      "relation": "has_url",
+      "data": {
+        "status_code": 200,
+        "tag": "link",
+        "attribute": "href"
+      }
+    }
+  ]
+}

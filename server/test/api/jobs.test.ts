@@ -65,7 +65,7 @@ describe('GET /api/tools and /api/runner/status', () => {
       { name: 'http', label: 'HTTP probing', image: catalog.imageRef('http'), imageStatus: 'missing', tools: ['httpx'] },
       { name: 'ports', label: 'port scanning', image: catalog.imageRef('ports'), imageStatus: 'missing', tools: ['naabu', 'nmap'] },
       { name: 'subdomain', label: 'subdomain enumeration', image: IMAGE, imageStatus: 'built', tools: ['subfinder', 'assetfinder', 'findomain', 'crtsh'] },
-      { name: 'urls', label: 'URL discovery', image: catalog.imageRef('urls'), imageStatus: 'missing', tools: ['gau'] },
+      { name: 'urls', label: 'URL discovery', image: catalog.imageRef('urls'), imageStatus: 'missing', tools: ['gau', 'katana'] },
     ]);
     expect(tools.tools.find((t) => t.name === 'httpx')).toMatchObject({
       mode: 'active',
@@ -84,8 +84,14 @@ describe('GET /api/tools and /api/runner/status', () => {
       ['findomain', 'passive', ['domain']],
       ['crtsh', 'passive', ['domain']],
       ['gau', 'passive', ['domain', 'subdomain']],
+      ['katana', 'active', ['url']],
     ]);
     expect(tools.tools.find((t) => t.name === 'crtsh')?.external).toEqual(['crt.sh']);
+    expect(tools.tools.find((t) => t.name === 'katana')).toMatchObject({
+      external: [],
+      contacts:
+        "fetches pages, scripts and other files linked from {target}, on {target}'s host only (GET, two levels deep, at most 5 requests a second; redirects are not followed)",
+    });
     expect(tools.tools.find((t) => t.name === 'gau')?.external).toEqual(['Wayback Machine', 'Common Crawl', 'AlienVault OTX']);
   });
 

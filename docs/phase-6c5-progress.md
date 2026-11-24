@@ -13,7 +13,7 @@ redirects or chaining (6D); feeding found URLs into other tools; provider API ke
 | # | Step | Status |
 |---|---|---|
 | 1+2 | Contract check (no change needed) + `urls` group: Dockerfile, gau (tool.json, run.py, fixture, tests) | done |
-| 3 | Lab crawl site + katana (tool.json, run.py, lab fixture, tests, e2e) | in progress: lab site written; katana run.py + tests written (not committed) |
+| 3 | Lab crawl site + katana (tool.json, run.py, lab fixture, tests, e2e) | done |
 | 4 | Docs (architecture §11/§13, tools/urls/README, team-guide row, handoff) + manual checklist | |
 
 ## Decisions
@@ -81,10 +81,34 @@ Final candidate argv:
 - Catalog listings updated for the new group (`runner-docker`, `api/jobs`, `tools-fixtures` tests).
 - `pnpm typecheck`, `pnpm lint`, `pnpm test` green.
 
+## Notes from step 3
+
+- **katana** `tool.json`: active, accepts `url`, `timeoutSec` 300 (`-ct 210s`; a test keeps it a minute inside the
+  script's 270 s). Contacts: "fetches pages, scripts and other files linked from {target}, on {target}'s host only
+  (GET, two levels deep, at most 5 requests a second; redirects are not followed)": no robots/sitemap, since there
+  is no `-kf`.
+- **Parse**: the target itself (no `source`) is a finding without a parent (katana fetched it: its status); every
+  other URL hangs off its `source` page with `has_url`, or off the target when the source is missing, on another
+  host or the URL itself. data: `status_code`, `location` (3xx), `tag`/`attribute`, `error` (e.g. "max depth
+  reached": found, not fetched, no status). Another host is ignored (second check after `-fs fqdn`).
+- **Fixture**: a real capture against the lab (2026-11-24), 11 lines, anonymized like httpx's, + 1 edited line for
+  another host. 10 findings, `success`. The lab's log for the run: 11 requests, all `host=lab.redwhale.test`.
+- **katana's duplicate-content filter**: it requested `/item.html?id=1` but printed no line for it (the same body as
+  `/item.html`, which its HTML regex found first). Left on (it trims tracking-parameter noise); `-duf` would turn it
+  off if query-string variants should be kept.
+- **e2e** `server/test/katana.e2e.test.ts`: seeds the url node and a stand-in gau sighting of `/about.html`, runs
+  katana through the orchestrator (confirm required), and checks the `has_url` edges (home → about/products/
+  app.js/site.css/`http://`, app.js → `/api/v1/orders`, about → PDF), that `/about.html` is `corroborated` (two
+  tools) and `/products.html` `discovered`, the 301's data, and the lab's log: nothing for `elsewhere`, and from
+  katana's container (its address is the one that fetched `app.js`; other e2e suites probe the lab at the same time)
+  only `host=lab.redwhale.test`, GETs only, exactly one `GET /` 301, and no logo/robots/sitemap/contact.
+- Lab: `app.js` assigns `globalThis.loadOrders` (lint). httpx, naabu and nmap e2e pass against the new lab (the
+  `http`/`ports` images were rebuilt for the current hashes).
+- `pnpm typecheck`, `pnpm lint`, `pnpm test` green (77 files; the 5 lab e2e suites ran).
+
 ## Next action
 
-Step 3. katana's `run.py`, `test_katana.py` (15 tests) and `tool.json` were kept out of the step 1+2 commit (the
-catalog refuses a tool the group doesn't list). Put them in `tools/urls/katana/`, add `katana` to `group.json` and to
-the catalog/fixture test lists; `pnpm tools:build urls`; `pnpm lab:up` (lab files changed); capture katana against
-`https://lab.redwhale.test/` in the image, anonymize (`lab.northwind.example`, `198.18.0.10`), fixture + NOTE.md,
-`tools:check katana --update`; write `server/test/katana.e2e.test.ts`; commit `6c5 step 3` with the lab changes.
+Step 4 (docs): architecture §11 (the `urls` group, gau and katana rows, the lab's crawl site) and §13 (decisions:
+no contract change; gau per provider and its warning-only failures; katana without `-kf`, with `-ndef` and
+`-eof body`), `tools/urls/README.md`, the team-guide row, `docs/handoff.md` (Status, decisions, "Last updated" from
+Get-Date), and a manual checklist in this file. Commit `6c5 step 4`, push.

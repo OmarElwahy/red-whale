@@ -16,7 +16,7 @@ RUN apk add --no-cache openssl \
 FROM ${NGINX_IMAGE}
 COPY --from=cert --chown=101:101 /cert/ /etc/nginx/lab/
 COPY nginx.conf /etc/nginx/nginx.conf
-COPY index.html /usr/share/nginx/lab/index.html
+COPY site/ /usr/share/nginx/lab/
 RUN chmod 0400 /etc/nginx/lab/key.pem
 # Runs as nginx (101) with a read-only root filesystem; /tmp and /var/cache/nginx are tmpfs (see lab.ts). Ports
 # 80/443 are allowed to this user by the container's own net.ipv4.ip_unprivileged_port_start sysctl, not a capability.
