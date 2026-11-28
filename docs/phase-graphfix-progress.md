@@ -7,8 +7,8 @@ Branch `phase-graphfix`, cut from `main` (`37a13fb`). Started 2026-11-28. Small 
 | # | Step | Status |
 |---|---|---|
 | 1 | Bug 1: reproduce "a moved node snaps back after a tool runs" (Force and Tree) | done: Tree only, documented |
-| 3 | Bug 1, redefined by the user: Tree drops survive re-runs (design change, §8/§13) | done |
 | 2 | Bug 2: mid-glide grab moves only the node (Tree); test, fix, docs | done |
+| 3 | Bug 1, redefined by the user: Tree drops survive re-runs (design change, §8/§13) | done |
 
 ## Findings
 
