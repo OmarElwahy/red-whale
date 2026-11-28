@@ -2,8 +2,8 @@
 // `maxConcurrent` run at once. Every container start is preceded by a fresh authorize(): the decision taken when
 // the job was queued is never reused. What happens after a container exits (fetch /out, ingest) is the `finish`
 // hook (job.ts); this file owns the lifecycle: queue → re-check → create → start → wait/timeout/cancel → clean up.
-import { compileScope, scopeModeFor } from '@redwhale/shared';
-import { asc, eq, inArray } from 'drizzle-orm';
+import { compileScope, scopeModeFor, type JobTrigger } from '@redwhale/shared';
+import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { jobs, nodes, runnerState } from '../db/schema';
 import { authorize } from '../scope/authorize';
@@ -70,6 +70,8 @@ export interface OrchestratorOptions {
 export interface EnqueueOptions {
   /** The analyst confirmed an active run (the UI's dialog). Without it, a non-passive tool is not queued. */
   confirmActive?: boolean | undefined;
+  /** Who queued it (default `manual`); `auto` is the takeover watch's scheduler. */
+  trigger?: JobTrigger | undefined;
 }
 
 export type EnqueueError =
@@ -202,6 +204,7 @@ export class Orchestrator {
           targetValue: node.value,
           mode: def.mode,
           status: decision.ok ? 'queued' : 'refused',
+          trigger: options.trigger ?? 'manual',
           queuedScopeLogId: decision.ok ? decision.target.logId : decision.logId,
           timeoutSec: def.timeoutSec,
           createdAt: this.now().toISOString(),
@@ -275,9 +278,15 @@ export class Orchestrator {
     return cancelled;
   }
 
+  /** Cancels every queued job with this trigger (the takeover watch turned off: its queued auto jobs go). */
+  cancelQueued(trigger: JobTrigger, error: string): JobRow[] {
+    const queued = this.db.select({ id: jobs.id }).from(jobs).where(and(eq(jobs.status, 'queued'), eq(jobs.trigger, trigger))).all();
+    return queued.map((j) => this.update(j.id, { status: 'cancelled', error, finishedAt: this.now().toISOString() }));
+  }
+
   // --- running ---------------------------------------------------------------------------------------
 
-  /** Starts queued jobs, oldest first, while there is room and Docker is reachable. */
+  /** Starts queued jobs, manual ones first, then oldest first, while there is room and Docker is reachable. */
   pump(): void {
     if (this.stopped || this.lastPing?.ok === false) return;
     while (this.active.size < this.maxConcurrent) {
@@ -286,7 +295,8 @@ export class Orchestrator {
         .select()
         .from(jobs)
         .where(eq(jobs.status, 'queued'))
-        .orderBy(asc(jobs.id))
+        // The analyst's runs never wait behind the scheduler's (a running auto job is not stopped, though).
+        .orderBy(sql`CASE ${jobs.trigger} WHEN 'manual' THEN 0 ELSE 1 END`, asc(jobs.id))
         .all()
         .find((j) => !busy.includes(j.id));
       if (!next) return;

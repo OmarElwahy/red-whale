@@ -6,6 +6,7 @@ import {
   type ScopeLogEntry,
   type ScopeRule,
   type ScopeSettings,
+  type ScopeSettingsPatch,
   type ScopeSource,
   type scopeRuleCreateSchema,
 } from '@redwhale/shared';
@@ -33,12 +34,16 @@ export function listRules(db: Db, { includeRemoved = false } = {}): ScopeRule[] 
 
 export function getSettings(db: Db): ScopeSettings {
   const row = db
-    .select({ passiveOnly: scopeSettings.passiveOnly, updatedAt: scopeSettings.updatedAt })
+    .select({
+      passiveOnly: scopeSettings.passiveOnly,
+      autoTakeoverChecks: scopeSettings.autoTakeoverChecks,
+      updatedAt: scopeSettings.updatedAt,
+    })
     .from(scopeSettings)
     .where(eq(scopeSettings.id, 1))
     .get();
   // The migration creates the row; without it, fall back to the safe default rather than fail open.
-  return row ?? { passiveOnly: true, updatedAt: new Date(0).toISOString() };
+  return row ?? { passiveOnly: true, autoTakeoverChecks: false, updatedAt: new Date(0).toISOString() };
 }
 
 /** What checkScope needs: the active rules and the passive-only setting, read now. */
@@ -96,9 +101,13 @@ export function patchRule(db: Db, id: number, patch: { note?: string; removed?: 
   });
 }
 
-export function setSettings(db: Db, patch: { passiveOnly: boolean }): ScopeSettings {
+export function setSettings(db: Db, patch: ScopeSettingsPatch): ScopeSettings {
   db.update(scopeSettings)
-    .set({ passiveOnly: patch.passiveOnly, updatedAt: new Date().toISOString() })
+    .set({
+      ...(patch.passiveOnly === undefined ? {} : { passiveOnly: patch.passiveOnly }),
+      ...(patch.autoTakeoverChecks === undefined ? {} : { autoTakeoverChecks: patch.autoTakeoverChecks }),
+      updatedAt: new Date().toISOString(),
+    })
     .where(eq(scopeSettings.id, 1))
     .run();
   return getSettings(db);

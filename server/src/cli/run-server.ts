@@ -6,6 +6,7 @@ import { CatalogError, loadCatalog } from '../runner/catalog';
 import { DockerRuntime } from '../runner/docker';
 import { jobsDirFor } from '../runner/finish';
 import { NetworkError, SUBNET_ENV, toolsNetwork } from '../runner/network';
+import { AUTO_MAX_QUEUED_ENV, autoMaxQueued } from '../takeover/scheduler';
 
 const listen = listenOptions();
 const dbPath = process.env.REDWHALE_DB ?? DEFAULT_DB_PATH;
@@ -31,6 +32,7 @@ function runnerOptions(): RunnerOptions | undefined {
       network: toolsNetwork(),
       jobsDir: jobsDirFor(dbPath),
       maxJobs: Number.isInteger(maxJobs) && maxJobs > 0 ? maxJobs : 2,
+      autoMaxQueued: autoMaxQueued(process.env[AUTO_MAX_QUEUED_ENV]),
     };
   } catch (e) {
     if (e instanceof NetworkError) {
@@ -47,6 +49,8 @@ const app = await buildApp({ db, port: listen.port, logger: true, runner: runner
 // Jobs left running by the last process fail, its containers go, and the queue resumes; then Docker is watched.
 await app.orchestrator?.recover();
 app.orchestrator?.startMonitor();
+// Automatic takeover checks: a first round now, then on new subdomains, finished auto jobs and every 24 h.
+app.takeoverScheduler?.start();
 
 const shutdown = () => {
   void app.close().then(() => {

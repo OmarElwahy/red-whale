@@ -324,3 +324,40 @@ describe('active runs: 428 confirm-required', () => {
     await orch.idle();
   });
 });
+
+describe('automatic takeover checks (TW-2)', () => {
+  test('an upload with new in-scope subdomains queues auto jobs; turning the setting off cancels the queued ones', async () => {
+    const { api, rt, orch } = await setup(() => ({ hang: true }), { maxJobs: 1 });
+    rt.addImage(catalog.imageRef('dns'), { 'redwhale.group': 'dns' });
+    body(await api.send('POST', '/api/scope/rules', { kind: 'wildcard', value: '*.example.com', action: 'include' }), 201, scopeRuleSchema);
+    await orch.recover();
+    const scheduler = api.app.takeoverScheduler;
+    if (!scheduler) throw new Error('no scheduler');
+    scheduler.start();
+    await scheduler.settled();
+    const before = body(await api.get('/api/jobs?pageSize=200'), 200, jobsResponseSchema).items;
+    expect(before.length).toBeGreaterThan(0);
+    expect(before.every((j) => j.tool === 'takeover-check' && j.trigger === 'auto')).toBe(true);
+
+    expect((await api.send('POST', '/api/ingest', JSON.parse(result('subfinder', ['new.example.com'])) as unknown)).statusCode).toBe(201);
+    await scheduler.settled();
+    const all = body(await api.get('/api/jobs?pageSize=200'), 200, jobsResponseSchema).items;
+    expect(all.some((j) => j.targetValue === 'new.example.com' && j.trigger === 'auto')).toBe(true);
+    expect(all.filter((j) => j.status === 'queued')).toHaveLength(Math.min(10, all.length - 1));
+
+    await api.send('PATCH', '/api/scope/settings', { autoTakeoverChecks: false });
+    await scheduler.settled();
+    const after = body(await api.get('/api/jobs?pageSize=200'), 200, jobsResponseSchema).items;
+    expect(after.filter((j) => j.status === 'queued')).toEqual([]);
+    expect(after.filter((j) => j.status === 'running')).toHaveLength(1);
+    scheduler.stop();
+  });
+
+  test('without start() (tests, a server not started), nothing is queued by itself', async () => {
+    const { api, rt } = await setup();
+    rt.addImage(catalog.imageRef('dns'), { 'redwhale.group': 'dns' });
+    body(await api.send('POST', '/api/scope/rules', { kind: 'wildcard', value: '*.example.com', action: 'include' }), 201, scopeRuleSchema);
+    await api.app.takeoverScheduler?.settled();
+    expect(body(await api.get('/api/jobs'), 200, jobsResponseSchema).items).toEqual([]);
+  });
+});

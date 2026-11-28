@@ -110,6 +110,17 @@ describe('scope settings', () => {
     expect(body(await api.get('/api/scope/settings'), 200, scopeSettingsSchema)).toEqual(off);
     error(await api.send('PATCH', '/api/scope/settings', { passiveOnly: 'no' }), 400);
   });
+
+  test('auto takeover checks are on by default; each setting changes alone; an empty patch is refused', async () => {
+    const api = await testApi();
+    expect(body(await api.get('/api/scope/settings'), 200, scopeSettingsSchema)).toMatchObject({ passiveOnly: true, autoTakeoverChecks: true });
+    const off = body(await api.send('PATCH', '/api/scope/settings', { autoTakeoverChecks: false }), 200, scopeSettingsSchema);
+    expect(off).toMatchObject({ passiveOnly: true, autoTakeoverChecks: false });
+    const both = body(await api.send('PATCH', '/api/scope/settings', { passiveOnly: false }), 200, scopeSettingsSchema);
+    expect(both).toMatchObject({ passiveOnly: false, autoTakeoverChecks: false });
+    error(await api.send('PATCH', '/api/scope/settings', {}), 400, /passiveOnly, autoTakeoverChecks or both/);
+    error(await api.send('PATCH', '/api/scope/settings', { autoTakeoverChecks: 1 }), 400);
+  });
 });
 
 describe('scope check', () => {

@@ -38,6 +38,7 @@ export function jobDto(row: JobRow): Job {
     targetValue: row.targetValue,
     mode: row.mode,
     status: row.status,
+    trigger: row.trigger,
     queuedScopeLogId: row.queuedScopeLogId,
     scopeLogId: row.scopeLogId,
     argv: row.argv,

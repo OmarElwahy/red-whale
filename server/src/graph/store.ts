@@ -1,6 +1,7 @@
 // Loads the graph for the API and applies filters. Everything after loading is in memory and pure,
 // so /graph, /graph/expand, /graph/neighbors and /nodes all filter and sort the same way.
 import {
+  TAKEOVER_TOOL,
   CONFIDENCE_LEVELS,
   compileScope,
   NODE_TYPES,
@@ -130,6 +131,25 @@ export function nodeIdsSeenBy(db: Db, tools: readonly string[]): Set<string> {
   return new Set(rows.map((r) => r.id));
 }
 
+/**
+ * Nodes that only takeover-check ever observed (as a finding or a parent): the names of CNAME chains and the domains
+ * it looked up. Out of scope, they are hidden unless `showExternal=1` (TW-2): third parties, not attack surface.
+ */
+export function takeoverOnlyNodeIds(db: Db): Set<string> {
+  const rows = db
+    .select({ id: observations.nodeId })
+    .from(observations)
+    .groupBy(observations.nodeId)
+    .having(sql`SUM(${observations.tool} <> ${TAKEOVER_TOOL}) = 0`)
+    .all();
+  return new Set(rows.map((r) => r.id));
+}
+
+/** Hidden by default: out of scope and known only from takeover-check. */
+export function isExternal(node: Pick<GraphNode, 'id' | 'inScope'>, takeoverOnly: ReadonlySet<string>): boolean {
+  return node.inScope === 'out' && takeoverOnly.has(node.id);
+}
+
 /** The matches plus every ancestor among `candidates`, walking up parent edges. Cycle-safe. */
 function withAncestors(matches: readonly GraphNode[], candidates: readonly GraphNode[], edgeList: readonly GraphEdge[]) {
   const allowed = new Set(candidates.map((n) => n.id));
@@ -166,6 +186,8 @@ export function applyFilters(
   filters: GraphFilters,
   seenByTool: Set<string> | null,
   { searchPaths = false }: FilterOptions = {},
+  /** takeoverOnlyNodeIds(); null shows them (showExternal). */
+  takeoverOnly: ReadonlySet<string> | null = null,
 ): Graph {
   const { types, minSeverity, confidence, tag, excludeTag, scope, q } = filters;
   const min = minSeverity ? severityRank(minSeverity) : null;
@@ -178,7 +200,8 @@ export function applyFilters(
       (!seenByTool || seenByTool.has(n.id)) &&
       (!tag || (n.tag !== null && tag.includes(n.tag))) &&
       (!excludeTag || n.tag === null || !excludeTag.includes(n.tag)) &&
-      (!scope || scope.includes(n.inScope)),
+      (!scope || scope.includes(n.inScope)) &&
+      (!takeoverOnly || !isExternal(n, takeoverOnly)),
   );
   let kept = candidates;
   if (q !== undefined) {
@@ -220,7 +243,8 @@ export function groupMembers(graph: Graph, key: AggregateKey): { members: GraphN
 /** Loads the graph and applies the filters. */
 export function filteredGraph(db: Db, filters: GraphFilters, options: FilterOptions = {}): Graph {
   const seenByTool = filters.tool ? nodeIdsSeenBy(db, filters.tool) : null;
-  return applyFilters(loadGraph(db), filters, seenByTool, options);
+  const takeoverOnly = filters.showExternal === '1' ? null : takeoverOnlyNodeIds(db);
+  return applyFilters(loadGraph(db), filters, seenByTool, options, takeoverOnly);
 }
 
 function compareText(a: string, b: string): number {

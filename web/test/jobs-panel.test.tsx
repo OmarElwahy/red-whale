@@ -18,6 +18,7 @@ function job(over: Partial<Job> = {}): Job {
     targetValue: 'example.com',
     mode: 'passive',
     status: 'succeeded',
+    trigger: 'manual',
     queuedScopeLogId: 1,
     scopeLogId: 2,
     argv: ['python3', '-I', '/opt/redwhale/subdomain/subfinder/run.py', '--target', 'example.com', '--out', '/out'],
@@ -38,7 +39,7 @@ function job(over: Partial<Job> = {}): Job {
 
 const JOBS = [
   job({ id: 3, status: 'running', tool: 'httpx', group: 'http', mode: 'active', finishedAt: null, scanId: null, nodesCreated: null, nodesUpdated: null, exitCode: null }),
-  job({ id: 2, status: 'failed', tool: 'assetfinder', error: 'result.json does not follow the contract', issues: ['findings[0].value: bad'], scanId: null, nodesCreated: null, nodesUpdated: null }),
+  job({ id: 2, status: 'failed', tool: 'assetfinder', trigger: 'auto', error: 'result.json does not follow the contract', issues: ['findings[0].value: bad'], scanId: null, nodesCreated: null, nodesUpdated: null }),
   job(),
 ];
 
@@ -98,6 +99,8 @@ describe('JobsPanel', () => {
     expect(within(running).getByText('running')).toBeTruthy();
     expect(within(running).getByTitle('Contacted the target directly (confirmed by the analyst)').textContent).toBe('active');
     expect(within(done).queryByTitle(/Contacted the target/)).toBeNull(); // passive jobs get no badge
+    expect(within(failed).getByTitle(/Queued by the automatic takeover checks/).textContent).toBe('auto');
+    expect(within(done).queryByText('auto')).toBeNull(); // manual jobs get no badge
     expect(within(running).getByRole('button', { name: 'Cancel' })).toBeTruthy();
     expect(within(running).queryByRole('button', { name: 'Show results' })).toBeNull();
     expect(within(failed).getAllByText('result.json does not follow the contract').length).toBeGreaterThan(0);

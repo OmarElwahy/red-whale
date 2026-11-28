@@ -32,7 +32,7 @@ function preview(over: Partial<DeletePreview> = {}): DeletePreview {
 
 const job: Job = {
   id: 7, tool: 'subfinder', group: 'subdomain', nodeId: NODE, targetType: 'subdomain', targetValue: 'a.example.com',
-  mode: 'passive', status: 'running', queuedScopeLogId: 1, scopeLogId: 2, argv: null, image: null, timeoutSec: 600,
+  mode: 'passive', status: 'running', trigger: 'manual', queuedScopeLogId: 1, scopeLogId: 2, argv: null, image: null, timeoutSec: 600,
   exitCode: null, error: null, issues: null, createdAt: '2026-11-02T10:00:00.000Z', startedAt: '2026-11-02T10:00:01.000Z',
   finishedAt: null, scanId: null, nodesCreated: null, nodesUpdated: null,
 };

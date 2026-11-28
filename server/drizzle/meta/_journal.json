@@ -50,6 +50,13 @@
       "when": 1795386091896,
       "tag": "0006_cname_to",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1795462331383,
+      "tag": "0007_takeover_watch",
+      "breakpoints": true
     }
   ]
 }

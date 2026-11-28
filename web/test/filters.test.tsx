@@ -90,6 +90,17 @@ describe('FilterSidebar', () => {
     expect(box.closest('label')?.textContent).toContain('6');
   });
 
+  test('"show external CNAME names" sits in the Scope group, off by default; ticking it sets showExternal=1', () => {
+    render(<FilterSidebar stats={stats} />);
+    const scope = screen.getByRole('group', { name: 'Scope' });
+    const box = within(scope).getByLabelText<HTMLInputElement>(/show external CNAME names/);
+    expect(box.checked).toBe(false);
+    fireEvent.click(box);
+    expect(view().filters).toEqual({ showExternal: '1' });
+    fireEvent.click(screen.getByLabelText(/show external CNAME names/));
+    expect(view().filters).toEqual({});
+  });
+
   test('mute and hops are view settings', () => {
     render(<FilterSidebar stats={stats} />);
     fireEvent.click(screen.getByLabelText(/mute low-risk/));

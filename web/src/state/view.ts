@@ -36,6 +36,8 @@ export interface ViewState extends View {
   setQuery: (q: string) => void;
   /** Hide ignored = `excludeTag=ignored`. */
   setHideIgnored: (on: boolean) => void;
+  /** Show external CNAME names = `showExternal=1` (hidden by default, TW-2). */
+  setShowExternal: (on: boolean) => void;
   setMute: (on: boolean) => void;
   setHops: (hops: Hops) => void;
   setLayout: (layout: LayoutMode) => void;
@@ -90,6 +92,9 @@ export const useView = create<ViewState>()((set, get) => {
       const { filters } = get();
       const rest = (filters.excludeTag ?? []).filter((t) => t !== 'ignored');
       setFilters({ ...filters, excludeTag: on ? [...rest, 'ignored'] : rest });
+    },
+    setShowExternal: (on) => {
+      setFilters({ ...get().filters, showExternal: on ? '1' : undefined });
     },
     setMute: (mute) => {
       set({ mute });

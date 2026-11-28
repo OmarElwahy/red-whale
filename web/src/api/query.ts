@@ -48,4 +48,6 @@ export const queryKeys = {
   runnerStatus: ['api', 'runner', 'status'] as const,
   jobs: (page: number) => ['api', 'runner', 'jobs', page] as const,
   job: (id: number) => ['api', 'runner', 'job', id] as const,
+  /** The Takeover watch (TW-2): under 'runner', so job.updated refetches it too (an auto check finished). */
+  takeoverWatch: (page: number, showExternal: boolean) => ['api', 'runner', 'takeover', page, showExternal] as const,
 };

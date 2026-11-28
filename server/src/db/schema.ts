@@ -5,6 +5,7 @@ import {
   DELETION_MODES,
   EDGE_CONFIDENCE_LEVELS,
   JOB_STATUSES,
+  JOB_TRIGGERS,
   NODE_TYPES,
   OBSERVATION_ROLES,
   RELATION_TYPES,
@@ -56,7 +57,11 @@ export const scans = sqliteTable(
     /** The whole tool-output file as ingested (provenance). */
     raw: text('raw', { mode: 'json' }).$type<unknown>().notNull(),
   },
-  (t) => [check('scans_status_ck', oneOf(t.status, SCAN_STATUSES))],
+  (t) => [
+    // TW-2: a subdomain's latest takeover-check scan (the watch, the scheduler).
+    index('scans_tool_target_idx').on(t.tool, t.target),
+    check('scans_status_ck', oneOf(t.status, SCAN_STATUSES)),
+  ],
 );
 
 export const nodes = sqliteTable(
@@ -230,6 +235,8 @@ export const scopeSettings = sqliteTable(
   {
     id: integer('id').primaryKey(),
     passiveOnly: integer('passive_only', { mode: 'boolean' }).notNull().default(true),
+    /** TW-2: the scheduler queues takeover-check on in-scope subdomains not checked in 24 h. */
+    autoTakeoverChecks: integer('auto_takeover_checks', { mode: 'boolean' }).notNull().default(true),
     updatedAt: text('updated_at').notNull(),
   },
   (t) => [check('scope_settings_single_row_ck', sql`${t.id} = 1`)],
@@ -251,6 +258,8 @@ export const jobs = sqliteTable(
     targetValue: text('target_value').notNull(),
     mode: text('mode', { enum: TOOL_MODES }).notNull(),
     status: text('status', { enum: JOB_STATUSES }).notNull(),
+    /** `manual` (the analyst) or `auto` (the takeover watch's scheduler, TW-2). Manual jobs start first. */
+    trigger: text('trigger', { enum: JOB_TRIGGERS }).notNull().default('manual'),
     /** authorize()'s decision when the job was queued. */
     queuedScopeLogId: integer('queued_scope_log_id')
       .notNull()
@@ -282,6 +291,7 @@ export const jobs = sqliteTable(
     check('jobs_status_ck', oneOf(t.status, JOB_STATUSES)),
     check('jobs_mode_ck', oneOf(t.mode, TOOL_MODES)),
     check('jobs_target_type_ck', oneOf(t.targetType, NODE_TYPES)),
+    check('jobs_trigger_ck', oneOf(t.trigger, JOB_TRIGGERS)),
   ],
 );
 

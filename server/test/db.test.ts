@@ -64,7 +64,7 @@ test('running migrations on an existing database is a no-op', () => {
 
   const second = open(path);
   const migrations = second.$client.prepare('SELECT COUNT(*) AS n FROM __drizzle_migrations').get();
-  expect(migrations).toEqual({ n: 7 });
+  expect(migrations).toEqual({ n: 8 });
   expect(second.$client.prepare('SELECT COUNT(*) AS n FROM nodes').get()).toEqual({ n: 1 });
 });
 
@@ -168,7 +168,7 @@ describe('a database from before a breaking migration', () => {
 
   test('empty: migrates normally', () => {
     const db = open(schema0000Db(false));
-    expect(db.$client.prepare('SELECT COUNT(*) AS n FROM __drizzle_migrations').get()).toEqual({ n: 7 });
+    expect(db.$client.prepare('SELECT COUNT(*) AS n FROM __drizzle_migrations').get()).toEqual({ n: 8 });
     const columns = db.$client.prepare<[], { name: string }>("SELECT name FROM pragma_table_info('observations')").all();
     expect(columns.map((c) => c.name)).toContain('role');
   });
@@ -268,7 +268,7 @@ describe('scope tables (0002_scope)', () => {
     const row = db.$client.prepare<[], { passive_only: number; updated_at: string }>('SELECT * FROM scope_settings').get();
     expect(row?.passive_only).toBe(1);
     expect(row?.updated_at).toMatch(/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/);
-    expect(() => db.$client.prepare("INSERT INTO scope_settings VALUES (2, 0, 'x')").run()).toThrow(/CHECK constraint failed/);
+    expect(() => db.$client.prepare("INSERT INTO scope_settings VALUES (2, 0, 'x', 1)").run()).toThrow(/CHECK constraint failed/);
   });
 
   test('CHECK constraints and the active-rule unique index', () => {
@@ -337,5 +337,45 @@ describe('cname_to (0006_cname_to)', () => {
     expect(() => edge.run('e2', 'cname_to', { t })).not.toThrow();
     expect(() => edge.run('e3', 'owns', { t })).toThrow(/CHECK constraint failed/);
     expect(() => edge.run('e4', 'cname_to', { t })).toThrow(/UNIQUE constraint failed/);
+  });
+});
+
+describe('takeover watch (0007_takeover_watch)', () => {
+  test('a 0006 database with jobs upgrades: every job kept as manual, auto checks on, the scans index made', () => {
+    const path = schema0002Db(true);
+    migrateTo(path, 7); // through 0006_cname_to
+    const old = new Database(path);
+    old
+      .prepare(
+        `INSERT INTO scope_log (source, target_type, target_value, mode, decision, reason, at)
+         VALUES ('run', 'domain', 'example.com', 'passive', 'in', 'r', 'now')`,
+      )
+      .run();
+    old
+      .prepare(
+        `INSERT INTO jobs (id, tool, tool_group, node_id, target_type, target_value, mode, status, queued_scope_log_id, timeout_sec, created_at, scan_id)
+         VALUES (5, 'dnsx', 'dns', 'n1', 'domain', 'example.com', 'passive', 'succeeded', 1, 60, 'now', 's1')`,
+      )
+      .run();
+    old.close();
+
+    const db = open(path);
+    expect(db.$client.prepare('SELECT id, tool, status, trigger, scan_id FROM jobs').all()).toEqual([
+      { id: 5, tool: 'dnsx', status: 'succeeded', trigger: 'manual', scan_id: 's1' },
+    ]);
+    expect(db.$client.prepare('SELECT passive_only, auto_takeover_checks FROM scope_settings').all()).toEqual([
+      { passive_only: 1, auto_takeover_checks: 1 },
+    ]);
+    expect(db.$client.pragma('foreign_key_check')).toEqual([]);
+    expect(names(db, 'index')).toEqual(
+      expect.arrayContaining(['scans_tool_target_idx', 'jobs_status_idx', 'jobs_created_at_idx', 'jobs_scan_id_idx', 'jobs_node_id_idx']),
+    );
+    const insert = db.$client.prepare(
+      `INSERT INTO jobs (tool, tool_group, target_type, target_value, mode, status, trigger, queued_scope_log_id, timeout_sec, created_at)
+       VALUES ('t', 'g', 'domain', 'v', 'passive', 'queued', ?, 1, 10, 'x')`,
+    );
+    // AUTOINCREMENT carries on after the rebuild: no id is reused.
+    expect(insert.run('auto').lastInsertRowid).toBe(6);
+    expect(() => insert.run('cron')).toThrow(/CHECK constraint failed/);
   });
 });
