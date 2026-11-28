@@ -22,6 +22,7 @@ Pick the example closest to your tool:
 | JSON lines, and it **talks to the target** (an active tool) | `tools/http/httpx/` |
 | JSON lines, and it **resolves names** itself (DNS), passive | `tools/dns/dnsx/` |
 | JSON lines, active, and it takes **only an IP** (e.g. a port scanner) | `tools/ports/naabu/` |
+| **XML**, active, and it takes an **ip or a port** (picks its mode from the target's type) | `tools/ports/nmap/` |
 
 Your tool goes in its **group's** folder (ask the team leader which group, e.g. `ports`, `http`, `vulns`). If the group
 doesn't exist yet, the team leader creates it (`group.json` + `Dockerfile`).
@@ -100,7 +101,8 @@ if __name__ == "__main__":
 ```
 
 Real ones to read: `tools/http/httpx/run.py` (target → ip → port → url → technology), `tools/dns/dnsx/run.py`
-(target → ip, the CNAME as data; never reports the target itself) and `tools/ports/naabu/run.py` (ip → port).
+(target → ip, the CNAME as data; never reports the target itself), `tools/ports/naabu/run.py` (ip → port) and
+`tools/ports/nmap/run.py` (XML; ip or port → port → technology).
 
 **If your tool resolves names itself** (httpx, dnsx, anything with a "resolvers" option): pass the machine's own
 resolvers and let `main()` refuse to run without them, so the tool never quietly asks its public defaults (8.8.8.8,
@@ -122,6 +124,40 @@ ones" and the tool never starts. `--replay` skips that check, so your fixture re
 **If your tool would misread a target** (e.g. it also accepts a file name or a comma list, or it must get exactly one
 IP), raise `ValueError("refusing target …: why")` in `build_command`: the run is `failed` with your message and the
 tool never starts (`dnsx` and `naabu` do this).
+
+**If your command depends on the target's type** (e.g. a scanner that takes an `ip` or a `port`): with
+`needs_target_type=True`, `main()` calls your builder as `build_command(target, target_type)`, the type the server
+decided (`{targetType}` in tool.json's argv). Pick the mode from the **type**, never from the value's shape, and refuse a
+value that doesn't fit it. Without `needs_target_type`, the builder stays `build_command(target)`.
+
+```python
+def build_command(target, target_type):
+    if target_type == "ip":
+        return [NMAP, ..., "--top-ports", "100", "-oX", "-", target]
+    if target_type == "port":
+        ip, port = ...                       # from "ip:port/tcp"; raise ValueError if it isn't one
+        return [NMAP, ..., "-p", str(port), "-oX", "-", ip]
+    raise ValueError(f"refusing target {target!r}: not an ip or a port")
+```
+
+**If your tool prints XML** (nmap and its kind): read it with the standard library, never with regular expressions,
+and turn a parse error into `run.error()` (no crash, a clear message):
+
+```python
+import xml.etree.ElementTree as ET
+
+def parse(raw, run, target):
+    try:
+        root = ET.fromstring(raw)
+    except ET.ParseError as e:
+        run.error(f"mytool's XML output could not be read ({e})")
+        return
+    for port in root.iterfind("host/ports/port"):
+        ...
+```
+
+`tools/ports/nmap/` is the full example (two fixture sets: `tools:check` replays one `raw.*`, so a second mode's
+capture goes in a subfolder and is replayed by the tool's own unit test).
 
 The helper calls you'll use:
 
@@ -226,5 +262,9 @@ It writes `out/raw.txt` (what the tool printed) and `out/result.json` (the contr
 1. Your folder `tools/<group>/<yourtool>/`, with `pnpm tools:check <yourtool>` all ✓.
 2. For the Dockerfile: the tool's release URL (linux amd64), its version, and the archive's sha256
    (from the release's checksums file if it has one, else `sha256sum` of what you downloaded).
+   **Exception:** a tool that ships no Linux binary with a checksum (nmap) comes from the base image's Debian
+   repository, pinned to an exact package version (`nmap=7.95+dfsg-3`): send the package name and the version
+   `apt-cache policy <package>` shows in the base image. apt checks Debian's signatures; when Debian replaces that
+   version, the build fails with a message saying to bump it (architecture.md §13).
 3. Three lines in your message: anything weird about the tool's output, which sources/keys it needs, and how long a
    normal run takes.

@@ -40,7 +40,7 @@ const sortFindings = (findings: Record<string, unknown>[]) =>
 
 describe.skipIf(!python)('tool parsers against their saved real output', () => {
   test('every repo tool has a fixture', () => {
-    expect(withFixtures.map((t) => t.tool)).toEqual(['dnsx', 'httpx', 'naabu', 'subfinder', 'assetfinder', 'findomain', 'crtsh']);
+    expect(withFixtures.map((t) => t.tool)).toEqual(['dnsx', 'httpx', 'naabu', 'nmap', 'subfinder', 'assetfinder', 'findomain', 'crtsh']);
   });
 
   test.each(withFixtures)('$tool', ({ tool, dir, raw, expected }) => {
@@ -87,11 +87,13 @@ describe.skipIf(!python)('tools/check.py (pnpm tools:check)', () => {
     return dir;
   }
 
+  // Replays every tool and runs every tool's unit tests: well past Vitest's 5 s default when the full suite (and the
+  // real-Docker e2e tests) run in parallel.
   test('every tool in the repo passes', () => {
     const r = check(TOOLS_DIR, ['--all']);
     expect(r.code, r.out).toBe(0);
-    expect(r.out).toContain('✓ all 7 passed');
-  });
+    expect(r.out).toContain('✓ all 8 passed');
+  }, 120_000);
 
   test('a parser change that loses findings fails, naming them', () => {
     const dir = copy();
@@ -123,6 +125,6 @@ describe.skipIf(!python)('tools/check.py (pnpm tools:check)', () => {
     const r = check(dir, ['subfinder']);
     expect(r.code).toBe(1);
     expect(r.out).toContain('fixtures/NOTE.md');
-    expect(check(dir, ['nmap']).code).toBe(2);
+    expect(check(dir, ['no-such-tool']).code).toBe(2);
   });
 });

@@ -405,9 +405,11 @@ def main(tool, parse, command=None, fetch=None, version_command=None, needs_targ
       fetch(target, run, timeout) -> str    for tools that are an HTTP API, not a program (e.g. crt.sh);
                                             set run.command to what was requested, report problems with run.error
 
-    needs_target_type=True: the script names the target as a finding's parent, so it must know the target node's
-    type (run.target_type). The server passes it as --target-type ({targetType} in tool.json's argv); without it the
-    script stops with an error instead of guessing (a wrong type would be another node).
+    needs_target_type=True: the script needs the target node's type (run.target_type), e.g. to name the target as a
+    finding's parent. The server passes it as --target-type ({targetType} in tool.json's argv); without it the
+    script stops with an error instead of guessing (a wrong type would be another node). With it, the command
+    builder is called as command(target, target_type) (without it, command(target)), so a tool can pick its mode from
+    the type the server decided and refuse a value that doesn't fit it (raise ValueError).
 
     needs_resolvers=True: the tool resolves names itself and gets resolver_args() in its command. With no nameserver
     in /etc/resolv.conf the tool is not run at all: the result is `failed` with NO_RESOLVER (without our resolvers it
@@ -438,18 +440,31 @@ def main(tool, parse, command=None, fetch=None, version_command=None, needs_targ
     version = None if args.replay or not version_command else tool_version(version_command)
     run = ToolRun(tool, target, tool_version=version)
     run.target_type = args.target_type
+
+    def build(t):
+        return command(t, run.target_type) if needs_target_type else command(t)
+
     if args.replay:
-        run.command = shlex.join(command(target)) if command else f"{tool} {target} (replayed)"
-        log(f"[replay] {args.replay} instead of: {run.command}")
-        with open(args.replay, encoding="utf-8", errors="replace") as fh:
-            raw = fh.read()
+        try:
+            run.command = shlex.join(build(target)) if command else f"{tool} {target} (replayed)"
+        except ValueError as e:  # the builder refuses this target: nothing is replayed either
+            run.error(str(e))
+            log(f"✗ {e}; {tool} was not run")
+            run.command = f"{tool} {target} (refused)"
+            args.replay = None
+        if args.replay:
+            log(f"[replay] {args.replay} instead of: {run.command}")
+            with open(args.replay, encoding="utf-8", errors="replace") as fh:
+                raw = fh.read()
+        else:
+            raw = ""
     elif needs_resolvers and not resolvers():
         run.error(NO_RESOLVER)
         log(f"✗ {NO_RESOLVER} (no nameserver in {RESOLV_CONF}); {tool} was not run")
         raw = ""
     elif command:
         try:
-            cmd = command(target)  # a command builder may refuse a target its tool would misread (ValueError)
+            cmd = build(target)  # a command builder may refuse a target its tool would misread (ValueError)
         except ValueError as e:
             run.error(str(e))
             log(f"✗ {e}; {tool} was not run")

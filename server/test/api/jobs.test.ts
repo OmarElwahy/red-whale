@@ -63,7 +63,7 @@ describe('GET /api/tools and /api/runner/status', () => {
     expect(tools.groups).toEqual([
       { name: 'dns', label: 'DNS resolution', image: catalog.imageRef('dns'), imageStatus: 'missing', tools: ['dnsx'] },
       { name: 'http', label: 'HTTP probing', image: catalog.imageRef('http'), imageStatus: 'missing', tools: ['httpx'] },
-      { name: 'ports', label: 'port scanning', image: catalog.imageRef('ports'), imageStatus: 'missing', tools: ['naabu'] },
+      { name: 'ports', label: 'port scanning', image: catalog.imageRef('ports'), imageStatus: 'missing', tools: ['naabu', 'nmap'] },
       { name: 'subdomain', label: 'subdomain enumeration', image: IMAGE, imageStatus: 'built', tools: ['subfinder', 'assetfinder', 'findomain', 'crtsh'] },
     ]);
     expect(tools.tools.find((t) => t.name === 'httpx')).toMatchObject({
@@ -76,6 +76,7 @@ describe('GET /api/tools and /api/runner/status', () => {
       ['dnsx', 'passive', ['domain', 'subdomain']],
       ['httpx', 'active', ['domain', 'subdomain']],
       ['naabu', 'active', ['ip']],
+      ['nmap', 'active', ['ip', 'port']],
       ['subfinder', 'passive', ['domain']],
       ['assetfinder', 'passive', ['domain']],
       ['findomain', 'passive', ['domain']],
@@ -162,12 +163,12 @@ describe('POST /api/jobs', () => {
 
   test('unknown tool or node is a 404; a node type the tool does not take is a 400; bad input is a 400', async () => {
     const { api, domain } = await setup();
-    error(await api.send('POST', '/api/jobs', { tool: 'nmap', nodeId: domain }), 404, "tool 'nmap'");
+    error(await api.send('POST', '/api/jobs', { tool: 'no-such-tool', nodeId: domain }), 404, "tool 'no-such-tool'");
     error(await api.send('POST', '/api/jobs', { tool: 'subfinder', nodeId: 'nope' }), 404, 'node nope');
     error(await api.send('POST', '/api/jobs', { tool: 'subfinder', nodeId: idOf(api.db, 'api.example.com') }), 400, "can't be run against a subdomain");
     error(await api.send('POST', '/api/jobs', { tool: 'subfinder' }), 400);
     error(await api.send('POST', '/api/jobs/group', { group: 'no-such-group', nodeId: domain }), 404);
-    error(await api.send('POST', '/api/jobs/group', { group: 'ports', nodeId: domain }), 400, "naabu can't be run against a domain");
+    error(await api.send('POST', '/api/jobs/group', { group: 'ports', nodeId: domain }), 400, "naabu, nmap can't be run against a domain");
   });
 
   test('a foreign Origin is refused like on every other route', async () => {

@@ -141,7 +141,7 @@ class MainTest(unittest.TestCase):
             seen.append(run.target_type)
             run.add("ip", "198.18.0.10", parent=(run.target_type, target))
 
-        code = rw.main("demo", parse, command=lambda t: ["demo", t], needs_target_type=True,
+        code = rw.main("demo", parse, command=lambda t, tt: ["demo", t], needs_target_type=True,
                        argv=["--target", "lab.northwind.example", *extra, "--out", self.out, "--replay", path])
         return code, seen
 
@@ -162,6 +162,53 @@ class MainTest(unittest.TestCase):
     def test_tools_that_dont_need_it_still_work_without(self):
         code = self.replay('{"host":"a.example.com"}\n', lambda raw, run, target: run.add_subdomain("a.example.com", target))
         self.assertEqual(code, 0)
+
+    def typed_run(self, command, extra=(), needs_target_type=True):
+        code = rw.main("demo", lambda *a: None, command=command, needs_target_type=needs_target_type,
+                       argv=["--target", "198.18.0.10", *extra, "--out", self.out])
+        return code, self.result()
+
+    def test_the_builder_gets_the_target_type_when_the_tool_needs_it(self):
+        calls = []
+
+        def command(target, target_type):
+            calls.append((target, target_type))
+            return ["redwhale-no-such-program-xyz", target]
+
+        code, doc = self.typed_run(command, ["--target-type", "ip"])
+        self.assertEqual((code, calls), (0, [("198.18.0.10", "ip")]))
+        self.assertEqual(doc["command"], "redwhale-no-such-program-xyz 198.18.0.10")
+
+    def test_the_builder_gets_only_the_target_when_the_tool_doesnt_need_the_type(self):
+        calls = []
+
+        def command(target):  # the one-argument builders (subdomain tools) are called exactly as before
+            calls.append(target)
+            return ["redwhale-no-such-program-xyz", target]
+
+        code, doc = self.typed_run(command, needs_target_type=False)
+        self.assertEqual((code, calls), (0, ["198.18.0.10"]))
+
+    def refusing(self, target, target_type):
+        if target_type != "port":
+            raise ValueError(f"refusing target {target!r}: not a {target_type}")
+        return ["redwhale-no-such-program-xyz", target]
+
+    def test_a_builder_can_refuse_a_target_for_its_type(self):
+        code, doc = self.typed_run(self.refusing, ["--target-type", "ip"])
+        self.assertEqual(code, 0)
+        self.assertEqual(doc["status"], "failed")
+        self.assertEqual(doc["errors"], ["refusing target '198.18.0.10': not a ip"])
+
+    def test_a_refused_target_is_not_replayed_either(self):
+        path = os.path.join(self.dir.name, "raw.txt")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("x\n")
+        parsed = []
+        code = rw.main("demo", lambda raw, run, target: parsed.append(raw), command=self.refusing, needs_target_type=True,
+                       argv=["--target", "198.18.0.10", "--target-type", "ip", "--out", self.out, "--replay", path])
+        self.assertEqual((code, parsed), (0, [""]))
+        self.assertEqual(self.result()["status"], "failed")
 
 
 class ResolverTest(unittest.TestCase):
