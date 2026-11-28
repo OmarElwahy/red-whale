@@ -5,7 +5,9 @@
 // - Tree positions are never saved and never pin anything for Force.
 // - In Tree mode, any change to the tree's shape re-runs the layout and animates there; tree runs are async,
 //   and only the latest one lands (a newer run, Force mode or a destroyed canvas drops it).
-import type { Core } from 'cytoscape';
+// - Nodes the analyst dropped in Tree mode stay where they were dropped through re-runs (and a trip to Force and
+//   back), their subtrees laid out under them; Re-layout forgets them.
+import type { Core, NodeSingular } from 'cytoscape';
 import type { LayoutMode } from '@/state/view';
 import type { ElementDiff } from './diff';
 import type { Element } from './elements';
@@ -94,8 +96,18 @@ export class LayoutModes {
   private disposed = false;
   /** Force mode: nodes gliding out of their parent, and where they'll stop. */
   private growing = new Map<string, Position>();
-  /** Tree mode: where the last tree run sent every node. */
+  /** Tree mode: where the last tree run put every node in the clean tree (before the analyst's drops). */
   private treeTargets = new Map<string, Position>();
+  /**
+   * Tree mode: where the analyst dropped nodes (each carried its subtree). A re-run puts each one back there, with
+   * its subtree laid out under it; Re-layout forgets them all. Kept for nodes that leave the canvas (a collapse),
+   * so they come back where they were.
+   */
+  private drops = new Map<string, Position>();
+  /** How far the last tree run moved each dropped node's subtree off the clean tree. */
+  private dropShifts = new Map<string, Position>();
+  /** Back from Force: the next tree run is in a new frame, so drops are re-placed by `dropShifts`, then re-read. */
+  private rebaseDrops = false;
 
   constructor(
     private readonly cy: Core,
@@ -144,7 +156,89 @@ export class LayoutModes {
     this.growing.clear();
     if (!fit) targets = this.keepInPlace(targets, anchor, fresh);
     this.treeTargets = targets;
-    animateTo(this.cy, targets, { fit, duration: this.duration() });
+    animateTo(this.cy, this.withDrops(targets), { fit, duration: this.duration() });
+  }
+
+  /** Tree mode: back to the clean tree, fitted (the Re-layout button). Forgets every drop. */
+  relayout(): Promise<void> {
+    this.drops.clear();
+    this.dropShifts.clear();
+    this.rebaseDrops = false;
+    return this.runTree(true);
+  }
+
+  /**
+   * Tree mode: the analyst dropped this node (after any glide) and its subtree came along. Remember where, so tree
+   * re-runs keep it there; drops below it moved with it, so they're re-read too. Force mode: nothing to do.
+   */
+  noteTreeDrop(id: string): void {
+    if (this.current !== 'tree') return;
+    const n = this.cy.getElementById(id);
+    if (n.empty()) return;
+    this.drops.set(id, { ...n.position() });
+    n.successors()
+      .nodes()
+      .forEach((m) => {
+        if (this.drops.has(m.id())) this.drops.set(m.id(), { ...m.position() });
+      });
+  }
+
+  /** Dropped nodes on the canvas that the clean tree places, ancestors before their descendants. */
+  private droppedNodes(clean: ReadonlyMap<string, Position>): NodeSingular[] {
+    const out: NodeSingular[] = [];
+    for (const id of this.drops.keys()) {
+      const n = this.cy.getElementById(id);
+      if (n.nonempty() && n.isNode() && !n.hasClass('retiring') && clean.has(id)) out.push(n);
+    }
+    // A node's ancestors are all among its descendants' ancestors, so fewer ancestors = placed first.
+    return out.sort((p, q) => p.predecessors().nodes().length - q.predecessors().nodes().length);
+  }
+
+  /**
+   * The clean tree with the analyst's drops applied: each dropped node goes back where it was dropped and its
+   * subtree (as the tree lays it out now, new nodes included) shifts with it.
+   */
+  private withDrops(clean: ReadonlyMap<string, Position>): Map<string, Position> {
+    const out = new Map(clean);
+    const shifts = new Map<string, Position>();
+    const dropped = this.droppedNodes(clean);
+    for (const n of dropped) {
+      const now = out.get(n.id());
+      const to = this.drops.get(n.id());
+      if (!now || !to) continue;
+      const d = this.rebaseDrops ? (this.dropShifts.get(n.id()) ?? { x: 0, y: 0 }) : { x: to.x - now.x, y: to.y - now.y };
+      shifts.set(n.id(), d);
+      if (d.x === 0 && d.y === 0) continue;
+      n.union(n.successors().nodes()).forEach((m) => {
+        const p = out.get(m.id());
+        if (p) out.set(m.id(), { x: p.x + d.x, y: p.y + d.y });
+      });
+    }
+    if (this.rebaseDrops) {
+      // A new frame (back from Force): drops not on the canvas can't be placed in it any more.
+      this.drops = new Map();
+      for (const n of dropped) {
+        const p = out.get(n.id());
+        if (p) this.drops.set(n.id(), p);
+      }
+      this.rebaseDrops = false;
+    }
+    this.dropShifts = shifts;
+    return out;
+  }
+
+  /** Nodes a drop decides the place of: dropped nodes and everything below them. */
+  private dropCovered(): Set<string> {
+    const out = new Set<string>();
+    for (const n of this.droppedNodes(this.treeTargets)) {
+      out.add(n.id());
+      n.successors()
+        .nodes()
+        .forEach((m) => {
+          out.add(m.id());
+        });
+    }
+    return out;
   }
 
   /** Where a node is in the tree as it stands: the last run's target (it may still be animating there). */
@@ -160,12 +254,14 @@ export class LayoutModes {
   ): Map<string, Position> {
     let id = anchor !== null && targets.has(anchor) ? anchor : null;
     if (id === null) {
+      // A node a drop places doesn't move with the clean tree, so it can't be what keeps the view steady.
+      const covered = this.dropCovered();
       const zoom = this.cy.zoom();
       const pan = this.cy.pan();
       const mid = { x: (this.cy.width() / 2 - pan.x) / zoom, y: (this.cy.height() / 2 - pan.y) / zoom };
       let best = Infinity;
       for (const candidate of targets.keys()) {
-        if (fresh.has(candidate)) continue;
+        if (fresh.has(candidate) || covered.has(candidate)) continue;
         const p = this.settled(candidate);
         const d = Math.hypot(p.x - mid.x, p.y - mid.y);
         if (d < best) {
@@ -254,6 +350,10 @@ export class LayoutModes {
       return this.runTree(true);
     }
     this.treeSeq++; // a tree run still in flight must not land in Force mode
+    // Remember each drop as its shift off the clean tree (drops since the last run included): the next tree run
+    // is in a new frame. Already pending (Tree was left before its first run landed): the shifts stand.
+    if (!this.rebaseDrops) this.withDrops(this.treeTargets);
+    this.rebaseDrops = true;
     this.options.onBusy?.(false);
     const remembered = new Map(saved);
     for (const [id, p] of this.forceSnapshot) remembered.set(id, p);

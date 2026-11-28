@@ -35,6 +35,9 @@ merge each, in that order) after Claude Code ran their manual checklists on `pha
 `docs/phase-6c7-progress.md`). Still mine: the checklists' **real-target steps** (see Open items). The phase branches
 are kept on GitHub. 6D starts from `main`.
 
+On top of main, not merged yet: **`phase-graphfix`** (two Tree-mode graph fixes, I checked them by hand on 2026-11-28
+and they work; findings in `docs/phase-graphfix-progress.md`). Merge it before 6D.
+
 | Phase | What | Status |
 |---|---|---|
 | 1–4 | Monorepo + contract + IDs; SQLite + idempotent ingest + confidence; mock data + API + server-side aggregation; graph UI, side panel, provenance, tags/notes | ✅ done |
@@ -54,6 +57,7 @@ are kept on GitHub. 6D starts from `main`.
 | 6C-5 | `urls` group (URL discovery): gau (passive, domain/subdomain: Wayback, Common Crawl, OTX, one run per provider so each URL's source is known, target host only, `serves`, ≤ 5,000, a failed provider → partial) and katana (active, url: same host only, depth 2, links + JavaScript, GET only, no redirects, no `-kf`, `has_url` from the page it was found on); one static-extension list; lab crawl site; no contract change | ✅ done (on main) |
 | 6C-6 | `vuln` group (vulnerability scanning): nuclei (active, url) with pinned templates v10.5.1 baked in, HTTP only, tags cve/misconfig/exposure/tech/takeover minus intrusive/dos/fuzz/bruteforce/default-login/osint/ssrf/oast/proxy (~6,500 templates, ~11,000 requests at 5/s, `-mt 55m` in a 3600 s job), `-ni -dr -duc`, no outside contact; `tech` → technology, the rest → vulnerability (CVE or template ID) under the matched URL; extracted values masked; lab fake `/.git/config` + `/.env`; no contract change; **every tool image must be rebuilt** (shared lib changed) | ✅ done (on main) |
 | 6C-7 | wafw00f in `http` (active, url; pip `--require-hashes` venv; 2–7 GETs with attack-looking test strings, no redirects; named WAF → technology, generic → `generic-waf`, none → success) and new group `tls` with testssl.sh 3.2.5 (active, https url or tcp port; `-p -s -S -U`, `--ip one`, `--nodns min`, no `--phone-out`/curl; ip → port → certificate, port serves url, every LOW+ result → vulnerability; no TLS/closed/unresolvable → failed with the reason); lab fake WAF on `/waf/`; no contract change; **rebuild `http` and `tls`** | ✅ done (on main) |
+| graphfix | Tree mode: a dropped node stays where it was dropped through tool runs / expand / collapse (its subtree laid out under it; Re-layout clears drops); grabbing a node while another glides now carries the grabbed node's subtree. Force never had the snap-back. No API or schema change | ✅ checked, **not merged** |
 
 ## How I work with Claude Code
 
@@ -82,6 +86,10 @@ are kept on GitHub. 6D starts from `main`.
   layered (keeps sibling order, positions never saved). Group = 2+ siblings with the same parent, relation and type,
   collapsed by default; the group's fill is its riskiest member, badge counts high/critical below. Search/table/
   highlights open exactly the path to a node. The server draws the whole view; the browser only keeps open groups.
+- **Tree drops (graphfix, supersedes 2026-10-31 "re-runs snap drags back"):** a node dropped in Tree mode stays exactly
+  where it was dropped through every re-run and a trip to Force and back; its subtree (new nodes too) is laid out under
+  it; Re-layout forgets all drops; still never saved (a reload starts clean). A press mid-glide ends the glide before
+  the subtree drag starts (momentum bound before the subtree drag, `graph/drags.ts`).
 - **Mocks:** `pnpm mock` = showcase (`showcase.example`, ~80 nodes), `pnpm mock:large` = big graph; both wipe the DB,
   seed a scope, and refuse a DB holding a real scan unless `--force`.
 - **Scope (6A):** default deny, exclude wins, `*.example.com` ≠ `example.com`; a domain never puts its IPs in scope;
@@ -145,7 +153,7 @@ are kept on GitHub. 6D starts from `main`.
 - **Real-target steps** of the merged phases' checklists (Claude Code ran everything else on 2026-11-28): TW-1 7–14
   (takeover check on one of my subdomains), 6C-5 13–15 (gau on my domain), 6C-6 11 (nuclei), 6C-7 15 (wafw00f +
   testssl). Only on a target I'm authorized to test (active tools: only if the program allows active scans).
-- **Before 6D:** stop `pnpm dev`, `git switch main`. Images and the lab are current (`pnpm tools:build` and
+- **Before 6D:** merge `phase-graphfix` into main, stop `pnpm dev`, `git switch main`. Images and the lab are current (`pnpm tools:build` and
   `pnpm lab:up` print "up to date").
 - **Intrusive-tools question (open):** nuclei's `cve` set still holds state-changing checks not tagged `intrusive` (e.g. CVE-2022-1388's `POST /mgmt/tm/util/bash`; `rce`, `file-upload` tags).
 - **Takeover, later:** HTTP fingerprints of cloud services ("NoSuchBucket", "No such app"), TLS certificate expiry
