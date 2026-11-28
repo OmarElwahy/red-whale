@@ -10,6 +10,8 @@ import { DEFAULT_DB_PATH, OutdatedDatabaseError, openDb, type Db } from '../db/c
 import { updateNode } from '../graph/update';
 import { ingestText } from '../ingest/ingest';
 import { jobsDirFor } from '../runner/finish';
+import { labIp } from '../runner/lab';
+import { toolsNetwork } from '../runner/network';
 import { addRule } from '../scope/store';
 import {
   MAX_SUBDOMAINS,
@@ -52,21 +54,30 @@ export function isMockTarget(target: string): boolean {
   return /(^|\.)example$/i.test(host);
 }
 
-/**
- * A scan the mock wipe may delete without --force: a mock's (`.example`) or a lab run's (`.test`, also reserved by
- * RFC 2606: the local lab is lab.redwhale.test). Anything else came from a real target.
- */
-export function isDisposableTarget(target: string): boolean {
-  if (isMockTarget(target)) return true;
-  let host = target;
+/** The host part of a scan target: a URL's hostname, a port value's IP (`ip:port/tcp`, `[v6]:port/tcp`), else as is. */
+function targetHost(target: string): string | null {
   if (/^https?:\/\//i.test(target)) {
     try {
-      host = new URL(target).hostname;
+      return new URL(target).hostname.replace(/^\[|\]$/g, '');
     } catch {
-      return false;
+      return null;
     }
   }
-  return /(^|\.)test$/i.test(host);
+  const port = /^(.+):\d{1,5}\/(tcp|udp)$/i.exec(target);
+  return (port?.[1] ?? target).replace(/^\[|\]$/g, '');
+}
+
+/**
+ * A scan the mock wipe may delete without --force: a mock's (`.example`) or a lab run's: a `.test` name (also reserved
+ * by RFC 2606: the local lab is lab.redwhale.test) or the lab's own address on the tools network (172.29.250.10 by
+ * default, or its ports and URLs: naabu and nmap scan the lab by IP, and that address only ever reaches the lab
+ * container). Anything else came from a real target.
+ */
+export function isDisposableTarget(target: string, env: Record<string, string | undefined> = process.env): boolean {
+  if (isMockTarget(target)) return true;
+  const host = targetHost(target);
+  if (host === null) return false;
+  return /(^|\.)test$/i.test(host) || host === labIp(toolsNetwork(env));
 }
 
 interface ForeignScan {
@@ -273,7 +284,7 @@ export function runMockCli(
     if (foreign.length > 0 && !args.force) {
       io.err(
         `${dbPath} holds ${String(foreign.length)} scan(s) that didn't come from a mock generator ` +
-          '(their target is not under .example or .test):',
+          "(their target is not under .example or .test, nor the lab's address):",
       );
       for (const s of foreign.slice(0, 5)) io.err(`  ${s.tool} → ${s.target} (ingested ${s.ingested_at})`);
       if (foreign.length > 5) io.err(`  … and ${String(foreign.length - 5)} more`);

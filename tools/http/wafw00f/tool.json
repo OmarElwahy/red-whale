@@ -1,0 +1,13 @@
+{
+  "name": "wafw00f",
+  "group": "http",
+  "label": "wafw00f",
+  "description": "wafw00f: is the URL behind a web application firewall, and which one? Sends a few attack-looking test strings to make a WAF show itself. Never follows redirects.",
+  "mode": "active",
+  "accepts": ["url"],
+  "argv": ["python3", "-I", "/opt/redwhale/http/wafw00f/run.py", "--target", "{target}", "--out", "/out"],
+  "timeoutSec": 120,
+  "external": [],
+  "contacts": "2 to 7 HTTP GET requests to {target}: normal ones, one with a script's User-Agent, and some whose query string carries attack-looking test strings (an XSS <script>, a SQL injection with SLEEP, ../../etc/passwd) to make a WAF block them; nothing is exploited; redirects are not followed",
+  "outputDir": "/out"
+}

@@ -166,7 +166,22 @@ authenticated scans; auto-running after httpx/katana (6D); deciding the intrusiv
   circle): rebuilt all groups (`pnpm tools:build`), then `vuln` after each run.py change; `/api/runner/status` all
   `built`.
 - **Lab log reads** (`server/test/lab-log.ts`, used by the httpx, katana and nuclei e2e): `docker logs --since`. Once every image was current, the httpx and katana e2e ran again and failed: they read `runtime.logs`, which keeps the FIRST 4 MB, and the lab's log had grown to 7.1 MB with the nuclei runs, so their own lines were cut.
-- **Full run #3** (with the 23 exclusions): running at commit time; its time, request count and findings go here.
+- **Full run #3** (with the 23 exclusions): failed on a missing edge: 6C-7's `pnpm lab:up` (for `/waf/`) restarted the
+  lab 37 minutes into it. Not a result.
+- **Full run #4** (2026-11-24, 2,290 s, lab untouched): every database check passed (common findings, generic-env,
+  http-missing-security-headers with 10 matchers, waf-detect, masking, flags); it failed on the Host-header check with
+  `172.29.250.10`. Those were **nmap's** `-sV` script requests, not nuclei's: full suites ran beside it, their fast
+  nuclei e2e fetched `/.git/config` first, and the test took that container's address, later reused by nmap's. nuclei's
+  own container (.129): 10,800 requests, Host values only the allowed ones, nothing to `elsewhere`, no interactsh-only
+  paths. **Test fix:** of the addresses that fetched `/.git/config`, the one with the most requests.
+- **Full run #5**: no result (the machine slept mid-run: 30,380 s wall time, the test's 3,700 s limit fired; then
+  stopped for low memory). No container left behind.
+- **Full run #6** (2026-11-25, with the fix, nothing else using the lab): **passed**. 2,291 s (~38 min), **10,800
+  requests**, all from nuclei's container; Host values `lab.redwhale.test`, `_`, `interact.sh`, `localhost` and 4
+  random `.tld`/`.com` names (the Host-header checks); nothing to `elsewhere`. Findings: codeigniter-env (high),
+  generic-env (high), git-config (medium), laravel-env (high), http-missing-security-headers (info, 10 matchers),
+  waf-detect (info), technologies nginx/1.30.6 and php/8.3.12. (`codeigniter-env` is new in the list: it fires on the
+  same fake `/.env`.)
 
 ## Step 4: docs
 
@@ -213,4 +228,4 @@ authenticated scans; auto-running after httpx/katana (6D); deciding the intrusiv
 
 ## Next action
 
-Record full run #3's result here (scratchpad slow-e2e-3.txt: `[nuclei slow e2e] <s> s, <n> requests, …`); if it fails, fix and re-run `REDWHALE_E2E_SLOW=1 pnpm vitest run server/test/nuclei.e2e.test.ts -t slow`. Then the phase is done: the user's manual check above, then merge (6C-5 first).
+The phase is done: the user's manual check above, then merge (6C-5 first).

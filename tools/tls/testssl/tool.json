@@ -1,0 +1,13 @@
+{
+  "name": "testssl",
+  "group": "tls",
+  "label": "testssl.sh",
+  "description": "testssl.sh: which TLS/SSL protocols and cipher categories the server offers, its certificate, and known TLS flaws. An https:// url (SNI from its host) or a TCP port. Tests one address of the host.",
+  "mode": "active",
+  "accepts": ["url", "port"],
+  "argv": ["python3", "-I", "/opt/redwhale/tls/testssl/run.py", "--target", "{target}", "--target-type", "{targetType}", "--out", "/out"],
+  "timeoutSec": 900,
+  "external": [],
+  "contacts": "TLS handshakes with {target} at one address of its host (system resolver only): protocols, ciphers, certificate, and probes for TLS flaws (Heartbleed, CCS, Ticketbleed, ROBOT, renegotiation, CRIME, POODLE, SWEET32, FREAK, DROWN, LOGJAM, BEAST, LUCKY13, RC4), one GET for BREACH; no other host",
+  "outputDir": "/out"
+}

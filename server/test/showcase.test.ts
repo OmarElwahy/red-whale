@@ -280,9 +280,20 @@ describe('wiping the workspace', () => {
     ['example.com', false],
     ['latest', false],
     ['test.com', false],
-    ['172.29.250.10', false],
+    // the lab's own address (naabu and nmap scan it by IP), its ports and URLs; nothing else on the network
+    ['172.29.250.10', true],
+    ['172.29.250.10:22/tcp', true],
+    ['https://172.29.250.10/', true],
+    ['172.29.250.11', false],
+    ['172.29.250.10/24', false],
+    ['10.0.0.10', false],
   ])('isDisposableTarget(%s) = %s (lab runs need no --force; --domain stays .example)', (target, expected) => {
-    expect(isDisposableTarget(target)).toBe(expected);
+    expect(isDisposableTarget(target, {})).toBe(expected);
+  });
+
+  test('the lab address follows REDWHALE_NET_SUBNET', () => {
+    expect(isDisposableTarget('10.9.8.10', { REDWHALE_NET_SUBNET: '10.9.8.0/24' })).toBe(true);
+    expect(isDisposableTarget('172.29.250.10', { REDWHALE_NET_SUBNET: '10.9.8.0/24' })).toBe(false);
   });
 
   test('a database holding only a lab run (.test) is wiped without --force', () => {
@@ -302,6 +313,24 @@ describe('wiping the workspace', () => {
     after.$client.close();
   });
 
+  test("a database holding lab port scans (the lab's IP, its port) is wiped without --force", () => {
+    const dir = tempDir();
+    const path = join(dir, 'lab-ip.db');
+    const db = openDb(path);
+    for (const target of ['172.29.250.10', '172.29.250.10:22/tcp']) {
+      const scan = JSON.parse(exampleText('nmap')) as { target: string };
+      scan.target = target;
+      expect(ingestText(db, JSON.stringify(scan)).status).toBe('ingested');
+    }
+    db.$client.close();
+    const result = run('showcase', ['--out', join(dir, 'out'), '--db', path, '--skip-python']);
+    expect(result.code, result.err.join('\n')).toBe(0);
+    const after = openDb(path);
+    const targets = (after.$client.prepare('SELECT target FROM scans').all() as { target: string }[]).map((r) => r.target);
+    expect(targets.filter((t) => t.startsWith('172.29.250.10'))).toEqual([]);
+    after.$client.close();
+  });
+
   test('refuses a database holding a real scan, and leaves it untouched', () => {
     const dir = tempDir();
     const path = join(dir, 'real.db');
@@ -313,7 +342,7 @@ describe('wiping the workspace', () => {
     const result = run('showcase', ['--out', join(dir, 'out'), '--db', path, '--skip-python']);
     expect(result.code).toBe(1);
     expect(result.err).toContain(
-      `${path} holds 1 scan(s) that didn't come from a mock generator (their target is not under .example or .test):`,
+      `${path} holds 1 scan(s) that didn't come from a mock generator (their target is not under .example or .test, nor the lab's address):`,
     );
     expect(result.err.at(-1)).toMatch(/Pass --force to wipe them too/);
 

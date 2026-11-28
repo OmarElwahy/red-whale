@@ -93,10 +93,15 @@ async function scan(cat: Catalog): Promise<Scan> {
   expect(job, job?.error ?? '').toMatchObject({ status: 'succeeded', exitCode: 0 });
   expect(job?.argv).toEqual(expect.arrayContaining(['--target', HOME]));
 
-  // Other e2e suites may probe the lab at the same time: keep nuclei's container only (its address is the one that
-  // fetched /.git/config, which only nuclei asks for).
+  // Other e2e suites may probe the lab at the same time: keep nuclei's container only. Its address fetched
+  // /.git/config (only nuclei asks for it), but during a slow run the fast nuclei test of another suite run may fetch
+  // it too, from a container whose address is freed and reused by another tool (6C-7: nmap's lines got counted). So:
+  // of the addresses that fetched /.git/config, the one with the most requests in the window.
   const recent = (await labLogSince(runtime, since)).filter((l) => l.startsWith('host='));
-  const addr = /^host=\S+ (\S+) "GET \/\.git\/config /.exec(recent.find((l) => l.includes('"GET /.git/config ')) ?? '')?.[1];
+  const count = new Map<string, number>();
+  for (const l of recent) count.set(l.split(' ')[1] ?? '', (count.get(l.split(' ')[1] ?? '') ?? 0) + 1);
+  const fetchers = new Set(recent.filter((l) => l.includes('"GET /.git/config ')).map((l) => l.split(' ')[1] ?? ''));
+  const addr = [...fetchers].sort((a, b) => (count.get(b) ?? 0) - (count.get(a) ?? 0))[0];
   expect(addr).toBeDefined();
   // no tool ever goes to the redirect's host, whatever container
   expect(recent.filter((l) => l.startsWith(`host=${LAB_REDIRECT_HOST} `))).toEqual([]);

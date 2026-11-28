@@ -1,0 +1,30 @@
+[
+         {
+              "id"           : "engine_problem",
+              "ip"           : "/",
+              "port"         : "443",
+              "severity"     : "WARN",
+              "finding"      : "No engine or GOST support via engine with your /opt/testssl/bin/openssl.Linux.x86_64"
+          }
+,         {
+              "id"           : "cmdline_ip-target",
+              "ip"           : "/",
+              "port"         : "443",
+              "severity"     : "WARN",
+              "finding"      : "Target is not a server name: results may be completely wrong, at minimum trust may show false results."
+          }
+,         {
+              "id"           : "scanProblem",
+              "ip"           : "198.18.0.10/198.18.0.10",
+              "port"         : "9",
+              "severity"     : "FATAL",
+              "finding"      : "Can't connect to '198.18.0.10:9' Make sure a firewall is not between you and your scanning target!"
+          }
+,         {
+              "id"           : "scanTime",
+              "ip"           : "198.18.0.10/198.18.0.10",
+              "port"         : "9",
+              "severity"     : "WARN",
+              "finding"      : "Scan interrupted"
+          }
+]
