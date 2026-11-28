@@ -11,7 +11,22 @@ import type { ContainerRuntime, NetworkSpec, ServiceSpec } from './runtime';
 
 export const LAB_DIR = fileURLToPath(new URL('../../../lab', import.meta.url));
 /** Exactly what goes into the lab image (and its tag). */
-export const LAB_FILES = ['Dockerfile', 'index.html', 'nginx.conf'] as const;
+export const LAB_FILES = [
+  'Dockerfile',
+  'nginx.conf',
+  // site/: the crawlable site served on 443 (lab/README.md)
+  'site/index.html',
+  'site/products.html',
+  'site/item.html',
+  'site/deep.html',
+  'site/about.html',
+  'site/contact.html',
+  'site/robots.txt',
+  'site/sitemap.xml',
+  'site/static/app.js',
+  'site/static/site.css',
+  'site/files/brochure.pdf',
+] as const;
 export const LAB_REPO = 'redwhale-lab';
 export const LAB_CONTAINER = 'redwhale-lab';
 export const LABEL_LAB = 'redwhale.lab';

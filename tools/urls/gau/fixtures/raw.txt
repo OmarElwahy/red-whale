@@ -1,0 +1,27 @@
+#provider wayback exit=0
+
+#stderr wayback
+time="2026-11-24T14:33:34Z" level=warning msg="error reading config: Config file /tmp/.gau.toml not found, using default config"
+time="2026-11-24T14:33:34Z" level=info msg="fetching northwind.example" page=0 provider=wayback
+time="2026-11-24T14:35:04Z" level=warning msg="northwind.example - failed to fetch wayback results page 0: timeout" provider=wayback
+#provider commoncrawl exit=0
+{"url":"https://northwind.example/bulkSetWatchlistShow.rpc"}
+{"url":"https://northwind.example/product/goldenhills.action"}
+{"url":"https://northwind.example/product/gowidget.action"}
+{"url":"https://northwind.example/product/pricescan.action"}
+{"url":"https://northwind.example/download.action"}
+{"url":"https://northwind.example/robots.txt"}
+{"url":"https://northwind.example/store/vendors/144.action"}
+#stderr commoncrawl
+time="2026-11-24T14:35:04Z" level=warning msg="error reading config: Config file /tmp/.gau.toml not found, using default config"
+time="2026-11-24T14:35:21Z" level=info msg="fetching northwind.example" page=0 provider=commoncrawl
+#provider otx exit=0
+{"url":"https://api.northwind.example/api/v1/item/CRATEFIELD"}
+{"url":"https://www.northwind.example/product/agrigrid.action"}
+{"url":"https://northwind.example/download.action"}
+{"url":"https://northwind.example/download.action#top"}
+{"url":"http://northwind.example:80/"}
+{"url":"https://northwind.example:99999/"}
+#stderr otx
+time="2026-11-24T14:35:28Z" level=warning msg="error reading config: Config file /tmp/.gau.toml not found, using default config"
+time="2026-11-24T14:35:28Z" level=info msg="fetching northwind.example" page=0 provider=otx

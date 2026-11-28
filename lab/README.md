@@ -8,9 +8,27 @@ them**: it publishes no ports on your machine, so you can't open it in your brow
 |---|---|
 | `http://lab.redwhale.test/` | `301` to `https://elsewhere.redwhale.test/` (another host: a tool must **not** follow it) |
 | `https://lab.redwhale.test/` | `200`, page title `Northwind Lab`, self-signed certificate |
+| `https://lab.redwhale.test/…` | a small site to crawl (below) |
 | `http://lab.redwhale.test:8080/` | `200`, plain text `redwhale lab 8080` (a port only a port scanner like naabu finds; httpx probes 80/443) |
 | all three | `Server: nginx/1.30.6` and `X-Powered-By: PHP/8.3.12` (something for tech detection to find) |
 | `lab.redwhale.test:22` (TCP) | the banner `SSH-2.0-OpenSSH_9.6p1`, then the connection closes (for nmap's service detection) |
+
+### The crawl site (for katana)
+
+`https://lab.redwhale.test/` links to a few pages; `lab/site/` holds them all:
+
+| Path | Linked from | What it is for |
+|---|---|---|
+| `/products.html`, `/about.html` | the home page | pages one link away |
+| `/item.html?id=1` | `products.html` | two links away |
+| `/deep.html` | `item.html` | three links away |
+| `/static/app.js`, `/static/site.css` | the home page (`script`, `link`) | a script and a stylesheet |
+| `/api/v1/orders` | named only inside `app.js` | JavaScript parsing (`200`, JSON) |
+| `/files/brochure.pdf` | `about.html` | a PDF (crawled, not filtered) |
+| `/static/logo.png` | the home page (`img`) | `404`; never requested (images are filtered) |
+| `/robots.txt`, `/sitemap.xml` | nothing (the sitemap alone lists `/contact.html`) | known files; katana is run without `-kf` (see `tools/urls/README.md`), so it requests none of the three |
+| `http://lab.redwhale.test/` | the home page | the `301` above: requested, never followed |
+| `https://elsewhere.redwhale.test/partners.html` | the home page | another host: never requested |
 
 Port 22 is **not a real SSH server**: nginx only sends that one line (its `stream` `return`) and hangs up. There is
 no key exchange, no login and nothing behind it; it exists so `nmap -sV` has a service to name.
@@ -76,10 +94,10 @@ terminal where you run `pnpm dev`.
 ## Files
 
 - `Dockerfile`: nginx alpine pinned by digest; the certificate is generated at build time (no key in the repo).
-- `nginx.conf`: the three web servers above, logging `host=<Host>` for every request, and the port-22 banner
+- `nginx.conf`: the three web servers above (with content types, and `/api/v1/orders`), logging `host=<Host>` for every request, and the port-22 banner
   (logged as `ssh <address> ...`).
-- `index.html`: the page.
+- `site/`: the pages (the crawl site above).
 
-The image is tagged `redwhale-lab:<hash of these three files>`, so editing one makes `lab:up` rebuild it. The
+The image is tagged `redwhale-lab:<hash of these files>` (`LAB_FILES` in `lab.ts`), so editing one makes `lab:up` rebuild it. The
 container is labelled `redwhale.lab`, runs as nginx's own user with a read-only filesystem and no capabilities, and
 is created by `server/src/runner/lab.ts` (through the same Docker client as the tool runner).

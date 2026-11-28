@@ -1,0 +1,13 @@
+{
+  "name": "katana",
+  "group": "urls",
+  "label": "katana",
+  "description": "ProjectDiscovery katana: crawls one URL's host two levels deep (links and JavaScript; GET only, no other host, no redirects, no images/fonts/media) and reports each URL under the page it was found on.",
+  "mode": "active",
+  "accepts": ["url"],
+  "argv": ["python3", "-I", "/opt/redwhale/urls/katana/run.py", "--target", "{target}", "--out", "/out"],
+  "timeoutSec": 300,
+  "external": [],
+  "contacts": "fetches pages, scripts and other files linked from {target}, on that URL's host only (GET, two levels deep, at most 5 requests a second; redirects are not followed)",
+  "outputDir": "/out"
+}

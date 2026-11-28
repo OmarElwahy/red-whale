@@ -1,0 +1,6 @@
+{
+  "name": "urls",
+  "label": "URL discovery",
+  "image": "redwhale-tools/urls",
+  "tools": ["gau", "katana"]
+}

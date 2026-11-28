@@ -24,6 +24,8 @@ Pick the example closest to your tool:
 | JSON lines, active, and it takes **only an IP** (e.g. a port scanner) | `tools/ports/naabu/` |
 | **XML**, active, and it takes an **ip or a port** (picks its mode from the target's type) | `tools/ports/nmap/` |
 | **several requests** (a program run several times, web APIs, or both), recorded as a transcript | `tools/dns/takeover-check/` |
+| JSON lines, passive, **one run per source** (the output doesn't say which source found what), sections in one raw file | `tools/urls/gau/` |
+| JSON lines, active, a **crawler** that takes a **url** (each URL under the page it was found on) | `tools/urls/katana/` |
 
 Your tool goes in its **group's** folder (ask the team leader which group, e.g. `ports`, `http`, `vulns`). If the group
 doesn't exist yet, the team leader creates it (`group.json` + `Dockerfile`).

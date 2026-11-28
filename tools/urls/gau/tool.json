@@ -1,0 +1,12 @@
+{
+  "name": "gau",
+  "group": "urls",
+  "label": "gau",
+  "description": "getallurls: URLs the Wayback Machine, Common Crawl and AlienVault OTX have seen on exactly this host (historical; no API keys, no subdomains, no images/fonts/media).",
+  "mode": "passive",
+  "accepts": ["domain", "subdomain"],
+  "argv": ["python3", "-I", "/opt/redwhale/urls/gau/run.py", "--target", "{target}", "--target-type", "{targetType}", "--out", "/out"],
+  "timeoutSec": 900,
+  "external": ["Wayback Machine", "Common Crawl", "AlienVault OTX"],
+  "outputDir": "/out"
+}
