@@ -33,12 +33,16 @@ const WORKSPACE = `e2e${randomUUID().replaceAll('-', '')}`;
 const quiet: LabIo = { out: () => undefined, err: () => undefined };
 // wafw00f's central attack: three random 8-letter parameters, the XSS string first (main.py centralAttack)
 const ATTACK = /"GET \/(?:waf\/)?\?[a-z]{8}=%3Cscript%3Ealert%28%22XSS%22%29%3B%3C%2Fscript%3E&[a-z]{8}=UNION\+SELECT\+ALL\+FROM\+information_schema\+AND\+%22\+or\+SLEEP%285%29\+or\+%22&[a-z]{8}=\.\.%2F\.\.%2Fetc%2Fpasswd /;
+// The only User-Agents wafw00f sends: its fixed browser one (lib/evillib.py def_headers), then requests' own once the
+// generic detection drops it. With the address, they tell wafw00f's lines from those of another suite's container
+// that had the same address a moment before (seen in a full run: 4 lines instead of 2).
+const UAS = ['"Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:130.0) Gecko/20100101 Firefox/130.0"', '"python-requests/2.34.2"'];
 
 let wasUp = false;
 
 interface Run {
   db: ReturnType<typeof freshDb>;
-  /** the lab's log lines from wafw00f's container (the address that sent the central attack) */
+  /** the lab's log lines from wafw00f's container (the address that sent the central attack, wafw00f's User-Agents) */
   log: string[];
   scan: { status: string; errors: string; tool_version: string; command: string };
 }
@@ -54,7 +58,8 @@ async function wafw00f(url: string): Promise<Run> {
   const target = nodeId('url', url);
   expect(orch.enqueue('wafw00f', target)).toMatchObject({ ok: false, code: 'confirm-required' });
   // The mark is a second early (docker logs --since is whole seconds) and the next container gets the address the
-  // previous test's just freed: wait so the previous run's lines are older than the mark.
+  // previous test's just freed: wait so the previous run's lines are older than the mark. (Another suite's container
+  // can still free an address during the wait: the User-Agent filter below covers that.)
   await new Promise((resolve) => setTimeout(resolve, 2100));
   const since = logMark();
   expect(orch.enqueue('wafw00f', target, { confirmActive: true })).toMatchObject({
@@ -76,7 +81,7 @@ async function wafw00f(url: string): Promise<Run> {
   for (const flag of ['-r', '--no-colors']) expect(scan.command.split(' '), flag).toContain(flag);
   expect(scan.command).not.toMatch(/ (-a|--findall|-p|--proxy) /);
   expect(await runtime.listByLabel(LABEL_WORKSPACE, WORKSPACE)).toEqual({ containers: [], volumes: [] });
-  return { db, log: recent.filter((l) => l.split(' ')[1] === addr), scan };
+  return { db, log: recent.filter((l) => l.split(' ')[1] === addr && UAS.some((ua) => l.endsWith(ua))), scan };
 }
 
 /** What wafw00f reported (without the url: named only as the parent, which ingest records but doesn't count). */
