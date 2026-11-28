@@ -208,6 +208,44 @@ No lab change beyond step 1's `/waf/`. Both suites skip without Docker or the im
     the same url: the certificate is trusted (`trusted: true`), with the real SANs in its data; the tested `ip` is one
     of the host's addresses.
 
+## Manual checks of 6C-4 … 6C-7 (run by Claude on `phase-6c7`'s tip, 2026-11-28)
+
+The user asked Claude to run the six checklists. Done on a **scratch database** (API on 4101, UI on 5174, the user's
+own `pnpm dev` on 4100/5173 untouched); the user's real database only **read** (GET requests), never written.
+
+- **Setup:** `pnpm install` stopped on ERR_PNPM_IGNORED_BUILDS (dockerode's optional ssh2/cpu-features/protobufjs
+  scripts): fixed by denying them in `pnpm-workspace.yaml`. `tools:build` all 7 current, `tools:check --all` 14
+  passed, typecheck, `pnpm test` (with Docker) green after fixing a wafw00f e2e log filter (an address reused by
+  another suite's container).
+- **6C-4:** all steps pass (nmap dialog text, 4 ports with data, `tunnel ssl`, OpenSSH 9.6p1, the exact command,
+  banner + version-script lines in the lab log, `-p 22` on a port, the refusal without nmap, httpx corroborates
+  nginx, scope removal → out ("judged by its IP") and a confirmed run refused, 428 with no log entry, naabu
+  corroborates :22, lab down/up) **except step 19**: `pnpm mock` refused a workspace with lab port scans (their
+  target is the lab's IP). **Fixed** (user: the lab's address is disposable; §13 2026-11-28).
+- **TW-1:** steps 3, 5 (showcase `cname_to` by dnsx), 15 (no-resolver refusal) pass; step 4 (the real database opens
+  on the current schema with its data) passes, read-only; step 6 is covered by `add-node-dialog.test.tsx` (the canvas
+  kept moving under clicks). **Steps 7–14 need a real authorized subdomain: left to the user.**
+- **TW-2** (a 30-subdomain mock): auto jobs at most 2 running / 10 queued, refilling, AUTO badge; a manual job starts
+  before 7 older queued auto jobs; switching auto off cancels the queued ones ("auto takeover checks were turned
+  off") and on refills them; after a restart no new auto job for checked subdomains; `REDWHALE_AUTO_MAX_QUEUED=3`
+  caps at 3; an excluded subdomain never gets a job or a scope-log `run` entry; exclude rule keeps status and date;
+  a manual re-check moves Last checked; the row click selects the subdomain and opens its group. On the **real**
+  database, read-only: status order and days-left order hold (165 ok rows, 142–1,728 days), chain end = last CNAME,
+  3 rows with several domains for the tooltip, external names hidden by default (11 graph/table nodes, 6 watch rows)
+  and back with `showExternal=1`. Not seen live: "checking…" (the `pending` field is there).
+- **6C-5:** katana dialog text, the url tree exactly as listed, `http://` 301 corroborated, no `elsewhere`, 11 GETs
+  all to the lab with none of the excluded files, the command's flags, the refusal without the network: all pass.
+  **gau (steps 13–15) needs a real domain: left to the user.**
+- **6C-6:** the url's Run tool menu lists the four groups and nuclei, no red circles. The 40-minute lab scan (steps
+  5–10) not repeated: the slow e2e run #6 (2026-11-25) checked the same findings, masking and lab log. **Step 11 (a
+  real target) left to the user.**
+- **6C-7:** wafw00f dialog text, `shadow-daemon` (Zecure) under `/waf/`, none under `/`, the `/waf/` lab lines;
+  testssl: the port chain, one certificate node with two observations (url and port runs), the 5 vulnerabilities
+  under url and port, no `cert_trust`, `:8080` → "no TLS service on 172.29.250.10:8080", testssl's GETs only to the
+  lab; its contacts text checked through `/api/tools` (the canvas moved under the click). **Step 15 (a real target)
+  left to the user.**
+
 ## Next action
 
-The phase is done: the user's manual check above, then merge (after 6C-6). Then `pnpm tools:build` (all groups).
+The user's real-target steps (TW-1 7–14, 6C-5 13–15, 6C-6 11, 6C-7 15), then the merges (`--no-ff`, one phase at a
+time: 6c4, tw1, tw2, 6c5, 6c6, 6c7). Then `pnpm tools:build` and `pnpm lab:up`.
