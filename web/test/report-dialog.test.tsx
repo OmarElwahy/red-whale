@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { menuItems, type MenuContext } from '../src/menu/items';
 import { ReportDialog, titleOf } from '../src/report/ReportDialog';
 import { reportFilename, safeLabel } from '../src/report/file';
+import { printHtml } from '../src/report/print';
 import { reportHtml } from '../src/report/render';
 import { node } from './fixtures';
 
@@ -43,13 +44,14 @@ function stubApi(...drafts: (NodeReport | Response)[]) {
 
 function open() {
   const onClose = vi.fn();
+  const print = vi.fn<(html: string) => void>();
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
-      <ReportDialog nodeId={ID} onClose={onClose} now={() => NOW} />
+      <ReportDialog nodeId={ID} onClose={onClose} now={() => NOW} print={print} />
     </QueryClientProvider>,
   );
-  return { onClose };
+  return { onClose, print };
 }
 
 const editor = () => screen.findByRole<HTMLTextAreaElement>('textbox', { name: 'Report Markdown' });
@@ -177,6 +179,19 @@ describe('ReportDialog', () => {
     expect(html).not.toMatch(/<script|<link|@import|url\(|https?:\/\/fonts/i);
   });
 
+  test('Save as PDF… prints the edited page, titled with the file name, and says what to pick', async () => {
+    const { print } = open();
+    fireEvent.change(await editor(), { target: { value: '# Mine\n\nedited <b>' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save as PDF…' }));
+    expect(print).toHaveBeenCalledTimes(1);
+    const html = print.mock.calls[0]?.[0] ?? '';
+    expect(html).toContain('<title>redwhale-report-git-config-2026-11-28T12-34-56Z</title>');
+    expect(html).toContain('<h1>Mine</h1>');
+    expect(html).toContain('edited &lt;b&gt;');
+    expect(html).toContain("default-src 'none'");
+    expect(screen.getByRole('status').textContent).toBe('In the print dialog, pick "Save as PDF" as the destination.');
+  });
+
   test('Copy puts the Markdown on the clipboard', async () => {
     const writeText = vi.fn(() => Promise.resolve());
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
@@ -223,6 +238,33 @@ describe('reportHtml', () => {
     // No tag loads anything (the escaped `&lt;img src=x` above is text).
     expect(html).not.toMatch(/<[a-z]+[^>]*\s(src|srcset|href)=["'](?!https:\/\/ok\.example)/i);
     expect(html).not.toMatch(/<link|@import|url\(/i);
+  });
+});
+
+describe('printHtml', () => {
+  const frames = () => document.querySelectorAll<HTMLIFrameElement>('iframe#redwhale-report-print');
+
+  test('a hidden frame that runs no script holds the page; it prints on load and goes away after', () => {
+    printHtml('<!doctype html><title>t</title><p>hi</p>');
+    const [frame] = frames();
+    if (!frame) throw new Error('no frame');
+    expect(frame.getAttribute('sandbox')).toBe('allow-modals allow-same-origin');
+    expect(frame.srcdoc).toContain('<p>hi</p>');
+    expect(frame.getAttribute('aria-hidden')).toBe('true');
+    const win = frame.contentWindow;
+    if (!win) throw new Error('no window');
+    const print = vi.spyOn(win, 'print').mockImplementation(() => undefined);
+    frame.dispatchEvent(new Event('load'));
+    expect(print).toHaveBeenCalledTimes(1);
+    win.dispatchEvent(new Event('afterprint'));
+    expect(frames()).toHaveLength(0);
+  });
+
+  test('a second print replaces a frame still waiting', () => {
+    printHtml('<p>one</p>');
+    printHtml('<p>two</p>');
+    expect([...frames()].map((f) => f.srcdoc)).toEqual(['<p>two</p>']);
+    frames()[0]?.remove();
   });
 });
 

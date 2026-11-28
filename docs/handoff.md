@@ -56,7 +56,7 @@ are kept on GitHub. 6D starts from `main`.
 | 6C-6 | `vuln` group (vulnerability scanning): nuclei (active, url) with pinned templates v10.5.1 baked in, HTTP only, tags cve/misconfig/exposure/tech/takeover minus intrusive/dos/fuzz/bruteforce/default-login/osint/ssrf/oast/proxy (~6,500 templates, ~11,000 requests at 5/s, `-mt 55m` in a 3600 s job), `-ni -dr -duc`, no outside contact; `tech` → technology, the rest → vulnerability (CVE or template ID) under the matched URL; extracted values masked; lab fake `/.git/config` + `/.env`; no contract change; **every tool image must be rebuilt** (shared lib changed) | ✅ done (on main) |
 | 6C-7 | wafw00f in `http` (active, url; pip `--require-hashes` venv; 2–7 GETs with attack-looking test strings, no redirects; named WAF → technology, generic → `generic-waf`, none → success) and new group `tls` with testssl.sh 3.2.5 (active, https url or tcp port; `-p -s -S -U`, `--ip one`, `--nodns min`, no `--phone-out`/curl; ip → port → certificate, port serves url, every LOW+ result → vulnerability; no TLS/closed/unresolvable → failed with the reason); lab fake WAF on `/waf/`; no contract change; **rebuild `http` and `tls`** | ✅ done (on main) |
 | graphfix | Tree mode: a dropped node stays where it was dropped through tool runs / expand / collapse (its subtree laid out under it; Re-layout clears drops); grabbing a node while another glides now carries the grabbed node's subtree. Force never had the snap-back. No API or schema change | ✅ done (on main) |
-| bugreport | "Create report…" on a vulnerability / secret / leak node (menu + side panel): the server drafts a bug-bounty report in Markdown from stored data (`GET /nodes/:id/report`), the dialog edits it with a live preview → Download .md / .html (self-contained, prints to PDF) / Copy. Edits aren't saved. No schema change, no new dependency | 🔶 on `phase-bugreport`, not merged; manual checklist in `docs/phase-bugreport-progress.md` |
+| bugreport | "Create report…" on a vulnerability / secret / leak node (menu + side panel): the server drafts a bug-bounty report in Markdown from stored data (`GET /nodes/:id/report`), the dialog edits it with a live preview → Download .md / .html (self-contained) / Save as PDF… (print dialog) / Copy. Edits aren't saved. No schema change, no new dependency | 🔶 on `phase-bugreport`, not merged; manual checklist in `docs/phase-bugreport-progress.md` |
 
 ## How I work with Claude Code
 
@@ -85,7 +85,8 @@ are kept on GitHub. 6D starts from `main`.
   edits in the dialog only (nothing saved; closing with edits asks). Tool text is untrusted: escaped for Markdown,
   commands/extracted values in fences, extracted values stay masked (the report names the jobs whose raw output has
   the rest). Affected asset = shortest root path + "Also affects" for other parents. The .html: no raw HTML, images as
-  alt text, inline CSS, system fonts, CSP blocks every load. No PDF (print the HTML), no AI text, no sending.
+  alt text, inline CSS, system fonts, CSP blocks every load. PDF = "Save as PDF…": the browser's print dialog on
+  that page (my choice over a PDF library: no dependency, same look, Arabic works). No AI text, no sending.
 
 - **Graph (5B–5D):** filter counts are workspace totals; search shows matches plus their ancestor path; Tree = ELK
   layered (keeps sibling order, positions never saved). Group = 2+ siblings with the same parent, relation and type,

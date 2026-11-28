@@ -11,7 +11,12 @@ export function safeLabel(label: string): string {
   return safe === '' ? 'node' : safe;
 }
 
+/** `redwhale-report-CVE-2021-41773-2026-11-28T12-00-00Z`: also the PDF's suggested name (the print page's title). */
+export function reportFileStem(label: string, now: Date = new Date()): string {
+  return `redwhale-report-${safeLabel(label)}-${fileTimestamp(now)}`;
+}
+
 /** `redwhale-report-CVE-2021-41773-2026-11-28T12-00-00Z.md` */
 export function reportFilename(label: string, extension: 'md' | 'html', now: Date = new Date()): string {
-  return `redwhale-report-${safeLabel(label)}-${fileTimestamp(now)}.${extension}`;
+  return `${reportFileStem(label, now)}.${extension}`;
 }

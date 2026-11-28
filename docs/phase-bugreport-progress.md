@@ -3,9 +3,9 @@
 Branch `phase-bugreport`, cut from `main` (`5a57121`, after phase-graphfix was merged). Started 2026-11-28.
 
 Goal: right-click a vulnerability, secret or leak node ▸ "Create report…" (also a side-panel button) opens a dialog
-with a bug-bounty style draft in editable Markdown with a live preview: Download .md, Download .html, Copy.
-Not in scope: reports over many nodes (6F), PDF (the HTML prints to PDF), AI-written text, sending anywhere, new DB
-tables.
+with a bug-bounty style draft in editable Markdown with a live preview: Download .md, Download .html, Copy; and
+(step 4, asked for after step 3) Save as PDF….
+Not in scope: reports over many nodes (6F), AI-written text, sending anywhere, new DB tables.
 
 ## Steps
 
@@ -14,6 +14,7 @@ tables.
 | 1 | Report builder + `GET /api/nodes/:id/report` + tests | done |
 | 2 | Dialog + menu/panel buttons + downloads + web-dom tests | done |
 | 3 | Docs (§6/§8/§13, handoff) + manual checklist | done |
+| 4 | PDF: "Save as PDF…" through the print dialog (user's choice) + tests + docs | done |
 
 ## Decisions (user, 2026-11-28: all recommended answers)
 
@@ -66,6 +67,15 @@ Step 2 details:
 Step 3: architecture §6 (route row), §8 (Bug report bullet), §13 (one decision row); handoff Status row and
 Key decisions.
 
+Step 4 (user, 2026-11-28: "download it as pdf"; chose the print dialog over a one-click PDF library):
+- `web/src/report/print.ts` `printHtml`: the same HTML page as Download .html in a hidden iframe (`srcdoc`,
+  `sandbox="allow-modals allow-same-origin"`, so no script runs in it; off screen but laid out, since some browsers
+  print a zero-size frame blank). On load it calls the frame's `print()`; `afterprint` removes the frame; a second
+  click replaces a frame still waiting.
+- The page `<title>` is the file name stem (`reportFileStem`), which Chrome and Edge suggest as the PDF's name.
+- Checked in Chromium (the app's browser pane): in such a sandboxed `srcdoc` frame, under the report's CSP,
+  `print()` runs (`beforeprint` fires, no "ignored call" warning).
+
 ## Manual checklist
 
 On the showcase mock (`pnpm mock`, then `pnpm dev`, open http://127.0.0.1:5173). Claude Code ran 1, 2 and 5 on a
@@ -84,7 +94,10 @@ scratch copy; the rest is yours.
 6. Edit, then **Reset to fresh draft** ▸ it asks; **Reset anyway** brings the server's draft back.
 7. **Download .md**: a file `redwhale-report-<label>-<UTC>Z.md` with your edited text.
 8. **Download .html**: open it with the network off (or DevTools ▸ Network): it renders, loads nothing, the tab title
-   is the report's `#` heading. Ctrl+P ▸ Save as PDF looks clean (no dark background, code blocks wrap).
+   is the report's `#` heading.
+8b. **Save as PDF…**: the print dialog opens on the report (not on the app); pick "Save as PDF". The suggested name
+   is `redwhale-report-<label>-<UTC>Z.pdf`; the PDF looks like the .html (white page, code blocks wrap, links
+   readable); the dialog's status line says what to pick. Try Firefox too (it names the file differently).
 9. **Copy**, paste into a text editor: the Markdown.
 10. Hostile text: in the editor add `<script>alert(1)</script>`, `![x](http://example.com/x.png)` and
     `[x](javascript:alert(1))`. The preview shows the script as text, `[image: x]`, and `x` as plain text (not a

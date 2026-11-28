@@ -1,5 +1,5 @@
 // "Create report…" on a vulnerability, secret or leak node (docs/architecture.md §8): the server's draft in
-// editable Markdown with a live preview; Download .md, Download .html, Copy. Edits live only here: nothing is saved,
+// editable Markdown with a live preview; Download .md, Download .html, Save as PDF… (print dialog), Copy. Edits live only here: nothing is saved,
 // so closing or resetting with edits asks first. Live updates never touch the editor; "Reset to fresh draft" refetches.
 import { nodeReportSchema, type NodeReport } from '@redwhale/shared';
 import { useQuery } from '@tanstack/react-query';
@@ -7,7 +7,8 @@ import { useCallback, useDeferredValue, useEffect, useId, useState } from 'react
 import { getJson } from '@/api/client';
 import { Button } from '@/components/ui/button';
 import { downloadBlob } from '@/graph/export';
-import { reportFilename } from './file';
+import { reportFileStem, reportFilename } from './file';
+import { printHtml } from './print';
 import { ReportMarkdown, reportHtml } from './render';
 
 export interface ReportDialogProps {
@@ -15,6 +16,8 @@ export interface ReportDialogProps {
   onClose: () => void;
   /** The clock for file names (tests). */
   now?: () => Date;
+  /** Opens the print dialog on an HTML page (tests replace it). */
+  print?: (html: string) => void;
 }
 
 /** Outside `['api', …]`, so a live update's invalidation doesn't refetch the draft under the analyst. */
@@ -29,7 +32,7 @@ export function titleOf(markdown: string, fallback: string): string {
 
 type Pending = 'close' | 'reset' | null;
 
-export function ReportDialog({ nodeId, onClose, now = () => new Date() }: ReportDialogProps) {
+export function ReportDialog({ nodeId, onClose, now = () => new Date(), print = printHtml }: ReportDialogProps) {
   const titleId = useId();
   const report = useQuery({
     queryKey: reportKey(nodeId),
@@ -99,6 +102,12 @@ export function ReportDialog({ nodeId, onClose, now = () => new Date() }: Report
     downloadBlob(new Blob([html], { type: 'text/html;charset=utf-8' }), reportFilename(draft.label, 'html', now()));
     setStatus('Downloaded the HTML. Open it and print to PDF if you need one.');
   };
+  const savePdf = () => {
+    if (!draft) return;
+    // The title is the file name Chrome and Edge suggest for the PDF.
+    print(reportHtml(text, reportFileStem(draft.label, now())));
+    setStatus('In the print dialog, pick "Save as PDF" as the destination.');
+  };
   const copy = () => {
     navigator.clipboard.writeText(text).then(
       () => {
@@ -134,6 +143,9 @@ export function ReportDialog({ nodeId, onClose, now = () => new Date() }: Report
           </Button>
           <Button size="sm" variant="outline" disabled={!ready} onClick={downloadHtml}>
             Download .html
+          </Button>
+          <Button size="sm" variant="outline" disabled={!ready} title="Opens the print dialog: pick Save as PDF" onClick={savePdf}>
+            Save as PDF…
           </Button>
           <Button size="sm" variant="outline" disabled={!ready} onClick={copy}>
             Copy
