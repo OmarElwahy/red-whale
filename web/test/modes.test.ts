@@ -310,3 +310,82 @@ describe('treeChanged', () => {
     expect(changed((els) => els.filter((el) => el.data.id !== 'b'))).toBe(true);
   });
 });
+
+describe('Tree: nodes the analyst dropped stay where they were dropped', () => {
+  /** A subtree drag (graph/subtree.ts) followed by the drop: `id` and everything below it move by `by`. */
+  const drop = (modes: LayoutModes, id: string, by: { x: number; y: number }) => {
+    const n = cy.getElementById(id);
+    n.union(n.successors().nodes()).shift(by);
+    modes.noteTreeDrop(id);
+    return { ...n.position() };
+  };
+  const withUrl = (parent: string, extra: ReturnType<typeof node>[] = []) =>
+    toElements({
+      nodes: [...GRAPH.nodes, node('url', { type: 'url', value: 'https://a.example.com/' }), ...extra],
+      edges: [...GRAPH.edges, edge(parent, 'url', { relation: 'serves' }), ...extra.map((n) => edge('dom', n.id))],
+    });
+
+  test('a live update re-runs the tree; the dropped node stays put and its new child appears under it', async () => {
+    const { modes, apply, at } = setup();
+    await modes.switchTo('tree', new Map());
+    const dropped = drop(modes, 'a', { x: 400, y: 250 });
+    const { diff, previous } = apply(withUrl('a', [node('c'), node('d')]));
+    await modes.afterDiff(diff, previous);
+    expect(at('a')).toEqual(dropped);
+    expect(at('url').y).toBeGreaterThan(at('a').y);
+    expect(Math.abs(at('url').x - at('a').x)).toBeLessThan(200);
+  });
+
+  test('a dropped node inside a dropped subtree keeps its own place too', async () => {
+    const { modes, apply, at } = setup();
+    await modes.switchTo('tree', new Map());
+    const a = drop(modes, 'a', { x: 400, y: 0 });
+    const ip = drop(modes, 'ip', { x: 0, y: 300 });
+    const { diff, previous } = apply(withUrl('b'));
+    await modes.afterDiff(diff, previous);
+    expect(at('a')).toEqual(a);
+    expect(at('ip')).toEqual(ip);
+  });
+
+  test('dragging a parent carries the drops below it', async () => {
+    const { modes, apply, at } = setup();
+    await modes.switchTo('tree', new Map());
+    drop(modes, 'ip', { x: 0, y: 300 });
+    drop(modes, 'a', { x: -250, y: 100 }); // ip comes along
+    const ip = at('ip');
+    const { diff, previous } = apply(withUrl('b'));
+    await modes.afterDiff(diff, previous);
+    expect(at('ip')).toEqual(ip);
+  });
+
+  test('Re-layout forgets every drop: back to the clean tree', async () => {
+    const { modes, at } = setup();
+    await modes.switchTo('tree', new Map());
+    const clean = { x: at('a').x - at('dom').x, y: at('a').y - at('dom').y };
+    drop(modes, 'a', { x: 400, y: 250 });
+    await modes.relayout();
+    expect(at('a').x - at('dom').x).toBeCloseTo(clean.x, 6);
+    expect(at('a').y - at('dom').y).toBeCloseTo(clean.y, 6);
+  });
+
+  test('Force and back: the drop is kept where it was relative to the tree', async () => {
+    const { modes, at } = setup();
+    await modes.switchTo('tree', new Map());
+    drop(modes, 'a', { x: 400, y: 250 });
+    const rel = { x: at('a').x - at('dom').x, y: at('a').y - at('dom').y };
+    await modes.switchTo('force', new Map());
+    await modes.switchTo('tree', new Map());
+    expect(at('a').x - at('dom').x).toBeCloseTo(rel.x, 6);
+    expect(at('a').y - at('dom').y).toBeCloseTo(rel.y, 6);
+  });
+
+  test('Force mode: a drop is not a tree drop', async () => {
+    const { modes, apply, at } = setup();
+    drop(modes, 'a', { x: 400, y: 250 });
+    await modes.switchTo('tree', new Map());
+    const { diff, previous } = apply(withUrl('a'));
+    await modes.afterDiff(diff, previous);
+    expect(at('a').y).toBeGreaterThan(at('dom').y);
+    expect(at('a').y).toBeLessThan(at('url').y);
+  });
+});

@@ -4,7 +4,7 @@
 // Feel: the canvas never changes how it draws mid-gesture (no texture or hidden edges while moving); pans carry
 // momentum, and so do node drags, which in Tree mode carry their subtree (drags.ts); the wheel zooms smoothly toward
 // the cursor (wheel.ts), and labels fade in and out at the readability threshold (labels.ts). Layout modes
-// (modes.ts): Force and Tree, animated between; Tree positions are never saved.
+// (modes.ts): Force and Tree, animated between; Tree positions are never saved (drops are kept for the session).
 import cytoscape, { type Core } from 'cytoscape';
 import fcose from 'cytoscape-fcose';
 import { useEffect, useImperativeHandle, useRef, type Ref } from 'react';
@@ -169,7 +169,10 @@ export function CytoscapeGraph({
       carriesSubtree: () => layoutModes.mode === 'tree',
       reducedMotion: prefersReducedMotion,
       onRest: (node) => {
-        if (!layoutModes.savesPositions) return;
+        if (!layoutModes.savesPositions) {
+          layoutModes.noteTreeDrop(node.id());
+          return;
+        }
         const { x, y } = node.position();
         pinned.current.add(node.id());
         handlersRef.current.onMoved([{ id: node.id(), x, y }]);
@@ -238,10 +241,10 @@ export function CytoscapeGraph({
     motion.current?.subtree.end();
   }, [layout]);
 
-  // Re-layout button: back to the clean tree, fitted.
+  // Re-layout button: back to the clean tree, fitted (forgets the analyst's tree drops).
   useEffect(() => {
     if (relayoutSeq === firstRelayout.current || modes.current?.mode !== 'tree') return;
-    void modes.current.runTree(true);
+    void modes.current.relayout();
   }, [relayoutSeq]);
 
   useEffect(() => {
