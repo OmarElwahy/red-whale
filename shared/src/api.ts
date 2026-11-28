@@ -542,6 +542,24 @@ export const nodeDetailResponseSchema = z.strictObject({
   ),
 });
 
+/** The node types a bug report can be drafted for (GET /nodes/:id/report). */
+export const REPORT_NODE_TYPES = ['vulnerability', 'secret', 'leak'] as const satisfies readonly NodeType[];
+export type ReportNodeType = (typeof REPORT_NODE_TYPES)[number];
+export const isReportNodeType = (t: string): t is ReportNodeType => (REPORT_NODE_TYPES as readonly string[]).includes(t);
+
+/** GET /nodes/:id/report: a bug-bounty style draft in Markdown, built from what's stored. Tool text is escaped. */
+export const nodeReportSchema = z.strictObject({
+  nodeId: z.string(),
+  type: z.enum(REPORT_NODE_TYPES),
+  /** The node's label, for the file name. */
+  label: z.string(),
+  /** Plain text (not Markdown), for the HTML page's <title>. */
+  title: z.string(),
+  markdown: z.string(),
+  generatedAt: timestamp,
+});
+export type NodeReport = z.infer<typeof nodeReportSchema>;
+
 const edgeEnd = graphNodeSchema.pick({ id: true, type: true, label: true });
 
 /** GET /edges/:id: the relation, both ends, derived fields and every scan that reported it. */

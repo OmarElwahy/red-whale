@@ -11,6 +11,7 @@ import { edgeRoutes } from './routes/edges';
 import { graphRoutes } from './routes/graph';
 import { jobDto, jobRoutes, type RunnerContext } from './routes/jobs';
 import { nodeRoutes } from './routes/nodes';
+import { reportRoutes } from './routes/report';
 import { scopeRoutes } from './routes/scope';
 import { takeoverRoutes } from './routes/takeover';
 import type { Catalog } from './runner/catalog';
@@ -156,6 +157,7 @@ export async function buildApp(options: AppOptions): Promise<FastifyInstance> {
   };
   graphRoutes(ctx);
   nodeRoutes(ctx);
+  reportRoutes(ctx);
   deletionRoutes(ctx);
   edgeRoutes(ctx);
   dataRoutes(ctx);
