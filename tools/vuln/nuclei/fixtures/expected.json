@@ -1,0 +1,224 @@
+{
+  "target": "https://lab.northwind.example/",
+  "status": "success",
+  "errors": [],
+  "findings": [
+    {
+      "type": "technology",
+      "value": "nginx/1.30.6",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example/"
+      },
+      "relation": "uses_technology",
+      "data": {
+        "template": "nginx-version",
+        "extracted": [
+          "nginx/1.30.6"
+        ]
+      }
+    },
+    {
+      "type": "technology",
+      "value": "php/8.3.12",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example/"
+      },
+      "relation": "uses_technology",
+      "data": {
+        "template": "php-detect",
+        "extracted": [
+          "8.3.12"
+        ]
+      }
+    },
+    {
+      "type": "url",
+      "value": "https://lab.northwind.example/.env",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example/"
+      },
+      "relation": "has_url",
+      "data": {
+        "source": "nuclei"
+      }
+    },
+    {
+      "type": "url",
+      "value": "https://lab.northwind.example/.git/config",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example/"
+      },
+      "relation": "has_url",
+      "data": {
+        "source": "nuclei"
+      }
+    },
+    {
+      "type": "vulnerability",
+      "value": "CVE-2021-41773",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example/"
+      },
+      "relation": "has_vulnerability",
+      "severity": "critical",
+      "data": {
+        "template": "CVE-2021-41773",
+        "name": "Apache 2.4.49 - Path Traversal and Remote Code Execution",
+        "matched_at": "https://lab.northwind.example/cgi-bin/.%2e/.%2e/etc/passwd",
+        "cves": [
+          "CVE-2021-41773",
+          "CVE-2021-42013"
+        ],
+        "cvss": 9.8,
+        "references": [
+          "https://nvd.nist.gov/vuln/detail/CVE-2021-41773"
+        ],
+        "tags": [
+          "apache",
+          "cve",
+          "cve2021",
+          "lfi",
+          "vuln"
+        ]
+      }
+    },
+    {
+      "type": "vulnerability",
+      "value": "generic-env",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example/.env"
+      },
+      "relation": "has_vulnerability",
+      "severity": "high",
+      "data": {
+        "template": "generic-env",
+        "name": "Generic Env File Disclosure",
+        "matched_at": "https://lab.northwind.example/.env",
+        "cvss": 8.3,
+        "tags": [
+          "config",
+          "env",
+          "exposure",
+          "vuln"
+        ]
+      }
+    },
+    {
+      "type": "vulnerability",
+      "value": "git-config",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example/.git/config"
+      },
+      "relation": "has_vulnerability",
+      "severity": "medium",
+      "data": {
+        "template": "git-config",
+        "name": "Git Configuration - Detect",
+        "matched_at": "https://lab.northwind.example/.git/config",
+        "extracted": [
+          "redw****cret"
+        ],
+        "cvss": 5.3,
+        "tags": [
+          "config",
+          "exposure",
+          "git",
+          "vuln"
+        ]
+      }
+    },
+    {
+      "type": "vulnerability",
+      "value": "http-missing-security-headers",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example/"
+      },
+      "relation": "has_vulnerability",
+      "severity": "info",
+      "data": {
+        "template": "http-missing-security-headers",
+        "name": "HTTP Missing Security Headers",
+        "matched_at": "https://lab.northwind.example/",
+        "matcher": [
+          "content-security-policy",
+          "cross-origin-embedder-policy",
+          "cross-origin-opener-policy",
+          "cross-origin-resource-policy",
+          "permissions-policy",
+          "referrer-policy",
+          "strict-transport-security",
+          "x-content-type-options",
+          "x-frame-options",
+          "x-permitted-cross-domain-policies"
+        ],
+        "tags": [
+          "generic",
+          "headers",
+          "misconfig",
+          "vuln"
+        ]
+      }
+    },
+    {
+      "type": "vulnerability",
+      "value": "laravel-env",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example/.env"
+      },
+      "relation": "has_vulnerability",
+      "severity": "high",
+      "data": {
+        "template": "laravel-env",
+        "name": "Laravel - Sensitive Information Disclosure",
+        "matched_at": "https://lab.northwind.example/.env",
+        "cvss": 8.3,
+        "references": [
+          "https://laravel.com/docs/master/configuration#environment-configuration",
+          "https://stackoverflow.com/questions/38331397/how-to-protect-env-file-in-laravel"
+        ],
+        "tags": [
+          "config",
+          "exposure",
+          "laravel",
+          "vuln"
+        ]
+      }
+    },
+    {
+      "type": "vulnerability",
+      "value": "waf-detect",
+      "parent": {
+        "type": "url",
+        "value": "https://lab.northwind.example/"
+      },
+      "relation": "has_vulnerability",
+      "severity": "info",
+      "data": {
+        "template": "waf-detect",
+        "name": "WAF Detection",
+        "matched_at": "https://lab.northwind.example/",
+        "matcher": [
+          "nginxgeneric"
+        ],
+        "references": [
+          "https://github.com/Ekultek/WhatWaf"
+        ],
+        "tags": [
+          "discovery",
+          "misc",
+          "tech",
+          "waf"
+        ]
+      }
+    }
+  ]
+}

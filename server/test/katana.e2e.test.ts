@@ -17,6 +17,7 @@ import { Orchestrator } from '../src/runner/orchestrator';
 import { LABEL_WORKSPACE } from '../src/runner/spec';
 import { addRule, setSettings } from '../src/scope/store';
 import { baseDoc, freshDb, tempDir } from './helpers';
+import { labLogSince, logMark } from './lab-log';
 
 const runtime = new DockerRuntime();
 const catalog = loadCatalog();
@@ -31,17 +32,6 @@ const HOME = `https://${LAB_HOST}/`;
 const at = (path: string) => `https://${LAB_HOST}${path}`;
 
 let wasUp = false;
-
-async function labContainerId(): Promise<string> {
-  const found = (await runtime.listByLabel(LABEL_LAB)).containers.find((c) => c.state === 'running');
-  if (!found) throw new Error('the lab is not running');
-  return found.id;
-}
-
-async function labLog(): Promise<string[]> {
-  const { stdout } = await runtime.logs(await labContainerId(), 4 * 1024 * 1024);
-  return stdout.text.split('\n').filter(Boolean);
-}
 
 beforeAll(async () => {
   if (!ready) return;
@@ -82,7 +72,7 @@ describe.skipIf(!ready)('katana against the local lab (real Docker)', () => {
     expect(orch.enqueue('katana', target)).toMatchObject({ ok: false, code: 'confirm-required' });
 
     // 3. run it
-    const logBefore = (await labLog()).length;
+    const since = logMark();
     const queued = orch.enqueue('katana', target, { confirmActive: true });
     expect(queued).toMatchObject({ ok: true, jobs: [{ tool: 'katana', mode: 'active', status: 'queued' }] });
     await orch.idle();
@@ -132,7 +122,7 @@ describe.skipIf(!ready)('katana against the local lab (real Docker)', () => {
     // and not followed, images and the known files (no -kf) were never fetched
     const all = db.$client.prepare('SELECT value FROM nodes').all() as { value: string }[];
     expect(all.filter((n) => n.value.includes(LAB_REDIRECT_HOST))).toEqual([]);
-    const recent = (await labLog()).slice(logBefore).filter((l) => l.startsWith('host='));
+    const recent = (await labLogSince(runtime, since)).filter((l) => l.startsWith('host='));
     expect(recent.filter((l) => l.includes(`host=${LAB_REDIRECT_HOST}`))).toEqual([]); // no tool ever goes there
     // Other e2e suites may probe the lab at the same time: keep katana's container only (its address is the one that
     // fetched the script, which only a crawler finds).

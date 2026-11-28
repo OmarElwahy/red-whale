@@ -65,6 +65,34 @@ def port_value(ip, port, protocol="tcp"):
     return f"{host}:{int(port)}/{protocol.lower()}"
 
 
+DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
+def canonical_url(value):
+    """(url, host) as the server stores the URL (WHATWG href: lowercase scheme and host, no default port, at least
+    "/" as the path, no fragment), or None for anything that isn't an http(s) URL with a host.
+
+    The host is returned without the port, for "is this the target's host?". Values that pass here can still break
+    the contract (a space, a '%' in the host): the caller checks with validate_output.check_value.
+    """
+    try:
+        parts = urlsplit(str(value).strip())
+        scheme = parts.scheme.lower()
+        host = (parts.hostname or "").rstrip(".")
+        port = parts.port  # raises ValueError for a port that isn't a number or is out of range
+    except ValueError:
+        return None
+    if scheme not in DEFAULT_PORTS or not host or parts.username is not None or parts.password is not None:
+        return None
+    if ":" in host:  # IPv6 literal: keep its brackets
+        netloc_host = f"[{host}]"
+    else:
+        netloc_host = host
+    netloc = netloc_host if port is None or port == DEFAULT_PORTS[scheme] else f"{netloc_host}:{port}"
+    query = f"?{parts.query}" if parts.query else ""
+    return f"{scheme}://{netloc}{parts.path or '/'}{query}", host
+
+
 def tech_value(name, version=None):
     """
     A `technology` value, always spelled one way, so two tools (or two runs) land on one node:
@@ -196,6 +224,9 @@ class ToolRun:
         self.target_type = None
         self.tool_version = tool_version
         self.command = ""
+        # The tool's stderr from run_command (None when nothing ran, e.g. --replay): for parsers whose tool reports
+        # an incomplete run only there (nuclei: a host skipped as unresponsive, the -mt limit).
+        self.stderr = None
         self.started_at = now()
         self.finished_at = None
         self.errors = []
@@ -214,6 +245,7 @@ class ToolRun:
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
                                   timeout=timeout, stdin=subprocess.DEVNULL)
+            self.stderr = proc.stderr
             if proc.stderr.strip():
                 log(proc.stderr.rstrip()[-4000:])
             if proc.returncode != 0:
@@ -223,6 +255,8 @@ class ToolRun:
             self.error(f"'{cmd[0]}' not found; is it installed and on PATH?")
         except subprocess.TimeoutExpired as e:
             self.error(f"timed out after {timeout}s; kept the output so far")
+            err = e.stderr or ""
+            self.stderr = err.decode("utf-8", "replace") if isinstance(err, bytes) else err
             out = e.stdout or ""
             return out.decode("utf-8", "replace") if isinstance(out, bytes) else out
         except OSError as e:

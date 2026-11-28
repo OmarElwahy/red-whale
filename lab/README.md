@@ -9,6 +9,7 @@ them**: it publishes no ports on your machine, so you can't open it in your brow
 | `http://lab.redwhale.test/` | `301` to `https://elsewhere.redwhale.test/` (another host: a tool must **not** follow it) |
 | `https://lab.redwhale.test/` | `200`, page title `Northwind Lab`, self-signed certificate |
 | `https://lab.redwhale.test/…` | a small site to crawl (below) |
+| `https://lab.redwhale.test/.git/config`, `/.env` | `200`, `text/plain`, **obviously fake** contents (a git config whose remote URL has a fake `user:password`; a Laravel-style `.env` with `APP_*`/`DB_*` lines): nuclei's `git-config` and `laravel-env` exposure templates fire on them. Linked from nowhere, so katana never finds them. Nothing in them is a real secret |
 | `http://lab.redwhale.test:8080/` | `200`, plain text `redwhale lab 8080` (a port only a port scanner like naabu finds; httpx probes 80/443) |
 | all three | `Server: nginx/1.30.6` and `X-Powered-By: PHP/8.3.12` (something for tech detection to find) |
 | `lab.redwhale.test:22` (TCP) | the banner `SSH-2.0-OpenSSH_9.6p1`, then the connection closes (for nmap's service detection) |
@@ -94,7 +95,7 @@ terminal where you run `pnpm dev`.
 ## Files
 
 - `Dockerfile`: nginx alpine pinned by digest; the certificate is generated at build time (no key in the repo).
-- `nginx.conf`: the three web servers above (with content types, and `/api/v1/orders`), logging `host=<Host>` for every request, and the port-22 banner
+- `nginx.conf`: the three web servers above (with content types, `/api/v1/orders`, and the fake `/.git/config` and `/.env`), logging `host=<Host>` for every request, and the port-22 banner
   (logged as `ssh <address> ...`).
 - `site/`: the pages (the crawl site above).
 

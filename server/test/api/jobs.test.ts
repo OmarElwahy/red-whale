@@ -66,6 +66,7 @@ describe('GET /api/tools and /api/runner/status', () => {
       { name: 'ports', label: 'port scanning', image: catalog.imageRef('ports'), imageStatus: 'missing', tools: ['naabu', 'nmap'] },
       { name: 'subdomain', label: 'subdomain enumeration', image: IMAGE, imageStatus: 'built', tools: ['subfinder', 'assetfinder', 'findomain', 'crtsh'] },
       { name: 'urls', label: 'URL discovery', image: catalog.imageRef('urls'), imageStatus: 'missing', tools: ['gau', 'katana'] },
+      { name: 'vuln', label: 'Vulnerability scanning', image: catalog.imageRef('vuln'), imageStatus: 'missing', tools: ['nuclei'] },
     ]);
     expect(tools.tools.find((t) => t.name === 'httpx')).toMatchObject({
       mode: 'active',
@@ -85,12 +86,20 @@ describe('GET /api/tools and /api/runner/status', () => {
       ['crtsh', 'passive', ['domain']],
       ['gau', 'passive', ['domain', 'subdomain']],
       ['katana', 'active', ['url']],
+      ['nuclei', 'active', ['url']],
     ]);
     expect(tools.tools.find((t) => t.name === 'crtsh')?.external).toEqual(['crt.sh']);
     expect(tools.tools.find((t) => t.name === 'katana')).toMatchObject({
       external: [],
       contacts:
         "fetches pages, scripts and other files linked from {target}, on that URL's host only (GET, two levels deep, at most 5 requests a second; redirects are not followed)",
+    });
+    expect(tools.tools.find((t) => t.name === 'nuclei')).toMatchObject({
+      group: 'vuln',
+      external: [],
+      timeoutSec: 3600,
+      contacts:
+        "about 11,000 HTTP requests to {target}'s host for known CVEs, misconfigurations and exposed files (at most 5 a second, up to 55 minutes); no intrusive, fuzzing or brute-force templates; no out-of-band callbacks; redirects are not followed",
     });
     expect(tools.tools.find((t) => t.name === 'gau')?.external).toEqual(['Wayback Machine', 'Common Crawl', 'AlienVault OTX']);
   });
@@ -107,6 +116,7 @@ describe('GET /api/tools and /api/runner/status', () => {
         { group: 'ports', image: catalog.imageRef('ports'), status: 'missing' },
         { group: 'subdomain', image: IMAGE, status: 'outdated' },
         { group: 'urls', image: catalog.imageRef('urls'), status: 'missing' },
+        { group: 'vuln', image: catalog.imageRef('vuln'), status: 'missing' },
       ],
       running: 0,
       queued: 0,
