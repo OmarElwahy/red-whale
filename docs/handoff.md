@@ -30,13 +30,11 @@ Dropped: `cytoscape-expand-collapse` (groups are server-side).
 
 ## Status
 
-Main has everything through **6C-7**. 6C-4, TW-1, TW-2, 6C-5, 6C-6 and 6C-7 were merged on 2026-11-28 (one `--no-ff`
+Main has everything through **6C-7**, plus **graphfix** (merged 2026-11-28 after my manual check; findings in
+`docs/phase-graphfix-progress.md`). 6C-4, TW-1, TW-2, 6C-5, 6C-6 and 6C-7 were merged on 2026-11-28 (one `--no-ff`
 merge each, in that order) after Claude Code ran their manual checklists on `phase-6c7`'s tip (results in
 `docs/phase-6c7-progress.md`). Still mine: the checklists' **real-target steps** (see Open items). The phase branches
 are kept on GitHub. 6D starts from `main`.
-
-On top of main, not merged yet: **`phase-graphfix`** (two Tree-mode graph fixes, I checked them by hand on 2026-11-28
-and they work; findings in `docs/phase-graphfix-progress.md`). Merge it before 6D.
 
 | Phase | What | Status |
 |---|---|---|
@@ -57,7 +55,7 @@ and they work; findings in `docs/phase-graphfix-progress.md`). Merge it before 6
 | 6C-5 | `urls` group (URL discovery): gau (passive, domain/subdomain: Wayback, Common Crawl, OTX, one run per provider so each URL's source is known, target host only, `serves`, ≤ 5,000, a failed provider → partial) and katana (active, url: same host only, depth 2, links + JavaScript, GET only, no redirects, no `-kf`, `has_url` from the page it was found on); one static-extension list; lab crawl site; no contract change | ✅ done (on main) |
 | 6C-6 | `vuln` group (vulnerability scanning): nuclei (active, url) with pinned templates v10.5.1 baked in, HTTP only, tags cve/misconfig/exposure/tech/takeover minus intrusive/dos/fuzz/bruteforce/default-login/osint/ssrf/oast/proxy (~6,500 templates, ~11,000 requests at 5/s, `-mt 55m` in a 3600 s job), `-ni -dr -duc`, no outside contact; `tech` → technology, the rest → vulnerability (CVE or template ID) under the matched URL; extracted values masked; lab fake `/.git/config` + `/.env`; no contract change; **every tool image must be rebuilt** (shared lib changed) | ✅ done (on main) |
 | 6C-7 | wafw00f in `http` (active, url; pip `--require-hashes` venv; 2–7 GETs with attack-looking test strings, no redirects; named WAF → technology, generic → `generic-waf`, none → success) and new group `tls` with testssl.sh 3.2.5 (active, https url or tcp port; `-p -s -S -U`, `--ip one`, `--nodns min`, no `--phone-out`/curl; ip → port → certificate, port serves url, every LOW+ result → vulnerability; no TLS/closed/unresolvable → failed with the reason); lab fake WAF on `/waf/`; no contract change; **rebuild `http` and `tls`** | ✅ done (on main) |
-| graphfix | Tree mode: a dropped node stays where it was dropped through tool runs / expand / collapse (its subtree laid out under it; Re-layout clears drops); grabbing a node while another glides now carries the grabbed node's subtree. Force never had the snap-back. No API or schema change | ✅ checked, **not merged** |
+| graphfix | Tree mode: a dropped node stays where it was dropped through tool runs / expand / collapse (its subtree laid out under it; Re-layout clears drops); grabbing a node while another glides now carries the grabbed node's subtree. Force never had the snap-back. No API or schema change | ✅ done (on main) |
 
 ## How I work with Claude Code
 
@@ -153,7 +151,7 @@ and they work; findings in `docs/phase-graphfix-progress.md`). Merge it before 6
 - **Real-target steps** of the merged phases' checklists (Claude Code ran everything else on 2026-11-28): TW-1 7–14
   (takeover check on one of my subdomains), 6C-5 13–15 (gau on my domain), 6C-6 11 (nuclei), 6C-7 15 (wafw00f +
   testssl). Only on a target I'm authorized to test (active tools: only if the program allows active scans).
-- **Before 6D:** merge `phase-graphfix` into main, stop `pnpm dev`, `git switch main`. Images and the lab are current (`pnpm tools:build` and
+- **Before 6D:** stop `pnpm dev`, `git switch main`. Images and the lab are current (`pnpm tools:build` and
   `pnpm lab:up` print "up to date").
 - **Intrusive-tools question (open):** nuclei's `cve` set still holds state-changing checks not tagged `intrusive` (e.g. CVE-2022-1388's `POST /mgmt/tm/util/bash`; `rce`, `file-upload` tags).
 - **Takeover, later:** HTTP fingerprints of cloud services ("NoSuchBucket", "No such app"), TLS certificate expiry
