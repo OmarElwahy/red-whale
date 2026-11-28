@@ -13,7 +13,7 @@ tables.
 |---|---|---|
 | 1 | Report builder + `GET /api/nodes/:id/report` + tests | done |
 | 2 | Dialog + menu/panel buttons + downloads + web-dom tests | done |
-| 3 | Docs (§6/§8/§13, handoff) + manual checklist | next |
+| 3 | Docs (§6/§8/§13, handoff) + manual checklist | done |
 
 ## Decisions (user, 2026-11-28: all recommended answers)
 
@@ -63,7 +63,37 @@ Step 2 details:
   the draft and preview, an edit then Escape shows the prompt. `vite build` bundles `react-dom/server` fine (the
   existing >500 kB chunk warning is unchanged in kind).
 
+Step 3: architecture §6 (route row), §8 (Bug report bullet), §13 (one decision row); handoff Status row and
+Key decisions.
+
+## Manual checklist
+
+On the showcase mock (`pnpm mock`, then `pnpm dev`, open http://127.0.0.1:5173). Claude Code ran 1, 2 and 5 on a
+scratch copy; the rest is yours.
+
+1. Right-click the leak `Collection1-2019` ▸ **Create report…** opens "Report: Collection1-2019" with the draft on the
+   left and the rendered preview on the right.
+2. Right-click a URL, a subdomain and a group: no "Create report…".
+3. Click the secret `AWS access key in /static/app.js`: the side panel has **Create report** under Details; it opens
+   the dialog. The preview shows `Preview (masked): AKIA****WXYZ` (escaped as `AKIA\*\*\*\*WXYZ` in the Markdown)
+   and the notes under Analyst notes.
+4. The verified FortiOS CVE: Severity line, Confidence `verified` in the Timeline, the notes' list rendered in
+   the preview.
+5. Type in the editor: the preview follows. Press Esc: "Your edits aren't saved anywhere. Close anyway?" ▸
+   **Keep editing** keeps the text; ✕ ▸ **Close anyway** closes.
+6. Edit, then **Reset to fresh draft** ▸ it asks; **Reset anyway** brings the server's draft back.
+7. **Download .md**: a file `redwhale-report-<label>-<UTC>Z.md` with your edited text.
+8. **Download .html**: open it with the network off (or DevTools ▸ Network): it renders, loads nothing, the tab title
+   is the report's `#` heading. Ctrl+P ▸ Save as PDF looks clean (no dark background, code blocks wrap).
+9. **Copy**, paste into a text editor: the Markdown.
+10. Hostile text: in the editor add `<script>alert(1)</script>`, `![x](http://example.com/x.png)` and
+    `[x](javascript:alert(1))`. The preview shows the script as text, `[image: x]`, and `x` as plain text (not a
+    link); the same in the downloaded .html, and no alert.
+11. With a real nuclei finding (a lab run, 6C-6): Steps to reproduce lists each run's command and `Matched at`, and
+    Evidence names the job IDs (their raw output opens from the Jobs tab).
+12. While the dialog is open, run a tool or ingest a file: the editor text doesn't change.
+
 ## Next action
 
-Step 3: docs. Architecture §6 (route row), §8 (menu item, panel button, dialog, HTML export), §13 (decisions of
-2026-11-28 above), `docs/handoff.md` (Status, decisions), and the manual checklist below in this file.
+The user runs the manual checklist above and merges `phase-bugreport` when satisfied. Nothing else is planned on
+this branch.
