@@ -6,3 +6,9 @@ packages:
 allowBuilds:
   better-sqlite3: true
   esbuild: true
+  # dockerode's dependencies. Not needed: the server talks to Docker through the local pipe/socket, never over SSH.
+  # ssh2's optional native crypto and cpu-features (a node-gyp C++ build) only speed up Docker-over-SSH, and
+  # protobufjs's postinstall is a version check. Denied explicitly, so pnpm doesn't stop on ERR_PNPM_IGNORED_BUILDS.
+  cpu-features: false
+  protobufjs: false
+  ssh2: false
