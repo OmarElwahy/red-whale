@@ -4,7 +4,7 @@ Paste this file into a new chat to continue where we left off. It holds the cont
 other docs. Source of truth for design details is still `docs/architecture.md` (incl. the decisions log, §13),
 `docs/contract.md` and `CLAUDE.md` — attach `docs/architecture.md` too if the question is technical.
 
-_Last updated: 2026-11-24_
+_Last updated: 2026-11-28_
 
 ## Who / what
 
@@ -30,10 +30,10 @@ Dropped: `cytoscape-expand-collapse` (groups are server-side).
 
 ## Status
 
-Main has everything through 6C-3. 6C-4 is on branch `phase-6c4`, TW-1 on `phase-tw1` (from `phase-6c4`'s tip) and
-TW-2 on `phase-tw2` (from `phase-tw1`'s tip) and 6C-5 on `phase-6c5` (from `phase-tw2`'s tip); all on GitHub, **not
-merged** until my manual checks (checklists in `docs/phase-6c4-progress.md`, `docs/phase-tw1-progress.md`,
-`docs/phase-tw2-progress.md` and `docs/phase-6c5-progress.md`).
+Main has everything through **6C-7**. 6C-4, TW-1, TW-2, 6C-5, 6C-6 and 6C-7 were merged on 2026-11-28 (one `--no-ff`
+merge each, in that order) after Claude Code ran their manual checklists on `phase-6c7`'s tip (results in
+`docs/phase-6c7-progress.md`). Still mine: the checklists' **real-target steps** (see Open items). The phase branches
+are kept on GitHub. 6D starts from `main`.
 
 | Phase | What | Status |
 |---|---|---|
@@ -48,13 +48,12 @@ merged** until my manual checks (checklists in `docs/phase-6c4-progress.md`, `do
 | Edit | Graph editing: add nodes by hand (tool `manual`), permanent delete (node / subtree / group) with a "Deleted" log | ✅ done (on main) |
 | 6C-2 | First active tool: tools network `redwhale-tools`, local lab `lab.redwhale.test` (`pnpm lab:up/down/status`), 428 + confirmation dialog for active runs, `http` group with httpx (never follows redirects); `{targetType}`, `contacts`, `tech_value` | ✅ done (on main) |
 | 6C-3 | `dns` group with dnsx (passive: A/AAAA/CNAME through the system resolver, never brute-force) and `ports` group with naabu (active, IPs only: connect scan of the top 100 TCP ports, no capability); lab also on 8080; tools that resolve names refuse to run without a system resolver | ✅ done (on main) |
-| 6C-4 | nmap in the `ports` group (active, an ip or a port: connect scan + `-sV`, no other scripts/OS/UDP; Debian-pinned package); lab answers on TCP 22 with a fake SSH banner; typed command builders `command(target, target_type)` | ✅ done · manual check pending (checklist in `docs/phase-6c4-progress.md`) |
-| TW-1 | Takeover watch, first half: relation `cname_to` (+ migration 0006, rows kept); bundled PSL + RDAP bootstrap (`pnpm tools:refresh-data`), `tools/lib/psl.py` = tldts on shared vectors; `takeover-check` in `dns` (passive: CNAME chain via dnsx, RDAP / WHOIS registration, `takeover-unregistered-domain` critical, `takeover-dangling-cname` medium; transcript replay) | ✅ done · manual check pending (checklist in `docs/phase-tw1-progress.md`) |
-
-| TW-2 | Takeover watch, second half: a "Takeover watch" tab (one row per subdomain, built on read from its latest takeover-check: status, chain end, weakest-link registration, days left, last checked), automatic passive checks (24 h, capped queue, manual first, setting in the Scope panel), `auto` badge in Jobs; migration 0007 (rows kept) | ✅ done (branch `phase-tw2`, awaiting my check) |
-| 6C-5 | `urls` group (URL discovery): gau (passive, domain/subdomain: Wayback, Common Crawl, OTX, one run per provider so each URL's source is known, target host only, `serves`, ≤ 5,000, a failed provider → partial) and katana (active, url: same host only, depth 2, links + JavaScript, GET only, no redirects, no `-kf`, `has_url` from the page it was found on); one static-extension list; lab crawl site; no contract change | ✅ done (branch `phase-6c5`, awaiting my check) |
-| 6C-6 | `vuln` group (vulnerability scanning): nuclei (active, url) with pinned templates v10.5.1 baked in, HTTP only, tags cve/misconfig/exposure/tech/takeover minus intrusive/dos/fuzz/bruteforce/default-login/osint/ssrf/oast/proxy (~6,500 templates, ~11,000 requests at 5/s, `-mt 55m` in a 3600 s job), `-ni -dr -duc`, no outside contact; `tech` → technology, the rest → vulnerability (CVE or template ID) under the matched URL; extracted values masked; lab fake `/.git/config` + `/.env`; no contract change; **every tool image must be rebuilt** (shared lib changed) | ✅ done (branch `phase-6c6`, awaiting my check) |
-| 6C-7 | wafw00f in `http` (active, url; pip `--require-hashes` venv; 2–7 GETs with attack-looking test strings, no redirects; named WAF → technology, generic → `generic-waf`, none → success) and new group `tls` with testssl.sh 3.2.5 (active, https url or tcp port; `-p -s -S -U`, `--ip one`, `--nodns min`, no `--phone-out`/curl; ip → port → certificate, port serves url, every LOW+ result → vulnerability; no TLS/closed/unresolvable → failed with the reason); lab fake WAF on `/waf/`; no contract change; **rebuild `http` and `tls`** | ✅ done (branch `phase-6c7`, awaiting my check) |
+| 6C-4 | nmap in the `ports` group (active, an ip or a port: connect scan + `-sV`, no other scripts/OS/UDP; Debian-pinned package); lab answers on TCP 22 with a fake SSH banner; typed command builders `command(target, target_type)` | ✅ done (on main) |
+| TW-1 | Takeover watch, first half: relation `cname_to` (+ migration 0006, rows kept); bundled PSL + RDAP bootstrap (`pnpm tools:refresh-data`), `tools/lib/psl.py` = tldts on shared vectors; `takeover-check` in `dns` (passive: CNAME chain via dnsx, RDAP / WHOIS registration, `takeover-unregistered-domain` critical, `takeover-dangling-cname` medium; transcript replay) | ✅ done (on main) |
+| TW-2 | Takeover watch, second half: a "Takeover watch" tab (one row per subdomain, built on read from its latest takeover-check: status, chain end, weakest-link registration, days left, last checked), automatic passive checks (24 h, capped queue, manual first, setting in the Scope panel), `auto` badge in Jobs; migration 0007 (rows kept) | ✅ done (on main) |
+| 6C-5 | `urls` group (URL discovery): gau (passive, domain/subdomain: Wayback, Common Crawl, OTX, one run per provider so each URL's source is known, target host only, `serves`, ≤ 5,000, a failed provider → partial) and katana (active, url: same host only, depth 2, links + JavaScript, GET only, no redirects, no `-kf`, `has_url` from the page it was found on); one static-extension list; lab crawl site; no contract change | ✅ done (on main) |
+| 6C-6 | `vuln` group (vulnerability scanning): nuclei (active, url) with pinned templates v10.5.1 baked in, HTTP only, tags cve/misconfig/exposure/tech/takeover minus intrusive/dos/fuzz/bruteforce/default-login/osint/ssrf/oast/proxy (~6,500 templates, ~11,000 requests at 5/s, `-mt 55m` in a 3600 s job), `-ni -dr -duc`, no outside contact; `tech` → technology, the rest → vulnerability (CVE or template ID) under the matched URL; extracted values masked; lab fake `/.git/config` + `/.env`; no contract change; **every tool image must be rebuilt** (shared lib changed) | ✅ done (on main) |
+| 6C-7 | wafw00f in `http` (active, url; pip `--require-hashes` venv; 2–7 GETs with attack-looking test strings, no redirects; named WAF → technology, generic → `generic-waf`, none → success) and new group `tls` with testssl.sh 3.2.5 (active, https url or tcp port; `-p -s -S -U`, `--ip one`, `--nodns min`, no `--phone-out`/curl; ip → port → certificate, port serves url, every LOW+ result → vulnerability; no TLS/closed/unresolvable → failed with the reason); lab fake WAF on `/waf/`; no contract change; **rebuild `http` and `tls`** | ✅ done (on main) |
 
 ## How I work with Claude Code
 
@@ -63,7 +62,9 @@ merged** until my manual checks (checklists in `docs/phase-6c4-progress.md`, `do
   ("<phase> step N: …") and a push to GitHub.
 - A `docs/<phase>-progress.md` file (steps, decisions, exact next action) is committed with each step, so a session
   that gets cut off can continue from it without asking.
-- **Merge to main only after my manual check.** I do the merge.
+- **Merge to main only after the manual check.** Normally I merge; Claude Code merges only when I tell it to, and then
+  in a separate checkout (my `pnpm dev` reloads on file changes, so switching my folder to an old `main` would run old
+  code on my real database).
 - Until real engagement data exists, schema changes get **no backfill**: the server refuses an old-schema DB; delete
   `data/redwhale.db` and run `pnpm mock`.
 
@@ -131,14 +132,21 @@ merged** until my manual checks (checklists in `docs/phase-6c4-progress.md`, `do
   list (images, fonts, media) for both; CSS/JS/PDF kept.
 - **Vulnerability scanning (6C-6):** nuclei v3.11.1 + templates v10.5.1 (sha256-pinned, ≥ 2 weeks old, read-only in the image with a read-only config folder; never updates or downloads). HTTP templates only; `ssrf,oast,proxy` excluded too (templates that make the target fetch a hard-coded outside host, which `-ni` misses). 3600 s job, nuclei's own `-mt 55m`; a skipped host or the time limit → `partial` (read from stderr, so no `-silent`). One finding per value + URL (`data.matcher` a list); extracted values masked, raw.txt unredacted (evidence, local). Path-traversal matches hang off the target (the server would resolve `..` into a misleading URL). `--template-ids` is test-only and can only narrow. Fast e2e every run; full scan with `REDWHALE_E2E_SLOW=1`.
 - **WAF and TLS (6C-7):** wafw00f 2.4.2 and its dependencies pinned by version + wheel sha256 (`--require-hashes`, wheels only). wafw00f requests only the URL as given (plus query strings); first signature wins (never `-a`). testssl.sh 3.2.5 (source archive sha256; its own OpenSSL); one address (`--ip one`, named in the data), DNS only A/AAAA via the system resolver. The certificate hangs off the **port** (contract: no url → certificate); port targets drop `cert_trust` (no hostname). The lab plays a WAF on `/waf/` only (Shadow Daemon's signature, lab-named page). Fast e2e every run; full testssl with `REDWHALE_E2E_SLOW=1`.
+- **Found in the manual checks (2026-11-28, fixed on `phase-6c7` before the merge):** `pnpm install` on pnpm 12 stopped on
+  dockerode's optional build scripts (ssh2, cpu-features, protobufjs): denied in `pnpm-workspace.yaml` (`allowBuilds: …:
+  false`; Docker is reached through the local pipe, never SSH). `pnpm mock` refused a workspace with lab port scans: the
+  wipe guard now also treats **the lab's own address** (172.29.250.10, its ports and URLs; follows `REDWHALE_NET_SUBNET`)
+  as disposable, like `.example`/`.test`; any other IP still needs `--force`.
+- **Git history:** one old commit (6C-1, removed in the next commit) has the real fixture target's domain on 2 lines of
+  a progress doc. Decided: leave it (no hosts or captures attached); no history rewrite.
 
 ## Open items
 
-- **Manual check** for 6C-4 (`docs/phase-6c4-progress.md`), then merge `phase-6c4`; then TW-1's
-  (`docs/phase-tw1-progress.md`), then merge `phase-tw1`; then TW-2's (`docs/phase-tw2-progress.md`), then merge
-  `phase-tw2`; then 6C-5's (`docs/phase-6c5-progress.md`), then merge `phase-6c5`; then 6C-6's
-  (`docs/phase-6c6-progress.md`), then merge `phase-6c6`; then 6C-7's (`docs/phase-6c7-progress.md`), then merge
-  `phase-6c7`. After merging: `pnpm tools:build` (all groups; 6C-6 changed the shared lib, 6C-7 adds `tls`) and `pnpm lab:up` (`/waf/`).
+- **Real-target steps** of the merged phases' checklists (Claude Code ran everything else on 2026-11-28): TW-1 7–14
+  (takeover check on one of my subdomains), 6C-5 13–15 (gau on my domain), 6C-6 11 (nuclei), 6C-7 15 (wafw00f +
+  testssl). Only on a target I'm authorized to test (active tools: only if the program allows active scans).
+- **Before 6D:** stop `pnpm dev`, `git switch main`. Images and the lab are current (`pnpm tools:build` and
+  `pnpm lab:up` print "up to date").
 - **Intrusive-tools question (open):** nuclei's `cve` set still holds state-changing checks not tagged `intrusive` (e.g. CVE-2022-1388's `POST /mgmt/tm/util/bash`; `rce`, `file-upload` tags).
 - **Takeover, later:** HTTP fingerprints of cloud services ("NoSuchBucket", "No such app"), TLS certificate expiry
   (testssl's certificate nodes now carry `not_after`; certificate SANs as subdomain findings are also later).
