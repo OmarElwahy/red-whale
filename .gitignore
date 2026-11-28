@@ -1,6 +1,8 @@
 node_modules/
 dist/
 data/
+# ...but the dns tool group's bundled data (PSL, RDAP bootstrap) is committed
+!tools/dns/data/
 output/
 *.db
 *.db-journal

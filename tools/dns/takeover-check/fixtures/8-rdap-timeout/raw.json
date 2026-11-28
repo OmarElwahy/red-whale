@@ -1,0 +1,160 @@
+{
+ "transcript": 1,
+ "tool": "takeover-check",
+ "target": "cdn.northwind.example",
+ "target_type": "subdomain",
+ "data": {
+  "psl_sha256": "017501d3fa7911c60ac7e0f68df4122b07216c585c15dc30e0f0c74b8d13a2b9",
+  "psl_version": "2026-11-21_04-33-45_UTC",
+  "rdap_bootstrap_sha256": "85c09e5c0ddeb09fe657aefc122d48ddb66ca20dc30ea7f6035d4dee849bd49d",
+  "rdap_bootstrap_publication": "2026-11-20T23:00:03Z"
+ },
+ "bootstrap": {
+  "northwind.example": {
+   "entry": "example",
+   "servers": [
+    "https://rdap.verisign.com/com/v1/"
+   ]
+  },
+  "partner-assets.example": {
+   "entry": "example",
+   "servers": [
+    "https://192.0.2.1/"
+   ]
+  }
+ },
+ "exchanges": [
+  {
+   "kind": "dns",
+   "query": "cname",
+   "name": "cdn.northwind.example",
+   "argv": [
+    "/usr/local/bin/dnsx",
+    "-l",
+    "cdn.northwind.example",
+    "-cname",
+    "-j",
+    "-silent",
+    "-nc",
+    "-duc",
+    "-or",
+    "-retry",
+    "2",
+    "-timeout",
+    "5s",
+    "-t",
+    "1",
+    "-rl",
+    "10",
+    "-r",
+    "127.0.0.11:53"
+   ],
+   "at": "2026-11-22T22:50:06Z",
+   "exit": 0,
+   "stdout": "{\"host\":\"cdn.northwind.example\",\"ttl\":280,\"resolver\":[\"127.0.0.11:53\"],\"cname\":[\"edge.partner-assets.example\"],\"status_code\":\"NOERROR\",\"timestamp\":\"2026-11-22T22:50:06.000000000Z\",\"query-time\":\"2ms\"}\n",
+   "stderr": "",
+   "error": null
+  },
+  {
+   "kind": "dns",
+   "query": "cname",
+   "name": "edge.partner-assets.example",
+   "argv": [
+    "/usr/local/bin/dnsx",
+    "-l",
+    "edge.partner-assets.example",
+    "-cname",
+    "-j",
+    "-silent",
+    "-nc",
+    "-duc",
+    "-or",
+    "-retry",
+    "2",
+    "-timeout",
+    "5s",
+    "-t",
+    "1",
+    "-rl",
+    "10",
+    "-r",
+    "127.0.0.11:53"
+   ],
+   "at": "2026-11-22T22:50:07Z",
+   "exit": 0,
+   "stdout": "",
+   "stderr": "",
+   "error": null
+  },
+  {
+   "kind": "dns",
+   "query": "rcode",
+   "name": "edge.partner-assets.example",
+   "argv": [
+    "/usr/local/bin/dnsx",
+    "-l",
+    "edge.partner-assets.example",
+    "-rcode",
+    "noerror,nxdomain,servfail,refused",
+    "-j",
+    "-silent",
+    "-nc",
+    "-duc",
+    "-or",
+    "-retry",
+    "2",
+    "-timeout",
+    "5s",
+    "-t",
+    "1",
+    "-rl",
+    "10",
+    "-r",
+    "127.0.0.11:53"
+   ],
+   "at": "2026-11-22T22:50:08Z",
+   "exit": 0,
+   "stdout": "{\"host\":\"edge.partner-assets.example\",\"ttl\":60,\"resolver\":[\"127.0.0.11:53\"],\"a\":[\"198.18.0.17\",\"198.18.0.18\",\"198.18.0.19\",\"198.18.0.20\"],\"status_code\":\"NOERROR\",\"timestamp\":\"2026-11-22T22:43:44.499452308Z\",\"query-time\":\"46ms\"}\n",
+   "stderr": "",
+   "error": null
+  },
+  {
+   "kind": "rdap",
+   "domain": "northwind.example",
+   "url": "https://rdap.verisign.com/com/v1/domain/northwind.example",
+   "attempts": [
+    {
+     "at": "2026-11-22T22:41:40Z",
+     "status": 200,
+     "error": null
+    }
+   ],
+   "status": 200,
+   "body": "{\"objectClassName\":\"domain\",\"handle\":\"1000001_DOMAIN_EXAMPLE-VRSN\",\"ldhName\":\"NORTHWIND.EXAMPLE\",\"links\":[{\"value\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/northwind.example\",\"rel\":\"self\",\"href\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/northwind.example\",\"type\":\"application\\/rdap+json\"},{\"value\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/northwind.example\",\"rel\":\"related\",\"href\":\"https:\\/\\/rdap.northwind.example\\/rdap\\/domain\\/NORTHWIND.EXAMPLE\",\"type\":\"application\\/rdap+json\"}],\"status\":[\"client transfer prohibited\"],\"entities\":[{\"objectClassName\":\"entity\",\"handle\":\"9999\",\"roles\":[\"registrar\"],\"links\":[{\"href\":\"https:\\/\\/registrar.example\",\"type\":\"text\\/html\",\"value\":\"https:\\/\\/rdap.northwind.example\\/rdap\\/\",\"rel\":\"about\"}],\"publicIds\":[{\"type\":\"IANA Registrar ID\",\"identifier\":\"9999\"}],\"vcardArray\":[\"vcard\",[[\"version\",{},\"text\",\"4.0\"],[\"fn\",{},\"text\",\"Example Registrar, Inc.\"]]],\"entities\":[{\"objectClassName\":\"entity\",\"roles\":[\"abuse\"],\"vcardArray\":[\"vcard\",[[\"version\",{},\"text\",\"4.0\"],[\"fn\",{},\"text\",\"\"],[\"tel\",{\"type\":\"voice\"},\"uri\",\"tel:+1.5550100\"],[\"email\",{},\"text\",\"abuse@registrar.example\"]]]}]}],\"events\":[{\"eventAction\":\"registration\",\"eventDate\":\"2004-03-14T09:30:00Z\"},{\"eventAction\":\"expiration\",\"eventDate\":\"2027-03-14T09:30:00Z\"},{\"eventAction\":\"last changed\",\"eventDate\":\"2026-05-01T00:00:00Z\"},{\"eventAction\":\"last update of RDAP database\",\"eventDate\":\"2026-11-22T22:41:28Z\"}],\"secureDNS\":{\"delegationSigned\":false},\"nameservers\":[{\"objectClassName\":\"nameserver\",\"ldhName\":\"NS1.NORTHWIND.EXAMPLE\"},{\"objectClassName\":\"nameserver\",\"ldhName\":\"NS2.NORTHWIND.EXAMPLE\"}],\"rdapConformance\":[\"rdap_level_0\",\"icann_rdap_technical_implementation_guide_1\",\"icann_rdap_response_profile_1\"],\"notices\":[{\"title\":\"Terms of Service\",\"description\":[\"Service subject to Terms of Use.\"],\"links\":[{\"href\":\"https:\\/\\/www.verisign.com\\/domain-names\\/registration-data-access-protocol\\/terms-service\\/index.xhtml\",\"type\":\"text\\/html\",\"value\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/northwind.example\",\"rel\":\"terms-of-service\"}]},{\"title\":\"Status Codes\",\"description\":[\"For more information on domain status codes, please visit https:\\/\\/icann.org\\/epp\"],\"links\":[{\"href\":\"https:\\/\\/icann.org\\/epp\",\"type\":\"text\\/html\",\"value\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/northwind.example\",\"rel\":\"glossary\"}]},{\"title\":\"RDDS Inaccuracy Complaint Form\",\"description\":[\"URL of the ICANN RDDS Inaccuracy Complaint Form: https:\\/\\/icann.org\\/wicf\"],\"links\":[{\"href\":\"https:\\/\\/icann.org\\/wicf\",\"type\":\"text\\/html\",\"value\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/northwind.example\",\"rel\":\"help\"}]}]}"
+  },
+  {
+   "kind": "rdap",
+   "domain": "partner-assets.example",
+   "url": "https://192.0.2.1/domain/partner-assets.example",
+   "attempts": [
+    {
+     "at": "2026-11-22T22:43:45Z",
+     "status": null,
+     "error": "URLError: timed out"
+    },
+    {
+     "at": "2026-11-22T22:43:57Z",
+     "status": null,
+     "error": "URLError: timed out"
+    },
+    {
+     "at": "2026-11-22T22:44:12Z",
+     "status": null,
+     "error": "URLError: timed out"
+    }
+   ],
+   "status": null,
+   "body": null
+  }
+ ]
+}

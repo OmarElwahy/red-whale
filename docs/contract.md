@@ -126,6 +126,12 @@ preview at most, e.g. `"preview": "AKIA****WXYZ"`.
 | `has_email` | `domain` / `subdomain` / `url` → `email` |
 | `has_secret` | `url` → `secret` |
 | `found_in_leak` | `email` → `leak` |
+| `cname_to` | `subdomain` → `subdomain` / `domain` (the CNAME's target name) |
+
+**`cname_to`:** the target name's node type follows the Public Suffix List (ICANN section): the registrable name
+itself (`partner.com`) is a `domain`; anything below it (`edge.partner.com`) is a `subdomain`, which you also report
+under its `domain` with `has_subdomain`. A name outside the scan's target is still a finding: the server accepts it,
+and scope decides what may run against it.
 
 If your tool finds something that doesn't fit this table, **ask the team leader**. Don't invent new types or relations.
 
@@ -146,3 +152,11 @@ See `contract/examples/` for complete files:
 Only the team leader changes this file. Every change updates, together: this doc,
 `shared/` Zod schemas, `tools/validate_output.py`, and `contract/examples/`. Bump `contract_version`
 for breaking changes.
+
+---
+
+## 7. Changelog
+
+| Date | Change | Version |
+|---|---|---|
+| 2026-11-24 | New relation `cname_to`: `subdomain` → `subdomain` / `domain` (TW-1, `takeover-check`). Additive: every older file stays valid | v1 |

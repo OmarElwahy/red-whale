@@ -1,0 +1,147 @@
+{
+ "transcript": 1,
+ "tool": "takeover-check",
+ "target": "status.northwind.example",
+ "target_type": "subdomain",
+ "data": {
+  "psl_sha256": "017501d3fa7911c60ac7e0f68df4122b07216c585c15dc30e0f0c74b8d13a2b9",
+  "psl_version": "2026-11-21_04-33-45_UTC",
+  "rdap_bootstrap_sha256": "85c09e5c0ddeb09fe657aefc122d48ddb66ca20dc30ea7f6035d4dee849bd49d",
+  "rdap_bootstrap_publication": "2026-11-20T23:00:03Z"
+ },
+ "bootstrap": {
+  "northwind.example": {
+   "entry": "example",
+   "servers": [
+    "https://rdap.verisign.com/com/v1/"
+   ]
+  },
+  "statuspage.io": {
+   "entry": null,
+   "servers": []
+  }
+ },
+ "exchanges": [
+  {
+   "kind": "dns",
+   "query": "cname",
+   "name": "status.northwind.example",
+   "argv": [
+    "/usr/local/bin/dnsx",
+    "-l",
+    "status.northwind.example",
+    "-cname",
+    "-j",
+    "-silent",
+    "-nc",
+    "-duc",
+    "-or",
+    "-retry",
+    "2",
+    "-timeout",
+    "5s",
+    "-t",
+    "1",
+    "-rl",
+    "10",
+    "-r",
+    "127.0.0.11:53"
+   ],
+   "at": "2026-11-22T22:50:05Z",
+   "exit": 0,
+   "stdout": "{\"host\":\"status.northwind.example\",\"ttl\":280,\"resolver\":[\"127.0.0.11:53\"],\"cname\":[\"redwhale-x7q2.statuspage.io\"],\"status_code\":\"NOERROR\",\"timestamp\":\"2026-11-22T22:50:05.000000000Z\",\"query-time\":\"2ms\"}\n",
+   "stderr": "",
+   "error": null
+  },
+  {
+   "kind": "dns",
+   "query": "cname",
+   "name": "redwhale-x7q2.statuspage.io",
+   "argv": [
+    "/usr/local/bin/dnsx",
+    "-l",
+    "redwhale-x7q2.statuspage.io",
+    "-cname",
+    "-j",
+    "-silent",
+    "-nc",
+    "-duc",
+    "-or",
+    "-retry",
+    "2",
+    "-timeout",
+    "5s",
+    "-t",
+    "1",
+    "-rl",
+    "10",
+    "-r",
+    "127.0.0.11:53"
+   ],
+   "at": "2026-11-22T22:43:44Z",
+   "exit": 0,
+   "stdout": "",
+   "stderr": "",
+   "error": null
+  },
+  {
+   "kind": "dns",
+   "query": "rcode",
+   "name": "redwhale-x7q2.statuspage.io",
+   "argv": [
+    "/usr/local/bin/dnsx",
+    "-l",
+    "redwhale-x7q2.statuspage.io",
+    "-rcode",
+    "noerror,nxdomain,servfail,refused",
+    "-j",
+    "-silent",
+    "-nc",
+    "-duc",
+    "-or",
+    "-retry",
+    "2",
+    "-timeout",
+    "5s",
+    "-t",
+    "1",
+    "-rl",
+    "10",
+    "-r",
+    "127.0.0.11:53"
+   ],
+   "at": "2026-11-22T22:43:44Z",
+   "exit": 0,
+   "stdout": "{\"host\":\"redwhale-x7q2.statuspage.io\",\"ttl\":60,\"resolver\":[\"127.0.0.11:53\"],\"a\":[\"198.18.0.17\",\"198.18.0.18\",\"198.18.0.19\",\"198.18.0.20\"],\"status_code\":\"NOERROR\",\"timestamp\":\"2026-11-22T22:43:44.499452308Z\",\"query-time\":\"46ms\"}\n",
+   "stderr": "",
+   "error": null
+  },
+  {
+   "kind": "rdap",
+   "domain": "northwind.example",
+   "url": "https://rdap.verisign.com/com/v1/domain/northwind.example",
+   "attempts": [
+    {
+     "at": "2026-11-22T22:41:40Z",
+     "status": 200,
+     "error": null
+    }
+   ],
+   "status": 200,
+   "body": "{\"objectClassName\":\"domain\",\"handle\":\"1000001_DOMAIN_EXAMPLE-VRSN\",\"ldhName\":\"NORTHWIND.EXAMPLE\",\"links\":[{\"value\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/northwind.example\",\"rel\":\"self\",\"href\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/northwind.example\",\"type\":\"application\\/rdap+json\"},{\"value\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/northwind.example\",\"rel\":\"related\",\"href\":\"https:\\/\\/rdap.northwind.example\\/rdap\\/domain\\/NORTHWIND.EXAMPLE\",\"type\":\"application\\/rdap+json\"}],\"status\":[\"client transfer prohibited\"],\"entities\":[{\"objectClassName\":\"entity\",\"handle\":\"9999\",\"roles\":[\"registrar\"],\"links\":[{\"href\":\"https:\\/\\/registrar.example\",\"type\":\"text\\/html\",\"value\":\"https:\\/\\/rdap.northwind.example\\/rdap\\/\",\"rel\":\"about\"}],\"publicIds\":[{\"type\":\"IANA Registrar ID\",\"identifier\":\"9999\"}],\"vcardArray\":[\"vcard\",[[\"version\",{},\"text\",\"4.0\"],[\"fn\",{},\"text\",\"Example Registrar, Inc.\"]]],\"entities\":[{\"objectClassName\":\"entity\",\"roles\":[\"abuse\"],\"vcardArray\":[\"vcard\",[[\"version\",{},\"text\",\"4.0\"],[\"fn\",{},\"text\",\"\"],[\"tel\",{\"type\":\"voice\"},\"uri\",\"tel:+1.5550100\"],[\"email\",{},\"text\",\"abuse@registrar.example\"]]]}]}],\"events\":[{\"eventAction\":\"registration\",\"eventDate\":\"2004-03-14T09:30:00Z\"},{\"eventAction\":\"expiration\",\"eventDate\":\"2027-03-14T09:30:00Z\"},{\"eventAction\":\"last changed\",\"eventDate\":\"2026-05-01T00:00:00Z\"},{\"eventAction\":\"last update of RDAP database\",\"eventDate\":\"2026-11-22T22:41:28Z\"}],\"secureDNS\":{\"delegationSigned\":false},\"nameservers\":[{\"objectClassName\":\"nameserver\",\"ldhName\":\"NS1.NORTHWIND.EXAMPLE\"},{\"objectClassName\":\"nameserver\",\"ldhName\":\"NS2.NORTHWIND.EXAMPLE\"}],\"rdapConformance\":[\"rdap_level_0\",\"icann_rdap_technical_implementation_guide_1\",\"icann_rdap_response_profile_1\"],\"notices\":[{\"title\":\"Terms of Service\",\"description\":[\"Service subject to Terms of Use.\"],\"links\":[{\"href\":\"https:\\/\\/www.verisign.com\\/domain-names\\/registration-data-access-protocol\\/terms-service\\/index.xhtml\",\"type\":\"text\\/html\",\"value\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/northwind.example\",\"rel\":\"terms-of-service\"}]},{\"title\":\"Status Codes\",\"description\":[\"For more information on domain status codes, please visit https:\\/\\/icann.org\\/epp\"],\"links\":[{\"href\":\"https:\\/\\/icann.org\\/epp\",\"type\":\"text\\/html\",\"value\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/northwind.example\",\"rel\":\"glossary\"}]},{\"title\":\"RDDS Inaccuracy Complaint Form\",\"description\":[\"URL of the ICANN RDDS Inaccuracy Complaint Form: https:\\/\\/icann.org\\/wicf\"],\"links\":[{\"href\":\"https:\\/\\/icann.org\\/wicf\",\"type\":\"text\\/html\",\"value\":\"https:\\/\\/rdap.verisign.com\\/com\\/v1\\/domain\\/northwind.example\",\"rel\":\"help\"}]}]}"
+  },
+  {
+   "kind": "whois",
+   "domain": "statuspage.io",
+   "argv": [
+    "/usr/bin/whois",
+    "statuspage.io"
+   ],
+   "at": "2026-11-22T22:43:44Z",
+   "exit": 0,
+   "stdout": "Domain Name: statuspage.io\nRegistry Domain ID: REDACTED\nRegistrar WHOIS Server: whois.markmonitor.com\nRegistrar URL: http://www.markmonitor.com\nUpdated Date: 2026-09-07T10:33:46Z\nCreation Date: 2012-10-04T20:55:32Z\nRegistry Expiry Date: 2028-10-04T20:55:32Z\nRegistrar: MarkMonitor Inc.\nRegistrar IANA ID: 292\nRegistrar Abuse Contact Email: abusecomplaints@markmonitor.com\nRegistrar Abuse Contact Phone: +1.2083895740\nDomain Status: clientDeleteProhibited https://icann.org/epp#clientDeleteProhibited\nDomain Status: clientTransferProhibited https://icann.org/epp#clientTransferProhibited\nDomain Status: clientUpdateProhibited https://icann.org/epp#clientUpdateProhibited\nRegistry Registrant ID: REDACTED\nRegistrant Name: REDACTED\nRegistrant Organization: Atlassian Pty Ltd\nRegistrant Street: REDACTED\nRegistrant City: REDACTED\nRegistrant State/Province: NSW\nRegistrant Postal Code: REDACTED\nRegistrant Country: AU\nRegistrant Phone: REDACTED\nRegistrant Phone Ext: REDACTED\nRegistrant Fax: REDACTED\nRegistrant Fax Ext: REDACTED\nRegistrant Email: REDACTED\nRegistry Admin ID: REDACTED\nAdmin Name: REDACTED\nAdmin Organization: REDACTED\nAdmin Street: REDACTED\nAdmin City: REDACTED\nAdmin State/Province: REDACTED\nAdmin Postal Code: REDACTED\nAdmin Country: REDACTED\nAdmin Phone: REDACTED\nAdmin Phone Ext: REDACTED\nAdmin Fax: REDACTED\nAdmin Fax Ext: REDACTED\nAdmin Email: REDACTED\nRegistry Tech ID: REDACTED\nTech Name: REDACTED\nTech Organization: REDACTED\nTech Street: REDACTED\nTech City: REDACTED\nTech State/Province: REDACTED\nTech Postal Code: REDACTED\nTech Country: REDACTED\nTech Phone: REDACTED\nTech Phone Ext: REDACTED\nTech Fax: REDACTED\nTech Fax Ext: REDACTED\nTech Email: REDACTED\nName Server: ns-209.awsdns-26.com\nName Server: ns-1407.awsdns-47.org\nName Server: ns-1560.awsdns-03.co.uk\nName Server: ns-951.awsdns-54.net\nDNSSEC: unsigned\nRegistrant Additional Email: REDACTED\nAdmin Additional Email: REDACTED\nTech Additional Email: REDACTED\nURL of the ICANN Whois Inaccuracy Complaint Form: https://icann.org/wicf/\n>>> Last update of WHOIS database: 2026-11-22T22:43:45Z <<<\n\nFor more information on Whois status codes, please visit https://icann.org/epp\n\nTerms of Use: Access to WHOIS information is provided to assist persons in determining the contents of a domain name registration record in the registry database. The data in this record is provided by Identity Digital or the Registry Operator for informational purposes only, and accuracy is not guaranteed. This service is intended only for query-based access. You agree that you will use this data only for lawful purposes and that, under no circumstances will you use this data to (a) allow, enable, or otherwise support the transmission by e-mail, telephone, or facsimile of mass unsolicited, commercial advertising or solicitations to entities other than the data recipient's own existing customers; or (b) enable high volume, automated, electronic processes that send queries or data to the systems of Registry Operator, a Registrar, or Identity Digital except as reasonably necessary to register domain names or modify existing registrations. When using the Whois service, please consider the following: The Whois service is not a replacement for standard EPP commands to the SRS service. Whois is not considered authoritative for registered domain objects. The Whois service may be scheduled for downtime during production or OT&E maintenance periods. Queries to the Whois services are throttled. If too many queries are received from a single IP address within a specified time, the service will begin to reject further queries for a period of time to prevent disruption of Whois service access. Abuse of the Whois system through data mining is mitigated by detecting and limiting bulk query access from single sources. Where applicable, the presence of a [Non-Public Data] tag indicates that such data is not made publicly available due to applicable data privacy laws or requirements. Should you wish to contact the registrant, please refer to the Whois records available through the registrar URL listed above. Access to non-public data may be provided, upon request, where it can be re\nasonably confirmed that the requester holds a specific legitimate interest and a proper legal basis for accessing the withheld data. Access to this data provided by Identity Digital can be requested by submitting a request via the form found at https://www.identity.digital/about/policies/whois-layered-access/. The Registrar of Record identified in this output may have an RDDS service that can be queried for additional information on how to contact the Registrant, Admin, or Tech contact of the queried domain name. Identity Digital Inc. and Registry Operator reserve the right to modify these terms at any time. By submitting this query, you agree to abide by this policy.\n",
+   "stderr": "",
+   "error": null
+  }
+ ]
+}

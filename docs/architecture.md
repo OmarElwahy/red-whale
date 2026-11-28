@@ -130,6 +130,10 @@ Schema changes: until there is real engagement data, migrations don't backfill. 
 rows forward is listed in `BREAKING_MIGRATIONS` (`server/src/db/client.ts`), and `openDb` refuses to run it on a
 database that already holds observations ("Database is from an older schema. Delete data/redwhale.db and run
 pnpm mock (or re-ingest your files)."). Breaking so far: `0001_observation_role`, `0003_edge_observations`.
+`openDb` runs migrations with `foreign_keys` **off**, then `PRAGMA foreign_key_check` (any broken key: it throws),
+then on: a table rebuild that drops a referenced table (`0006_cname_to` rebuilds `edges` for its relation CHECK,
+copying every row: not breaking) would otherwise fail, because a migration file's own `PRAGMA foreign_keys=OFF` is a
+no-op inside the migrator's transaction.
 
 ## 5. Ingest pipeline
 
@@ -557,8 +561,9 @@ Reports · CVE monitoring · local LLM scoring · JS analysis agent.
   workspace totals.
 - Scope rules and settings in `GET /export` (today the export has each node's `inScope`, not the rules behind it).
 - A `scope.logged` WS event, so other tabs' log panels refresh when a run is authorized (6C).
-- Dangling CNAME detection (subdomain takeover): a CNAME with no A/AAAA answer. dnsx sees it today but reports no
-  finding (only its log and `raw.txt`); it needs its own node/relation design first (6C-3).
+- ~~Dangling CNAME detection (subdomain takeover)~~: done in TW-1 as `takeover-check` (§11), with the relation
+  `cname_to`. dnsx still reports no finding for a dangling CNAME (only its log and `raw.txt`). TW-2: the Takeover
+  watch panel, scheduled runs, HTTP fingerprints of cloud services ("NoSuchBucket"), TLS expiry.
 
 ## 10. Scope guard
 
@@ -727,7 +732,8 @@ replays it. How to add a tool: `docs/team-guide.md`.
 **Groups:** `subdomain` (subfinder, assetfinder, findomain, crt.sh; passive), `http` (httpx; **active**: probes
 80/443, never follows redirects, DNS only through the container's resolver; `tools/http/README.md`), `dns` (dnsx;
 passive: A/AAAA/CNAME of the one name through the system resolver, never brute-force; `ip` findings with
-`resolves_to`, the CNAME in their data, the target itself never a finding; `tools/dns/README.md`) and `ports` (naabu;
+`resolves_to`, the CNAME in their data, the target itself never a finding; and takeover-check, TW-1, passive,
+`subdomain` only, below; `tools/dns/README.md`) and `ports` (naabu;
 **active**, IPs only: connect scan of the top 100 TCP ports, ≤ 50/s, no host discovery, no capability;
 `port` findings with `has_port`; and nmap, 6C-4, **active**, an `ip` or a `port`: connect scan + `-sV`, which
 also runs nmap's `version` scripts (no others, no OS detection, no UDP), `port` findings with the service in their
@@ -735,6 +741,42 @@ data and `technology` with `uses_technology`; `tools/ports/README.md`). Scripts 
 the target's type call `main(..., needs_target_type=True)` and get `--target-type` (`{targetType}`), and their
 command builder is called as `command(target, target_type)` (6C-4; others keep `command(target)`); `tech_value(name,
 version)` spells technologies one way (lowercase, spaces → `-`, `name/version`).
+
+**takeover-check** (TW-1, `tools/dns/takeover-check/`, the first half of "Takeover watch"). Passive, accepts
+`subdomain`, `external`: system DNS resolver, RDAP servers (IANA bootstrap), WHOIS servers (fallback). It never
+contacts the target or the names in its chain.
+- **Chain:** dnsx hop by hop through the system resolver (`needs_resolvers=True`): `-cname` per name, then
+  `-rcode noerror,nxdomain,servfail,refused` only where `-cname` printed nothing (dnsx v1.3.1 prints no rcode with
+  `-cname`). At most 10 hops; a loop, a longer chain, a public-suffix target or a DNS failure stops it with
+  `run.error`. Each hop's rcode is kept.
+- **Registrations:** the ICANN registrable domain (`tools/lib/psl.py`) of the target and of every chain name outside
+  the target's own domain, each looked up once. RDAP from the bundled bootstrap (`tools/dns/data/dns.json`; longest
+  entry, first `https://` URL): 200 → registered (expiry, registrar, creation), 404 → **not registered**, anything else
+  (3xx, which is never followed; other statuses; timeouts; bad JSON) → unknown with a `reason`. A TLD without RDAP →
+  the `whois` command (Debian package, pinned): a documented list of expiry labels and date formats → registered,
+  else unknown; WHOIS never says "not registered". 2 retries with backoff, ≥ 1 s between requests to one RDAP host or
+  one WHOIS TLD, within the job's time.
+- **Private suffixes:** a name strictly below a PSL private-section suffix (`x.herokuapp.com`,
+  `x.azurewebsites.net`) gets `service` in its data; its domain is not looked up (a cloud resource, not a
+  registration).
+- **Findings:** each hop (`subdomain` or `domain` by the PSL) with `cname_to` from the previous name, data `rcode`,
+  `service`, `loops_to`; a hop subdomain also hangs under its registrable `domain` (`has_subdomain`). Each looked-up
+  domain is a `domain` finding with no parent, data `registered` (true/false/null), `expires_at`, `registrar`,
+  `created_at`, `source` (`rdap`/`whois`), `checked_at`, `reason` (unknown or 404); a hop that is itself the
+  registrable domain carries that data instead. The target is never a finding; its own registrable domain is (§13).
+  Vulnerabilities on the target (`has_vulnerability`): `takeover-unregistered-domain` (critical, a chain name's
+  domain answered RDAP 404) and `takeover-dangling-cname` (medium, a chain name outside the target's own domain is
+  NXDOMAIN and its domain is registered or it is under a private suffix), data `chain`, `name`, `domain`/`service`,
+  `reason`. Expiring soon is not a vulnerability (TW-2 handles urgency).
+- **Transcript replay:** a tool that makes several requests records each exchange (DNS: argv, exit, stdout, stderr;
+  RDAP: URL, every attempt, the body; WHOIS: argv, stdout) plus the bootstrap entries it used, into one JSON
+  transcript, its raw output. `parse()` re-runs the same logic (`investigate(target, net)`) against a `ReplayNet`
+  built from it, so a live run and `--replay` produce findings through one code path, and a replay needs no network
+  and no current bootstrap. Format and fixtures: `tools/dns/takeover-check/fixtures/NOTE.md`.
+- **Bundled data:** `tools/dns/data/` holds the Public Suffix List and the RDAP bootstrap with their fetch date and
+  sha256 (README). Only `pnpm tools:refresh-data` downloads them; they are in the dns build context, so a refresh
+  changes the image tag. `psl.py` (stdlib; ICANN and private sections apart; wildcards, exceptions, punycode) and the
+  server's `tldts` must agree on `tools/lib/fixtures/psl_vectors.json` (`test_psl.py`, `psl-parity.test.ts`).
 
 ## 12. Graph editing
 
@@ -931,3 +973,15 @@ delete is one transaction with a record.
 | 2026-11-11 | **`-sV` runs nmap's `version` script category, and `contacts` says so** ("…sends service-detection probes, including nmap's built-in version-detection scripts (no other scripts)"). Confirmed with `-d` in the image against the lab: "NSE: Loaded 47 scripts for scanning", exactly the 47 `version` scripts of 7.95: allseeingeye-info, amqp-info, bacnet-info, cccam-version, db2-das-info, docker-version, drda-info, enip-info, fingerprint-strings, fox-info, freelancer-info, hnap-info, http-server-header, http-trane-info, https-redirect, iax2-version, iec61850-mms, ike-version, jdwp-version, maxdb-info, mcafee-epo-agent, mqtt-subscribe, murmur-version, ndmp-version, netbus-version, omron-info, openlookup-info, oracle-tns-version, ovs-agent-version, pptp-version, quake1-info, quake3-info, rfc868-time, rpc-grind, rpcinfo, s7-info, skypev2-version, snmp-info, stun-version, teamspeak2-version, tftp-version, ubiquiti-discovery, ventrilo-info, vmware-version, wdb-version, weblogic-t3-info, xmpp-info. Each runs only against a matching service; against the lab's web ports five ran (https-redirect, hnap-info, vmware-version, http-trane-info, http-server-header: `GET /HNAP1`, `GET /evox/about`, `POST /sdk`, `GET /nmaplowercheck…`), none followed the redirect. Why accepted: `version` is nmap's mildest category and part of what `-sV` means; a stripped data directory would be fragile and silently weaken detection |
 | 2026-11-11 | **nmap findings**: XML parsed with `xml.etree`, never regex. Every **open** TCP port → `port` (`port_value()`), ip →`has_port`, data `protocol` (as naabu's), `service` (only when `method="probed"`: a `table` name is a guess from the port number), `product`, `version`, `extrainfo`, `tunnel` when present; a product → `technology` (`tech_value(product, version)`), port →`uses_technology`. Closed/filtered ports are not findings; a closed **port target** is a success with no findings (nmap's answer stays in `raw.txt`). `run.error()` only for real problems: unreadable XML, not `nmaprun`, nmap's own `exit="error"`, `<host timedout="true">`, a host other than the target. Checked against the lab: nmap's `nginx/1.30.6` and httpx's are one node (`corroborated`), no alias needed |
 | 2026-11-11 | **nmap fixtures**: `tools:check` takes one `raw.*` per tool, so ip mode is `fixtures/raw.xml` + `expected.json` (checked by `tools:check`) and port mode `fixtures/port/raw.xml` + `port/expected.json` (replayed by `test_nmap.py`, which `tools:check` and `pnpm test` run). Both real captures in the image (hardened like a job) against the lab, `172.29.250.10` → `198.18.0.10`, no other edits |
+| 2026-11-24 | **TW-1 relation `cname_to`**: `subdomain` → `subdomain` / `domain`, the CNAME's target name. Additive (contract stays v1; changelog in contract.md §7). The target name's type comes from the PSL's ICANN section: the registrable name itself is a `domain`, anything below it a `subdomain`, which also hangs under its `domain` (`has_subdomain`). Still at most one relation per type pair, so the Add node dialog keeps pre-filling it (a domain's parent picker now offers subdomains). Showcase: `api —cname_to→ app` (no new node). `validate_output.py`'s RELATIONS are ordered like `enums.ts`, so its "can't link" message is Zod's word for word |
+| 2026-11-24 | **Migration `0006_cname_to`** (approved during TW-1 step 1; the plan expected no schema change): `edges` has a CHECK on `relation`, so it is rebuilt (drizzle-kit generated) and every row is copied: **not breaking**. `openDb()` now migrates with `foreign_keys` OFF, then `foreign_key_check` (throws on any broken key), then ON. Why: the migration file's `PRAGMA foreign_keys=OFF` is a no-op inside the migrator's transaction, and a populated database (edge observations reference edges) failed with "FOREIGN KEY constraint failed" (test in `db.test.ts`) |
+| 2026-11-24 | **Bundled PSL + RDAP bootstrap** in `tools/dns/data/` (README: source, fetch date, version, sha256; files `-text` in `.gitattributes`, and un-ignored from the repo's `data/` rule). `pnpm tools:refresh-data` (`scripts/refresh-tool-data.ts`, Node `fetch`, no redirects) is the only download: it checks both files and writes them only if both are good. They are in the dns build context (a refresh changes the tag); nothing fetches them at build or run time. First fetch: PSL `2026-11-21_04-33-45_UTC`, bootstrap `2026-11-20T23:00:03Z` |
+| 2026-11-24 | **`tools/lib/psl.py`** (stdlib): ICANN and PRIVATE sections kept apart, normal / wildcard / exception rules, the default `*`, Unicode rules → punycode per label; `registrable()` (ICANN only) and `private_suffix()` (strictly below a PRIVATE rule). Parity with the server's `tldts` 7.4.18 on 25 shared vectors (`tools/lib/fixtures/psl_vectors.json`, outside every build context): co.uk, com.eg, `*.ck`/`!www.ck`, `*.kawasaki.jp`/`!city.kawasaki.jp`, IDN, github.io, herokuapp.com, s3.amazonaws.com, unlisted TLDs |
+| 2026-11-24 | **takeover-check DNS**: dnsx v1.3.1 has no way to print an rcode together with `-cname` (a name with no CNAME, or NXDOMAIN, prints nothing; `-rtf cname` neither), and `-t` is threads (the timeout is `-timeout`). So per hop `dnsx -l <name> -cname -j -silent -nc -duc -or -retry 2 -timeout 5s -t 1 -rl 10 -r <own>`, and only when that prints nothing `dnsx -l <name> -rcode noerror,nxdomain,servfail,refused` with the same flags; a `-cname` line carries `status_code`. A recursive resolver answers a CNAME question with that one record, so hop by hop is exact. Never `-d`/`-w`; names with `,` or that are existing paths are refused (dnsx `-l` would read them) |
+| 2026-11-24 | **whois install: an exact Debian package** (`whois=5.6.3`, trixie, `WHOIS_VERSION` in `tools/dns/Dockerfile`), the same exception and bump rule as nmap: when Debian replaces it, `pnpm tools:build dns` fails with "bump WHOIS_VERSION in tools/dns/Dockerfile"; set it to `apt-cache policy whois` in the base image, rebuild, re-run `pnpm tools:check takeover-check` |
+| 2026-11-24 | **Registration answers.** RDAP: 200 → registered; **404 → not registered** (the only source of `registered: false` and of `takeover-unregistered-domain`); a 3xx is **not followed** (unknown, "redirect to <host>"), so only declared servers are contacted; other statuses, timeouts, bad JSON or an answer for another name → unknown with `reason`. WHOIS (TLDs without RDAP): an expiry date under a documented label, in a documented format → registered; anything else → unknown; **never "not registered"** (free text is no basis for a critical finding). Dates never guessed. Unknown registrations are `run.error`s (status `partial`) |
+| 2026-11-24 | **Exception to "the target is never a finding" (6C-3):** takeover-check reports the target's own registrable domain as a `domain` finding with no parent, because the RDAP/WHOIS record is independent evidence that it is registered (and when it is not, that is the critical finding). The target itself is still never a finding, also when a CNAME loop points back at it (`loops_to` in data) |
+| 2026-11-24 | **External domains have no parent** (has_subdomain only goes domain → subdomain): a chain subdomain hangs under its registrable domain (`evil.com —has_subdomain→ a.evil.com`); a hop that is itself the registrable domain (`… —cname_to→ evil.com`) carries the registration data. A name under a PSL private suffix gets `service` and its domain is not looked up. A CNAME at an apex domain can't be a `cname_to` edge (only subdomains have one): the next name is reported without it, with a log line |
+| 2026-11-24 | **`takeover-dangling-cname` skips NXDOMAIN names inside the target's own registrable domain** (confirmed by the user after TW-1 step 4): only the zone owner can create those names, so nobody else can take them over. The hop is still reported with its `rcode` (`NXDOMAIN`) in its data. Outside the own domain, NXDOMAIN + a registered domain or a private suffix → medium |
+| 2026-11-24 | **Transcript replay** (takeover-check, the first tool with several requests): its raw output is one JSON transcript of every exchange plus the bootstrap entries used, keyed by domain; `parse()` always re-runs `investigate(target, net)` on a `ReplayNet` of it, so live and `--replay` build findings through one code path. A replay needs no network and no current bootstrap (a refresh can't change old fixtures; anonymized `.example` names keep the real server). A missing answer stops only that step, with an error naming it |
+| 2026-11-24 | **takeover-check fixtures**: the main `fixtures/raw.json` (a real 4-hop Microsoft 365 chain) is checked by `tools:check`; 7 case folders are replayed by `test_takeover_check.py`. All exchanges are real captures (2026-11-22, `LiveNet` in the image); cases 4–8 are assembled with edited CNAME lines (no zone to create records in), all marked in NOTE.md. The target's and its company's domains, RDAP handles, registrar, dates, nameservers and all IPs are anonymized; well-known third-party service names (Microsoft 365, azurewebsites.net, statuspage.io) are kept, since the PSL behaviour depends on them and they say nothing about the target |

@@ -64,7 +64,7 @@ test('running migrations on an existing database is a no-op', () => {
 
   const second = open(path);
   const migrations = second.$client.prepare('SELECT COUNT(*) AS n FROM __drizzle_migrations').get();
-  expect(migrations).toEqual({ n: 6 });
+  expect(migrations).toEqual({ n: 7 });
   expect(second.$client.prepare('SELECT COUNT(*) AS n FROM nodes').get()).toEqual({ n: 1 });
 });
 
@@ -168,7 +168,7 @@ describe('a database from before a breaking migration', () => {
 
   test('empty: migrates normally', () => {
     const db = open(schema0000Db(false));
-    expect(db.$client.prepare('SELECT COUNT(*) AS n FROM __drizzle_migrations').get()).toEqual({ n: 6 });
+    expect(db.$client.prepare('SELECT COUNT(*) AS n FROM __drizzle_migrations').get()).toEqual({ n: 7 });
     const columns = db.$client.prepare<[], { name: string }>("SELECT name FROM pragma_table_info('observations')").all();
     expect(columns.map((c) => c.name)).toContain('role');
   });
@@ -293,5 +293,49 @@ describe('scope tables (0002_scope)', () => {
     expect(() => log.run('check', 'passive', 'maybe', null)).toThrow(/CHECK constraint failed/);
     expect(() => log.run('run', 'passive', 'out', 999)).toThrow(/FOREIGN KEY constraint failed/);
     expect(() => log.run('run', 'passive', 'n/a', 1)).not.toThrow();
+  });
+});
+
+describe('cname_to (0006_cname_to)', () => {
+  test('a 0005 database with edges and edge provenance upgrades with every row kept', () => {
+    const path = schema0002Db(true);
+    migrateTo(path, 6); // through 0005_graph_editing
+    const old = new Database(path);
+    const t = '2026-10-29T10:00:00.000Z';
+    old
+      .prepare(`INSERT INTO nodes (id, type, value, label, first_seen, last_seen) VALUES ('n2', 'subdomain', 'a.example.com', 'a.example.com', @t, @t)`)
+      .run({ t });
+    old
+      .prepare(
+        `INSERT INTO edges (id, source_id, target_id, relation, confidence, source_count, first_seen, last_seen)
+         VALUES ('e1', 'n1', 'n2', 'has_subdomain', 'discovered', 1, @t, @t)`,
+      )
+      .run({ t });
+    old
+      .prepare(`INSERT INTO edge_observations (edge_id, scan_id, tool, data, observed_at) VALUES ('e1', 's1', 'subfinder', '{}', @t)`)
+      .run({ t });
+    old.close();
+
+    const db = open(path);
+    expect(db.$client.prepare('SELECT id, relation, source_count FROM edges').all()).toEqual([
+      { id: 'e1', relation: 'has_subdomain', source_count: 1 },
+    ]);
+    expect(db.$client.prepare('SELECT edge_id, tool FROM edge_observations').all()).toEqual([{ edge_id: 'e1', tool: 'subfinder' }]);
+    expect(db.$client.pragma('foreign_keys', { simple: true })).toBe(1);
+    expect(db.$client.pragma('foreign_key_check')).toEqual([]);
+    expect(names(db, 'index')).toEqual(
+      expect.arrayContaining(['edges_source_relation_target_uq', 'edges_source_idx', 'edges_target_idx']),
+    );
+    db.$client
+      .prepare(
+        `INSERT INTO nodes (id, type, value, label, first_seen, last_seen) VALUES ('n3', 'subdomain', 'b.example.com', 'b.example.com', @t, @t)`,
+      )
+      .run({ t });
+    const edge = db.$client.prepare(
+      `INSERT INTO edges (id, source_id, target_id, relation, first_seen, last_seen) VALUES (?, 'n2', 'n3', ?, @t, @t)`,
+    );
+    expect(() => edge.run('e2', 'cname_to', { t })).not.toThrow();
+    expect(() => edge.run('e3', 'owns', { t })).toThrow(/CHECK constraint failed/);
+    expect(() => edge.run('e4', 'cname_to', { t })).toThrow(/UNIQUE constraint failed/);
   });
 });

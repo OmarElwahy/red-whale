@@ -1,0 +1,61 @@
+{
+  "target": "shop.northwind.example",
+  "target_type": "subdomain",
+  "status": "success",
+  "errors": [],
+  "findings": [
+    {
+      "type": "subdomain",
+      "value": "redwhale-gone-7q2x.azurewebsites.net",
+      "parent": {
+        "type": "subdomain",
+        "value": "shop.northwind.example"
+      },
+      "relation": "cname_to",
+      "data": {
+        "rcode": "NXDOMAIN",
+        "service": "azurewebsites.net"
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "redwhale-gone-7q2x.azurewebsites.net",
+      "parent": {
+        "type": "domain",
+        "value": "azurewebsites.net"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "domain",
+      "value": "northwind.example",
+      "data": {
+        "registered": true,
+        "expires_at": "2027-03-14T09:30:00Z",
+        "registrar": "Example Registrar, Inc.",
+        "created_at": "2004-03-14T09:30:00Z",
+        "source": "rdap",
+        "checked_at": "2026-11-22T22:41:40Z"
+      }
+    },
+    {
+      "type": "vulnerability",
+      "value": "takeover-dangling-cname",
+      "parent": {
+        "type": "subdomain",
+        "value": "shop.northwind.example"
+      },
+      "relation": "has_vulnerability",
+      "severity": "medium",
+      "data": {
+        "chain": [
+          "shop.northwind.example",
+          "redwhale-gone-7q2x.azurewebsites.net"
+        ],
+        "name": "redwhale-gone-7q2x.azurewebsites.net",
+        "reason": "redwhale-gone-7q2x.azurewebsites.net does not exist (NXDOMAIN) under azurewebsites.net, a cloud service: whoever claims that name there may answer for shop.northwind.example",
+        "service": "azurewebsites.net"
+      }
+    }
+  ]
+}

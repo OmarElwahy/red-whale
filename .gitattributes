@@ -1,1 +1,5 @@
 * text=auto eol=lf
+
+# Bundled data (tools/dns/data): kept byte for byte, so its sha256 in the README holds on every OS
+tools/dns/data/*.dat -text
+tools/dns/data/*.json -text

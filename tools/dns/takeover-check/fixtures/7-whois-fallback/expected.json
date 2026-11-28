@@ -1,0 +1,53 @@
+{
+  "target": "status.northwind.example",
+  "target_type": "subdomain",
+  "status": "success",
+  "errors": [],
+  "findings": [
+    {
+      "type": "subdomain",
+      "value": "redwhale-x7q2.statuspage.io",
+      "parent": {
+        "type": "subdomain",
+        "value": "status.northwind.example"
+      },
+      "relation": "cname_to",
+      "data": {
+        "rcode": "NOERROR"
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "redwhale-x7q2.statuspage.io",
+      "parent": {
+        "type": "domain",
+        "value": "statuspage.io"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "domain",
+      "value": "northwind.example",
+      "data": {
+        "registered": true,
+        "expires_at": "2027-03-14T09:30:00Z",
+        "registrar": "Example Registrar, Inc.",
+        "created_at": "2004-03-14T09:30:00Z",
+        "source": "rdap",
+        "checked_at": "2026-11-22T22:41:40Z"
+      }
+    },
+    {
+      "type": "domain",
+      "value": "statuspage.io",
+      "data": {
+        "registered": true,
+        "expires_at": "2028-10-04T20:55:32Z",
+        "registrar": "MarkMonitor Inc.",
+        "created_at": "2012-10-04T20:55:32Z",
+        "source": "whois",
+        "checked_at": "2026-11-22T22:43:44Z"
+      }
+    }
+  ]
+}

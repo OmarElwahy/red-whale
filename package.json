@@ -16,6 +16,7 @@
     "mock:large": "tsx scripts/mock.ts --large",
     "tools:build": "tsx server/src/runner/cli-build.ts",
     "tools:check": "tsx server/src/runner/cli-check.ts",
+    "tools:refresh-data": "tsx scripts/refresh-tool-data.ts",
     "lab:up": "tsx server/src/cli/lab.ts up",
     "lab:down": "tsx server/src/cli/lab.ts down",
     "lab:status": "tsx server/src/cli/lab.ts status",

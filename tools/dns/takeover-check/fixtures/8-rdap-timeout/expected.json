@@ -1,0 +1,56 @@
+{
+  "target": "cdn.northwind.example",
+  "target_type": "subdomain",
+  "status": "partial",
+  "errors": [
+    "registration of partner-assets.example unknown: URLError: timed out from 192.0.2.1 after 3 tries"
+  ],
+  "findings": [
+    {
+      "type": "subdomain",
+      "value": "edge.partner-assets.example",
+      "parent": {
+        "type": "subdomain",
+        "value": "cdn.northwind.example"
+      },
+      "relation": "cname_to",
+      "data": {
+        "rcode": "NOERROR"
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "edge.partner-assets.example",
+      "parent": {
+        "type": "domain",
+        "value": "partner-assets.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "domain",
+      "value": "northwind.example",
+      "data": {
+        "registered": true,
+        "expires_at": "2027-03-14T09:30:00Z",
+        "registrar": "Example Registrar, Inc.",
+        "created_at": "2004-03-14T09:30:00Z",
+        "source": "rdap",
+        "checked_at": "2026-11-22T22:41:40Z"
+      }
+    },
+    {
+      "type": "domain",
+      "value": "partner-assets.example",
+      "data": {
+        "registered": null,
+        "expires_at": null,
+        "registrar": null,
+        "created_at": null,
+        "source": "rdap",
+        "checked_at": "2026-11-22T22:44:12Z",
+        "reason": "URLError: timed out from 192.0.2.1 after 3 tries"
+      }
+    }
+  ]
+}

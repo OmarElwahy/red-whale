@@ -23,6 +23,7 @@ Pick the example closest to your tool:
 | JSON lines, and it **resolves names** itself (DNS), passive | `tools/dns/dnsx/` |
 | JSON lines, active, and it takes **only an IP** (e.g. a port scanner) | `tools/ports/naabu/` |
 | **XML**, active, and it takes an **ip or a port** (picks its mode from the target's type) | `tools/ports/nmap/` |
+| **several requests** (a program run several times, web APIs, or both), recorded as a transcript | `tools/dns/takeover-check/` |
 
 Your tool goes in its **group's** folder (ask the team leader which group, e.g. `ports`, `http`, `vulns`). If the group
 doesn't exist yet, the team leader creates it (`group.json` + `Dockerfile`).
@@ -158,6 +159,22 @@ def parse(raw, run, target):
 
 `tools/ports/nmap/` is the full example (two fixture sets: `tools:check` replays one `raw.*`, so a second mode's
 capture goes in a subfolder and is replayed by the tool's own unit test).
+
+**If your tool makes several requests** (it runs a program once per name, calls web APIs, or both, and what it asks
+next depends on the answers): record a **transcript** and replay it. `tools/dns/takeover-check/run.py` is the example:
+
+- Put all the logic in one function that only talks to a `net` object: `investigate(target, net)`. A `LiveNet` does
+  the real requests and appends each exchange to the transcript (what was asked, when, every attempt, the answer as
+  it came: stdout, HTTP status and body). A `ReplayNet` answers the same questions from a saved transcript.
+- Use `main(TOOL, parse, fetch=fetch, …)`. `fetch()` runs `investigate()` on a `LiveNet` and returns the transcript as
+  JSON: that is your raw output (`raw.txt`). `parse()` **always** runs `investigate()` again on a `ReplayNet` of it and
+  makes the findings, so a real run and `--replay` go through exactly the same code.
+- Record anything else the logic reads that could change later (takeover-check keeps the RDAP bootstrap entries it
+  used), so an old transcript still replays the same way.
+- Be polite: each thing once per run, at most 1 request per second per server, a few retries with backoff, and stop
+  before the job's time is up (`timeout` is passed to `fetch`).
+- Fixtures: capture real exchanges with your own `LiveNet` in the image. If a case can't be found in the wild (a loop,
+  a timeout), assemble a transcript from real exchanges and say exactly which lines you edited in `NOTE.md`.
 
 The helper calls you'll use:
 

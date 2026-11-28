@@ -151,6 +151,8 @@ export function generateShowcase(): MockFile[] {
       finding('ip', ipWww.value, domain, 'resolves_to', { data: { record: 'A' } }),
       finding('ip', ipWww.value, www, 'resolves_to', { data: { record: 'A' } }),
       finding('ip', ipShared.value, api, 'resolves_to', { data: { record: 'A' } }),
+      // api is an alias of app (hence the shared IP): its A answer came through this CNAME (cname_to, TW-1)
+      finding('subdomain', app.value, api, 'cname_to', { data: { record: 'CNAME' } }),
       finding('ip', ipShared.value, app, 'resolves_to', { data: { record: 'A' } }),
       finding('ip', ipMail.value, mail, 'resolves_to', { data: { record: 'A' } }),
       finding('ip', ipMail6.value, mail, 'resolves_to', { data: { record: 'AAAA' } }),

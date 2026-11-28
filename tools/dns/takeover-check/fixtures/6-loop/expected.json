@@ -1,0 +1,44 @@
+{
+  "target": "loop.northwind.example",
+  "target_type": "subdomain",
+  "status": "partial",
+  "errors": [
+    "CNAME loop: loop2.northwind.example points back at loop.northwind.example; stopped"
+  ],
+  "findings": [
+    {
+      "type": "subdomain",
+      "value": "loop2.northwind.example",
+      "parent": {
+        "type": "subdomain",
+        "value": "loop.northwind.example"
+      },
+      "relation": "cname_to",
+      "data": {
+        "rcode": "NOERROR",
+        "loops_to": "loop.northwind.example"
+      }
+    },
+    {
+      "type": "subdomain",
+      "value": "loop2.northwind.example",
+      "parent": {
+        "type": "domain",
+        "value": "northwind.example"
+      },
+      "relation": "has_subdomain"
+    },
+    {
+      "type": "domain",
+      "value": "northwind.example",
+      "data": {
+        "registered": true,
+        "expires_at": "2027-03-14T09:30:00Z",
+        "registrar": "Example Registrar, Inc.",
+        "created_at": "2004-03-14T09:30:00Z",
+        "source": "rdap",
+        "checked_at": "2026-11-22T22:41:40Z"
+      }
+    }
+  ]
+}

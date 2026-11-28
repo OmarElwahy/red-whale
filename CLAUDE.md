@@ -93,3 +93,17 @@ Run `pnpm typecheck` and `pnpm test` after every change, and before saying a tas
 - When a teammate's script output fails validation, report exactly which rule failed;
   don't silently "fix" their data inside ingest.
 - If something in the docs is ambiguous or contradictory, ask instead of guessing.
+
+## How we work
+
+- **Branches:** each phase on its own branch (`phase-<name>`), cut from the latest unmerged phase branch. The stack
+  continues until the user merges; the user checks and merges everything at the end. Never merge to main.
+- **Plan first:** post the plan and any design questions, then wait for the answers before coding.
+- **After each step:** `pnpm typecheck` and `pnpm test` green; update `docs/phase-<name>-progress.md` (steps done,
+  decisions, the exact next action); commit `<phase> step N: <what>`; push (first time: `git push -u origin <branch>`).
+- **Cut off mid-session?** Read the progress file and `git log`, then continue at its "Next action".
+- **Windows + PowerShell:** no `&&` in any command given to the user or put in docs (one command per line, or `;`).
+- **Usage is limited:** targeted tests for each change; the full suite once per step. No long exploratory reads.
+- **No DB schema change without asking.**
+- **Never write real target names anywhere in the repo** (code, fixtures, docs, commit messages). Fixtures are
+  anonymized to `northwind.example`.

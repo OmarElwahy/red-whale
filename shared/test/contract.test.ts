@@ -78,6 +78,8 @@ const INVALID_CASES: Record<string, string> = {
   'parent-bad-value': "findings[1].parent.value: parent domain value 'Example.com' must be lowercase",
   'relation-unknown': "findings[1].relation: relation 'owns' is not one of",
   'relation-wrong-types': "findings[1].relation: 'has_port' can't link domain -> subdomain (allowed: ip -> port)",
+  'relation-cname-to-wrong-types':
+    "findings[1].relation: 'cname_to' can't link domain -> subdomain (allowed: subdomain -> subdomain, domain)",
 };
 
 function errorsOf(input: unknown): string[] {

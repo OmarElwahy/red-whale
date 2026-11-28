@@ -1,0 +1,20 @@
+{
+  "target": "www.northwind.example",
+  "target_type": "subdomain",
+  "status": "success",
+  "errors": [],
+  "findings": [
+    {
+      "type": "domain",
+      "value": "northwind.example",
+      "data": {
+        "registered": true,
+        "expires_at": "2027-03-14T09:30:00Z",
+        "registrar": "Example Registrar, Inc.",
+        "created_at": "2004-03-14T09:30:00Z",
+        "source": "rdap",
+        "checked_at": "2026-11-22T22:41:35Z"
+      }
+    }
+  ]
+}

@@ -30,8 +30,9 @@ Dropped: `cytoscape-expand-collapse` (groups are server-side).
 
 ## Status
 
-Main has everything through 6C-3. 6C-4 is on branch `phase-6c4` (from main, on GitHub), **not merged** until my
-manual check (checklist in `docs/phase-6c4-progress.md`).
+Main has everything through 6C-3. 6C-4 is on branch `phase-6c4`, and TW-1 on `phase-tw1` (branched from
+`phase-6c4`'s tip); both on GitHub, **not merged** until my manual checks (checklists in `docs/phase-6c4-progress.md`
+and `docs/phase-tw1-progress.md`).
 
 | Phase | What | Status |
 |---|---|---|
@@ -47,6 +48,7 @@ manual check (checklist in `docs/phase-6c4-progress.md`).
 | 6C-2 | First active tool: tools network `redwhale-tools`, local lab `lab.redwhale.test` (`pnpm lab:up/down/status`), 428 + confirmation dialog for active runs, `http` group with httpx (never follows redirects); `{targetType}`, `contacts`, `tech_value` | ✅ done (on main) |
 | 6C-3 | `dns` group with dnsx (passive: A/AAAA/CNAME through the system resolver, never brute-force) and `ports` group with naabu (active, IPs only: connect scan of the top 100 TCP ports, no capability); lab also on 8080; tools that resolve names refuse to run without a system resolver | ✅ done (on main) |
 | 6C-4 | nmap in the `ports` group (active, an ip or a port: connect scan + `-sV`, no other scripts/OS/UDP; Debian-pinned package); lab answers on TCP 22 with a fake SSH banner; typed command builders `command(target, target_type)` | ✅ done · manual check pending (checklist in `docs/phase-6c4-progress.md`) |
+| TW-1 | Takeover watch, first half: relation `cname_to` (+ migration 0006, rows kept); bundled PSL + RDAP bootstrap (`pnpm tools:refresh-data`), `tools/lib/psl.py` = tldts on shared vectors; `takeover-check` in `dns` (passive: CNAME chain via dnsx, RDAP / WHOIS registration, `takeover-unregistered-domain` critical, `takeover-dangling-cname` medium; transcript replay) | ✅ done · manual check pending (checklist in `docs/phase-tw1-progress.md`) |
 
 ## How I work with Claude Code
 
@@ -100,9 +102,20 @@ manual check (checklist in `docs/phase-6c4-progress.md`).
   pinned (the one exception to checksummed releases; bump `NMAP_VERSION` when Debian replaces it). nmap's and
   httpx's `nginx/1.30.6` are one node (corroborated).
 
+- **Takeover check (TW-1):** a CNAME's target is a `domain` if it is the registrable name (PSL ICANN section), else
+  a `subdomain` under its domain; external domains have no parent. RDAP 404 is the only "not registered" (WHOIS gives
+  a date or unknown); RDAP redirects are never followed; private-suffix names (`x.herokuapp.com`) get `service`, not a
+  lookup. An NXDOMAIN hop inside the target's own domain is not dangling (only the zone owner can create it; its
+  rcode stays in data). The target's own registrable domain is a finding (exception to the 6C-3 rule). Raw output = a transcript
+  of every exchange; `parse()` always replays it through the same logic. PSL/bootstrap are bundled, downloaded only
+  by `pnpm tools:refresh-data`. Migrations now run with foreign keys off, then `foreign_key_check`.
+
 ## Open items
 
-- **Manual check** for 6C-4 (`docs/phase-6c4-progress.md`), then merge `phase-6c4`.
+- **Manual check** for 6C-4 (`docs/phase-6c4-progress.md`), then merge `phase-6c4`; then TW-1's
+  (`docs/phase-tw1-progress.md`), then merge `phase-tw1`.
+- **TW-2** (Takeover watch, second half): the panel, scheduled/automatic runs, expiry urgency, HTTP fingerprints of
+  cloud services ("NoSuchBucket", "No such app"), TLS certificate expiry.
 - **Teammates' real scripts** not yet tested end to end (`pnpm tools:check` → run in the group → check the graph).
 - **Technology spelling:** `tech_value()` fixes case/spaces, but different tools still name things differently
   (`iis` vs `microsoft-iis`), so corroboration can silently fail: maybe an alias table later.
