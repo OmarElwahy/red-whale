@@ -348,3 +348,19 @@ describe('group panel', () => {
     expect(screen.getByRole<HTMLButtonElement>('button', { name: 'Expand' }).disabled).toBe(true);
   });
 });
+
+describe('node panel: report', () => {
+  test('a vulnerability node has "Create report", which asks for the report action', async () => {
+    api = fakeApi(makeDetail({ type: 'vulnerability', value: 'git-config', label: 'git-config' }));
+    vi.stubGlobal('fetch', api.fetch);
+    const { onAction } = renderPanel({ target: node(ID, { type: 'vulnerability', value: 'git-config', label: 'git-config' }) });
+    fireEvent.click(await screen.findByRole('button', { name: 'Create report' }));
+    expect(onAction).toHaveBeenCalledWith('report');
+  });
+
+  test('other node types have no report button', async () => {
+    renderPanel();
+    expect(await screen.findByText('Sign in')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Create report' })).toBeNull();
+  });
+});

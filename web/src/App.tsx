@@ -1,4 +1,4 @@
-import type { AggregateNode, GraphNode, GraphResponse, ToolInfo, ViewEdge, ViewNode } from '@redwhale/shared';
+import { isReportNodeType, type AggregateNode, type GraphNode, type GraphResponse, type ToolInfo, type ViewEdge, type ViewNode } from '@redwhale/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { ApiError, ResponseShapeError } from '@/api/client';
@@ -39,6 +39,7 @@ import { ContextMenu } from '@/menu/ContextMenu';
 import { canvasMenuItems, menuItems, safeHttpUrl, type MenuAction, type RunContext } from '@/menu/items';
 import { AddNodeDialog, type NodeRef } from '@/edit/AddNodeDialog';
 import { DeleteDialog } from '@/edit/DeleteDialog';
+import { ReportDialog } from '@/report/ReportDialog';
 import { DeletionsPanel } from '@/edit/DeletionsPanel';
 import { forgetDeleted } from '@/api/useLiveUpdates';
 import { HighlightsView } from '@/highlights/HighlightsView';
@@ -263,6 +264,8 @@ export function App() {
   const [adding, setAdding] = useState<{ parent: NodeRef | null; position: { x: number; y: number } | null } | null>(null);
   /** The delete dialog's node or group. */
   const [deleting, setDeleting] = useState<string | null>(null);
+  /** The report dialog's node (a vulnerability, secret or leak). */
+  const [reporting, setReporting] = useState<string | null>(null);
   /** A run that contacts the target, waiting for the analyst's confirmation (asked every time). */
   const [activeRun, setActiveRun] = useState<{
     req: RunRequest;
@@ -513,6 +516,9 @@ export function App() {
         break;
       case 'delete':
         if (target.type !== 'more') setDeleting(target.id);
+        break;
+      case 'report':
+        if (isReportNodeType(target.type)) setReporting(target.id);
         break;
       case 'run-menu':
         break;
@@ -870,6 +876,14 @@ export function App() {
           }}
           onClose={() => {
             setDeleting(null);
+          }}
+        />
+      )}
+      {reporting !== null && (
+        <ReportDialog
+          nodeId={reporting}
+          onClose={() => {
+            setReporting(null);
           }}
         />
       )}

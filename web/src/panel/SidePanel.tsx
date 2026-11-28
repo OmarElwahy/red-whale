@@ -1,6 +1,6 @@
 // Right-hand panel for the selected node (docs/architecture.md §8): details, provenance, tag and notes from
 // GET /api/nodes/:id; for a group, its size, what's below it, and the expand / load more / collapse controls.
-import type { AggregateNode, GraphNode, Tag } from '@redwhale/shared';
+import { isReportNodeType, type AggregateNode, type GraphNode, type Tag } from '@redwhale/shared';
 import { useId, type ReactNode } from 'react';
 import { useNodeDetail, usePatchNode } from '@/api/hooks';
 import { Badge } from '@/components/ui/badge';
@@ -197,6 +197,19 @@ function NodePanel({ target, memberOf, reveal, onAction }: SidePanelProps & { ta
           <Field label="First seen">{formatTime(node.firstSeen)}</Field>
           <Field label="Last seen">{formatTime(node.lastSeen)}</Field>
         </dl>
+        {isReportNodeType(node.type) && (
+          <div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                onAction('report');
+              }}
+            >
+              Create report
+            </Button>
+          </div>
+        )}
         {memberOf && (
           <div className="flex items-center gap-2 text-xs">
             <span className="text-muted-foreground">In the group “{memberOf.label}”.</span>

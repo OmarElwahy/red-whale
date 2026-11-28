@@ -181,7 +181,7 @@ describe('buildReport', () => {
   test('missing fields: no CVSS, no references, no data, no severity, notes and other data kept', () => {
     const r = buildReport(
       input((i) => {
-        i.detail.node.data = { detector: 'AWS', verified: false };
+        i.detail.node.data = { detector: 'AWS', verified: false, fields: ['password', 'email'], nested: [{ a: 1 }] };
         i.detail.node.severity = null;
         i.detail.node.notes = 'Check **prod** first.';
       }),
@@ -191,8 +191,8 @@ describe('buildReport', () => {
     expect(md).toContain('## Severity\n\n**Not set**\n');
     expect(md).not.toContain('CVSS');
     expect(md).toContain('## References\n\n_None recorded._');
-    expect(md).toContain('git-config (vulnerability git-config).');
-    expect(md).toContain('- detector: AWS\n- verified: false');
+    expect(md).toContain('## Description\n\nA vulnerability: git-config.');
+    expect(md).toContain('- detector: AWS\n- verified: false\n- fields: password, email\n- nested: \\[{"a":1}\\]');
     expect(md).toContain('## Analyst notes\n\nCheck **prod** first.');
     expect(r.title).toBe(`git-config on ${URL1}`);
   });

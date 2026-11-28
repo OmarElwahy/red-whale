@@ -1,6 +1,6 @@
 // What the right-click menu offers for a node, a group or a "more" node (docs/architecture.md §8). Pure, so it's
 // unit-tested.
-import { childTypesOf, scopeModeFor, type AggregateNode, type GraphNode, type RunnerStatus, type ToolMode, type ToolsResponse, type ViewNode } from '@redwhale/shared';
+import { childTypesOf, isReportNodeType, scopeModeFor, type AggregateNode, type GraphNode, type RunnerStatus, type ToolMode, type ToolsResponse, type ViewNode } from '@redwhale/shared';
 
 export type MenuAction =
   | 'focus'
@@ -22,7 +22,9 @@ export type MenuAction =
   /** A node: the Add node dialog with this node as the parent. */
   | 'add-child'
   /** A node or a group: the delete dialog. */
-  | 'delete';
+  | 'delete'
+  /** A vulnerability, secret or leak node: the bug-report dialog. */
+  | 'report';
 
 export interface MenuBadge {
   text: string;
@@ -107,6 +109,7 @@ export function menuItems(target: ViewNode, ctx: MenuContext): MenuItem[] {
     }
     if (ctx.group) items.push({ action: 'collapse-parent', label: 'Collapse group' });
     items.push(runMenu(target, ctx.run));
+    if (isReportNodeType(target.type)) items.push({ action: 'report', label: 'Create report…' });
     const children = childTypesOf(target.type);
     items.push({
       action: 'add-child',

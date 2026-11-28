@@ -96,6 +96,8 @@ const first = (v: unknown): string | undefined => strings(v)[0];
 function scalar(v: unknown): string {
   if (typeof v === 'string') return v;
   if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+  // A list of plain values reads as a list; anything nested stays JSON.
+  if (Array.isArray(v) && v.every((x) => ['string', 'number', 'boolean'].includes(typeof x))) return v.map(String).join(', ');
   return JSON.stringify(v);
 }
 
@@ -162,6 +164,7 @@ export function buildReport(input: ReportInput, now: Date): NodeReport {
   const description = first(data.description);
   const descLines: string[] = [];
   if (description !== undefined) descLines.push(escapeBlock(description));
+  else if (name === node.value) descLines.push(`A ${type}: ${escapeMarkdown(node.value)}.`);
   else descLines.push(`${escapeBlock(name)} (${type} ${escapeMarkdown(node.value)}).`);
   const template = strings(data.template ?? data.template_id);
   if (template.length > 0) descLines.push('', `Template: ${template.map(escapeInline).join(', ')}`);

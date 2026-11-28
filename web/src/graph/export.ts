@@ -21,9 +21,14 @@ export function graphPng(cy: PngSource): Blob {
   return cy.png(PNG_OPTIONS);
 }
 
-/** `redwhale-graph-2026-10-30T12-34-56Z.png`: UTC, no colons (Windows can't save them). */
+/** `2026-10-30T12-34-56Z`: UTC, no colons (Windows can't save them). */
+export function fileTimestamp(now: Date = new Date()): string {
+  return `${now.toISOString().slice(0, 19).replaceAll(':', '-')}Z`;
+}
+
+/** `redwhale-graph-2026-10-30T12-34-56Z.png`. */
 export function exportFilename(kind: 'graph', extension: 'png', now: Date = new Date()): string {
-  return `redwhale-${kind}-${now.toISOString().slice(0, 19).replaceAll(':', '-')}Z.${extension}`;
+  return `redwhale-${kind}-${fileTimestamp(now)}.${extension}`;
 }
 
 /** Saves a blob through a temporary link. */
