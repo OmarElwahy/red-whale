@@ -1,10 +1,10 @@
 // The Cytoscape wrapper (CLAUDE.md rule 6, docs/architecture.md §8). Cytoscape owns the canvas: the instance
 // is created once, and new elements are diffed in imperatively. React never re-renders the graph.
 //
-// Feel: the canvas never changes how it draws mid-gesture (no texture or hidden edges while moving); pans and
-// node drags carry momentum (momentum.ts), the wheel zooms smoothly toward the cursor (wheel.ts), and labels
-// fade in and out at the readability threshold (labels.ts). Layout modes (modes.ts): Force and Tree, animated
-// between; Tree positions are never saved.
+// Feel: the canvas never changes how it draws mid-gesture (no texture or hidden edges while moving); pans carry
+// momentum, and so do node drags, which in Tree mode carry their subtree (drags.ts); the wheel zooms smoothly toward
+// the cursor (wheel.ts), and labels fade in and out at the readability threshold (labels.ts). Layout modes
+// (modes.ts): Force and Tree, animated between; Tree positions are never saved.
 import cytoscape, { type Core } from 'cytoscape';
 import fcose from 'cytoscape-fcose';
 import { useEffect, useImperativeHandle, useRef, type Ref } from 'react';
@@ -20,10 +20,11 @@ import { flash, flashIds } from './flash';
 import { bindLabelFade } from './labels';
 import { LAYOUT_ANIMATION_MS, type Position } from './layout';
 import { LayoutModes } from './modes';
-import { bindMomentum, type Momentum } from './momentum';
+import { bindDrags } from './drags';
+import type { Momentum } from './momentum';
 import { motionMs, prefersReducedMotion } from './reducedMotion';
 import { COLORS, graphStylesheet } from './style';
-import { bindSubtreeDrag, type SubtreeDrag } from './subtree';
+import type { SubtreeDrag } from './subtree';
 import { browserTreeEngine, type TreeEngine } from './tree';
 import { bindWheelZoom, type WheelZoom } from './wheel';
 
@@ -164,11 +165,10 @@ export function CytoscapeGraph({
       },
     });
     modes.current = layoutModes;
-    const subtree = bindSubtreeDrag(cy, () => layoutModes.mode === 'tree');
-    const momentum = bindMomentum(cy, {
+    const drags = bindDrags(cy, {
+      carriesSubtree: () => layoutModes.mode === 'tree',
       reducedMotion: prefersReducedMotion,
       onRest: (node) => {
-        subtree.end();
         if (!layoutModes.savesPositions) return;
         const { x, y } = node.position();
         pinned.current.add(node.id());
@@ -177,11 +177,11 @@ export function CytoscapeGraph({
     });
     const wheel = bindWheelZoom(cy, host.current, {
       onStart: () => {
-        momentum.stop();
+        drags.momentum.stop();
       },
       reducedMotion: prefersReducedMotion,
     });
-    motion.current = { momentum, wheel, subtree };
+    motion.current = { momentum: drags.momentum, wheel, subtree: drags.subtree };
     const unbindLabels = bindLabelFade(cy);
     // Cytoscape only listens to window resizes; follow the container too (panels opening, etc.).
     const resize = new ResizeObserver(() => {
@@ -196,8 +196,7 @@ export function CytoscapeGraph({
       resize.disconnect();
       unbindLabels();
       wheel.dispose();
-      momentum.dispose();
-      subtree.dispose();
+      drags.dispose();
       layoutModes.dispose();
       motion.current = null;
       modes.current = null;
